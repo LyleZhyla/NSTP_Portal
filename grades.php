@@ -443,6 +443,55 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
     }
 
+    if ($action === 'delete_selected_columns' && $canManageColumns) {
+        $columnIds = $_POST['column_ids'] ?? [];
+        if (!is_array($columnIds) || empty($columnIds)) {
+            $errors[] = 'Select at least one column to remove.';
+        } else {
+            $columnIds = array_values(array_unique(array_map('intval', $columnIds)));
+            $activeColumnLookup = [];
+            foreach ($gradeColumns as $column) {
+                $activeColumnLookup[(int) $column['grade_column_id']] = $column;
+            }
+
+            $removedCount = 0;
+            foreach ($columnIds as $columnId) {
+                if (!isset($activeColumnLookup[$columnId])) {
+                    continue;
+                }
+
+                $column = $activeColumnLookup[$columnId];
+                if ((int) $column['is_default'] === 1) {
+                    hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                    $removedCount++;
+                    continue;
+                }
+
+                if ($userRole === 'coordinator') {
+                    $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0");
+                    $stmt->execute([$userId, $columnId]);
+                    hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                    $removedCount++;
+                } else {
+                    $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0 AND created_by = ?");
+                    $stmt->execute([$userId, $columnId, $userId]);
+                    if ($stmt->rowCount() > 0) {
+                        $removedCount++;
+                    } else {
+                        hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                        $removedCount++;
+                    }
+                }
+            }
+
+            if ($removedCount > 0) {
+                $messages[] = $removedCount . ' column(s) removed from the current class record.';
+            } else {
+                $errors[] = 'No valid columns were selected.';
+            }
+        }
+    }
+
     if ($action === 'new_class_record' && $canManageColumns) {
         foreach ($gradeColumns as $column) {
             hideGradeColumnForCurrentSheet($conn, (int) $column['grade_column_id'], $userId, $columnVisibilityScope);
@@ -828,8 +877,25 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <?php if (empty($gradeColumns)): ?>
                                 <span class="text-muted">No columns yet. Add a column to start a new class record.</span>
                             <?php else: ?>
+                                <form method="POST" id="deleteSelectedColumnsForm" class="mb-2" onsubmit="return confirm('Remove the selected columns from the current class record? Existing scores will be kept in the database but hidden with the removed columns.');">
+                                    <input type="hidden" name="action" value="delete_selected_columns">
+                                    <div id="selectedColumnsPayload"></div>
+                                    <div class="d-flex flex-wrap align-items-center" style="gap: 8px;">
+                                        <div class="custom-control custom-checkbox mr-2">
+                                            <input type="checkbox" class="custom-control-input" id="selectAllGradeColumns">
+                                            <label class="custom-control-label" for="selectAllGradeColumns">Select all</label>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-danger" id="deleteSelectedColumnsBtn" disabled>
+                                            <i class="fas fa-trash mr-1"></i>Delete Selected
+                                        </button>
+                                    </div>
+                                </form>
                                 <?php foreach ($gradeColumns as $column): ?>
                                     <span class="column-chip">
+                                        <input
+                                            type="checkbox"
+                                            class="grade-column-checkbox"
+                                            value="<?php echo (int) $column['grade_column_id']; ?>">
                                         <?php echo htmlspecialchars($column['label']); ?>
                                         <small class="text-muted">
                                             /<?php echo formatGradeNumber($column['max_score'], 0); ?>
@@ -1157,6 +1223,40 @@ $('.edit-column-btn').on('click', function() {
     $('#editColumnGroupLabel').val($(this).data('group-label'));
     $('#editColumnMaxScore').val($(this).data('max-score'));
     $('#editColumnWeightPercent').val($(this).data('weight-percent'));
+});
+
+function refreshSelectedColumnControls() {
+    const checkedCount = $('.grade-column-checkbox:checked').length;
+    const totalCount = $('.grade-column-checkbox').length;
+    $('#deleteSelectedColumnsBtn').prop('disabled', checkedCount === 0);
+    $('#selectAllGradeColumns').prop('checked', totalCount > 0 && checkedCount === totalCount);
+}
+
+$('.grade-column-checkbox').on('change', refreshSelectedColumnControls);
+
+$('#selectAllGradeColumns').on('change', function() {
+    $('.grade-column-checkbox').prop('checked', this.checked);
+    refreshSelectedColumnControls();
+});
+
+$('#deleteSelectedColumnsForm').on('submit', function(event) {
+    const selected = $('.grade-column-checkbox:checked').map(function() {
+        return this.value;
+    }).get();
+
+    if (selected.length === 0) {
+        event.preventDefault();
+        return false;
+    }
+
+    const payload = $('#selectedColumnsPayload').empty();
+    selected.forEach(function(columnId) {
+        $('<input>', {
+            type: 'hidden',
+            name: 'column_ids[]',
+            value: columnId
+        }).appendTo(payload);
+    });
 });
 </script>
 </body>
