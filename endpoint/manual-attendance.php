@@ -2,7 +2,6 @@
 session_start();
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
-require_once '../include/student-account-automation.php';
 
 header('Content-Type: application/json');
 
@@ -82,17 +81,9 @@ try {
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
 
-    $studentStmt = $conn->prepare("SELECT student_number FROM tbl_student WHERE tbl_student_id = ?");
-    $studentStmt->execute([$student_id]);
-    $studentNumber = $studentStmt->fetchColumn();
-    $accountResult = autoCreateStudentAccountIfEligible($conn, $studentNumber);
-    
     echo json_encode([
         'success' => true,
-        'message' => !empty($accountResult['created'])
-            ? 'Manual attendance recorded successfully. Student account was created.'
-            : 'Manual attendance recorded successfully',
-        'account_created' => $accountResult['created'] ?? false
+        'message' => 'Manual attendance recorded successfully'
     ]);
     
 } catch (PDOException $e) {

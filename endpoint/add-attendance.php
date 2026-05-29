@@ -10,7 +10,6 @@ if (!isset($_SESSION['user_id'])) {
 date_default_timezone_set('Asia/Manila');
 include('../conn/conn.php');
 require_once '../include/user-permissions.php';
-require_once '../include/student-account-automation.php';
 
 $admin_id = $_SESSION['user_id'];
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';
@@ -70,7 +69,6 @@ try {
     ]);
     
     $attendance_id = $conn->lastInsertId();
-    $accountResult = autoCreateStudentAccountIfEligible($conn, $student['student_number'] ?? null);
     
     error_log("Attendance recorded for student ID: " . $student['tbl_student_id'] . " (Attendance ID: " . $attendance_id . ")");
     
@@ -81,8 +79,7 @@ try {
         'student_name' => $student['student_name'],
         'course_section' => $student['course_section'],
         'time' => date('h:i A', strtotime($time_in)),
-        'status' => $status,
-        'account_created' => $accountResult['created'] ?? false
+        'status' => $status
     ]);
     
 } catch (Exception $e) {

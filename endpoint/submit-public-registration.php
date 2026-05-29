@@ -392,9 +392,18 @@ try {
         failRegistration('This email address already has an account.');
     }
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_public_student_registrations WHERE email = ?");
+    $stmt = $conn->prepare("
+        SELECT student_number
+        FROM tbl_public_student_registrations
+        WHERE email = ?
+        LIMIT 1
+    ");
     $stmt->execute([$email]);
-    if ((int) $stmt->fetchColumn() > 0) {
+    $existingRegistrationStudentNumber = $stmt->fetchColumn();
+    if (
+        $existingRegistrationStudentNumber
+        && (!$studentNumberBased || (string) $existingRegistrationStudentNumber !== (string) $studentNumber)
+    ) {
         failRegistration('This email address already has a public registration submission.');
     }
 
@@ -468,9 +477,13 @@ try {
     $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
 
     $response['success'] = true;
-    $response['message'] = !empty($accountResult['created'])
-        ? 'Registration submitted successfully. Student account was created. Username is your student number and password is your birthday in MMDDYYYY format.'
-        : 'Registration submitted successfully. Your account will be created after your student number appears in at least two public QR submissions.';
+    if (!empty($accountResult['created'])) {
+        $response['message'] = !empty($accountResult['email_sent'])
+            ? 'Registration submitted successfully. Your student account was created and login credentials were sent to your registered email.'
+            : 'Registration submitted successfully. Your student account was created, but the credentials email was not sent. Please check the registered email or contact the administrator.';
+    } else {
+        $response['message'] = 'Registration submitted successfully. Your account will be created after your second public registration submission.';
+    }
 } catch (Throwable $error) {
     if ($conn->inTransaction()) {
         $conn->rollBack();

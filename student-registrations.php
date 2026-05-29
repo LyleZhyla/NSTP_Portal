@@ -191,6 +191,13 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
             font-size: .78rem;
             font-weight: 700;
         }
+        .table-filter-bar {
+            border: 1px solid #d8e7eb;
+            background: #f7fbfc;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
@@ -322,6 +329,34 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                         <h3 class="card-title"><i class="fas fa-table mr-2"></i>Submitted Student Details</h3>
                     </div>
                     <div class="card-body">
+                        <div class="table-filter-bar">
+                            <div class="row align-items-end">
+                                <div class="col-md-5">
+                                    <label for="formTitleFilter" class="mb-1">Filter by Form Title</label>
+                                    <select class="form-control" id="formTitleFilter">
+                                        <option value="">All public registration forms</option>
+                                        <?php foreach ($publicForms as $formRow): ?>
+                                            <option value="<?php echo htmlspecialchars($formRow['form_title']); ?>">
+                                                <?php echo htmlspecialchars($formRow['form_title']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                        <option value="Default Public Registration">Default Public Registration</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mt-3 mt-md-0">
+                                    <span class="detail-label">Visible Submissions</span>
+                                    <span class="detail-value">
+                                        <span id="visibleSubmissionCount"><?php echo (int) $totalRegistrations; ?></span>
+                                        of <?php echo (int) $totalRegistrations; ?>
+                                    </span>
+                                </div>
+                                <div class="col-md-3 mt-3 mt-md-0 text-md-right">
+                                    <button type="button" class="btn btn-outline-secondary" id="clearFormTitleFilter">
+                                        <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-hover" id="registrationsTable">
                                 <thead>
@@ -557,11 +592,40 @@ foreach ($publicForms as $formRow) {
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
     $(function () {
-        $('#registrationsTable').DataTable({
+        const registrationsTable = $('#registrationsTable').DataTable({
             responsive: true,
             order: [[9, 'desc']],
             pageLength: 25
         });
+
+        function escapeRegex(value) {
+            return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function updateVisibleSubmissionCount() {
+            $('#visibleSubmissionCount').text(registrationsTable.rows({ filter: 'applied' }).count());
+        }
+
+        $('#formTitleFilter').on('change', function() {
+            const selectedFormTitle = $(this).val();
+            if (selectedFormTitle === '') {
+                registrationsTable.column(1).search('').draw();
+                return;
+            }
+
+            registrationsTable
+                .column(1)
+                .search('^' + escapeRegex(selectedFormTitle) + '$', true, false)
+                .draw();
+        });
+
+        $('#clearFormTitleFilter').on('click', function() {
+            $('#formTitleFilter').val('');
+            registrationsTable.column(1).search('').draw();
+        });
+
+        registrationsTable.on('draw', updateVisibleSubmissionCount);
+        updateVisibleSubmissionCount();
 
         $('.public-form-settings').on('submit', function(e) {
             e.preventDefault();
