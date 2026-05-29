@@ -1,0 +1,1337 @@
+<?php
+session_start();
+
+require_once 'conn/conn.php';
+
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header('Location: landing_page.php');
+    exit();
+}
+
+$user_id = $_SESSION['user_id'];
+$message = '';
+$error = '';
+$componentOptions = ['CWTS', 'LTS', 'ROTC'];
+
+// Create upload directory if it doesn't exist
+$upload_dir = 'uploads/profile_pictures/';
+if (!file_exists($upload_dir)) {
+    mkdir($upload_dir, 0777, true);
+}
+
+// Handle profile picture upload
+if (isset($_POST['upload_picture'])) {
+    if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] == 0) {
+        $allowed = ['jpg', 'jpeg', 'png', 'gif'];
+        $filename = $_FILES['profile_picture']['name'];
+        $file_ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        
+        if (in_array($file_ext, $allowed)) {
+            $new_filename = 'profile_' . $user_id . '_' . time() . '.' . $file_ext;
+            $target_path = $upload_dir . $new_filename;
+            
+            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
+                // Get old profile picture to delete
+                $stmt = $conn->prepare("SELECT profile_picture FROM tbl_users WHERE user_id = ?");
+                $stmt->execute([$user_id]);
+                $old_picture = $stmt->fetchColumn();
+                
+                if ($old_picture && file_exists($old_picture)) {
+                    unlink($old_picture);
+                }
+                
+                // Update database
+                $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = ? WHERE user_id = ?");
+                
+                if ($stmt->execute([$target_path, $user_id])) {
+                    // Update session with new profile picture
+                    $_SESSION['profile_picture'] = $target_path;
+                    $message = "Profile picture updated successfully!";
+                } else {
+                    $error = "Error updating database.";
+                }
+            } else {
+                $error = "Error uploading file.";
+            }
+        } else {
+            $error = "Only JPG, JPEG, PNG & GIF files are allowed.";
+        }
+    } else {
+        $error = "Please select an image file.";
+    }
+}
+
+// Handle remove profile picture
+if (isset($_POST['remove_picture'])) {
+    $stmt = $conn->prepare("SELECT profile_picture FROM tbl_users WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $old_picture = $stmt->fetchColumn();
+    
+    if ($old_picture && file_exists($old_picture)) {
+        unlink($old_picture);
+    }
+    
+    $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = NULL WHERE user_id = ?");
+    
+    if ($stmt->execute([$user_id])) {
+        // Remove from session
+        $_SESSION['profile_picture'] = null;
+        unset($_SESSION['profile_picture']);
+        $message = "Profile picture removed successfully!";
+    } else {
+        $error = "Error removing profile picture.";
+    }
+}
+
+// Handle password change
+if (isset($_POST['change_password'])) {
+    $current_password = $_POST['current_password'];
+    $new_password = $_POST['new_password'];
+    $confirm_password = $_POST['confirm_password'];
+    
+    $stmt = $conn->prepare("SELECT password_hash FROM tbl_users WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $user_data = $stmt->fetch();
+    
+    if ($user_data && password_verify($current_password, $user_data['password_hash'])) {
+        if ($new_password === $confirm_password) {
+            if (strlen($new_password) >= 8) {
+                $new_password_hash = password_hash($new_password, PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, last_password_change = NOW() WHERE user_id = ?");
+                
+                if ($stmt->execute([$new_password_hash, $user_id])) {
+                    $message = "Password changed successfully!";
+                } else {
+                    $error = "Error changing password.";
+                }
+            } else {
+                $error = "Password must be at least 8 characters long.";
+            }
+        } else {
+            $error = "New passwords do not match.";
+        }
+    } else {
+        $error = "Current password is incorrect.";
+    }
+}
+
+// Handle profile info update
+if (isset($_POST['update_profile'])) {
+    $full_name = trim($_POST['full_name']);
+    $email = trim($_POST['email']);
+    $username = trim($_POST['username']);
+    
+    $check_sql = "SELECT user_id FROM tbl_users WHERE (username = ? OR email = ?) AND user_id != ?";
+    $check_stmt = $conn->prepare($check_sql);
+    $check_stmt->execute([$username, $email, $user_id]);
+    
+    if ($check_stmt->rowCount() == 0) {
+        $update_sql = "UPDATE tbl_users SET full_name = ?, email = ?, username = ? WHERE user_id = ?";
+        $update_stmt = $conn->prepare($update_sql);
+        
+        if ($update_stmt->execute([$full_name, $email, $username, $user_id])) {
+            $sync_stmt = $conn->prepare("UPDATE tbl_student SET student_name = ? WHERE user_id = ?");
+            $sync_stmt->execute([$full_name, $user_id]);
+            $_SESSION['full_name'] = $full_name;
+            $_SESSION['username'] = $username;
+            $_SESSION['email'] = $email;
+            $message = "Profile updated successfully!";
+        } else {
+            $error = "Error updating profile.";
+        }
+    } else {
+        $error = "Username or email already exists.";
+    }
+}
+
+// Get user data
+$stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
+$stmt->execute([$user_id]);
+$user = $stmt->fetch();
+
+$isStudent = $user && ($user['role'] ?? '') === 'student';
+$studentRecord = null;
+$studentAttendanceCount = 0;
+$studentLatestAttendance = null;
+
+if ($isStudent) {
+    $stmt = $conn->prepare("SELECT * FROM tbl_student WHERE user_id = ? LIMIT 1");
+    $stmt->execute([$user_id]);
+    $studentRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if ($studentRecord) {
+        $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_attendance WHERE tbl_student_id = ?");
+        $stmt->execute([$studentRecord['tbl_student_id']]);
+        $studentAttendanceCount = (int) $stmt->fetchColumn();
+
+        $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? ORDER BY time_in DESC LIMIT 1");
+        $stmt->execute([$studentRecord['tbl_student_id']]);
+        $studentLatestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
+
+// Get user's assigned sections
+$sections = [];
+if ($user && $user['role'] == 'facilitator') {
+    $section_sql = "SELECT course_section FROM tbl_admin_sections WHERE user_id = ? ORDER BY course_section";
+    $section_stmt = $conn->prepare($section_sql);
+    $section_stmt->execute([$user_id]);
+    $sections = $section_stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
+// Get total students managed
+$student_count = 0;
+if ($isStudent) {
+    $student_count = $studentAttendanceCount;
+} else {
+    $student_sql = "SELECT COUNT(*) as total FROM tbl_student WHERE created_by = ?";
+    $student_stmt = $conn->prepare($student_sql);
+    $student_stmt->execute([$user_id]);
+    $student_count = $student_stmt->fetchColumn();
+}
+
+// Get recent activity
+if ($isStudent && $studentRecord) {
+    $activity_sql = "
+        SELECT a.*, s.student_name, s.course_section
+        FROM tbl_attendance a
+        JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
+        WHERE s.user_id = ?
+        ORDER BY a.time_in DESC
+        LIMIT 10
+    ";
+    $activity_stmt = $conn->prepare($activity_sql);
+    $activity_stmt->execute([$user_id]);
+} else {
+    $activity_sql = "
+        SELECT a.*, s.student_name, s.course_section
+        FROM tbl_attendance a
+        JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
+        WHERE s.created_by = ?
+        ORDER BY a.time_in DESC
+        LIMIT 10
+    ";
+    $activity_stmt = $conn->prepare($activity_sql);
+    $activity_stmt->execute([$user_id]);
+}
+$activities = $activity_stmt->fetchAll();
+
+// Get initials for profile
+$initials = '';
+if (!empty($user['full_name'])) {
+    $nameParts = explode(' ', $user['full_name']);
+    $initials = strtoupper(substr($nameParts[0], 0, 1));
+    if (isset($nameParts[1])) {
+        $initials .= strtoupper(substr($nameParts[1], 0, 1));
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My Profile - TAU NSTP QR Attendance System</title>
+      <?php include('./include/theme-loader.php'); ?>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="include/logo.png">
+    <link rel="shortcut icon" href="include/logo.png">
+    
+    <!-- Google Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Bootstrap 4 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    
+    <!-- AdminLTE -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+    
+    <!-- Theme CSS -->
+    <link rel="stylesheet" href="include/theme.css">
+    
+    <style>
+        /* Profile Card Styles */
+        .profile-card {
+            border-radius: 15px;
+            border: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .profile-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px 20px;
+            color: white;
+            text-align: center;
+            position: relative;
+        }
+        
+        /* Avatar Container */
+        .avatar-container {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+        
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 4px solid white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            object-fit: cover;
+        }
+        
+        .profile-avatar-initials {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 4px solid white;
+            background: linear-gradient(135deg, #5a67d8 0%, #6b46a0 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            font-weight: bold;
+            color: white;
+            margin: 0 auto;
+        }
+        
+        /* Upload Buttons */
+        .upload-btn {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background: #007bff;
+            color: white;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 2px solid white;
+            transition: all 0.3s;
+            z-index: 10;
+        }
+        
+        .upload-btn:hover {
+            background: #0056b3;
+            transform: scale(1.1);
+        }
+        
+        .remove-btn {
+            position: absolute;
+            bottom: 5px;
+            left: 5px;
+            background: #dc3545;
+            color: white;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 2px solid white;
+            transition: all 0.3s;
+            z-index: 10;
+            border: none;
+        }
+        
+        .remove-btn:hover {
+            background: #c82333;
+            transform: scale(1.1);
+        }
+        
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px 15px;
+            text-align: center;
+        }
+        
+        .stat-card.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        
+        .stat-icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+        
+        .stat-number {
+            font-size: 1.8rem;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* Info Sections */
+        .info-section {
+            padding: 0 20px 20px;
+        }
+        
+        .info-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .info-title i {
+            color: #007bff;
+            margin-right: 8px;
+        }
+        
+        .info-item {
+            margin-bottom: 12px;
+        }
+        
+        .info-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-bottom: 2px;
+        }
+        
+        .info-label i {
+            width: 18px;
+            color: #007bff;
+        }
+        
+        .info-value {
+            font-size: 0.95rem;
+            color: #343a40;
+            font-weight: 500;
+            padding-left: 22px;
+            word-break: break-word;
+        }
+        
+        .section-badge {
+            display: inline-block;
+            background: #e7f3ff;
+            color: #0066cc;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 0 3px 5px 0;
+            border-left: 3px solid #0066cc;
+        }
+        
+        /* Tabs */
+        .nav-tabs {
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .nav-tabs .nav-link {
+            border: none;
+            color: #6c757d;
+            padding: 12px 20px;
+            font-weight: 500;
+            transition: all 0.3s;
+            background: transparent;
+        }
+        
+        .nav-tabs .nav-link i {
+            margin-right: 8px;
+            font-size: 1rem;
+        }
+        
+        .nav-tabs .nav-link.active {
+            color: #007bff;
+            background: transparent;
+            border-bottom: 3px solid #007bff;
+        }
+        
+        .nav-tabs .nav-link:hover {
+            color: #007bff;
+            background: rgba(0,123,255,0.05);
+        }
+        
+        /* Tab Content */
+        .tab-pane {
+            padding: 20px 0;
+        }
+        
+        /* Form Controls */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-control {
+            border-radius: 20px;
+            border: 1px solid #e9ecef;
+            padding: 10px 15px;
+            height: auto;
+            font-size: 0.95rem;
+        }
+        
+        .form-control:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.1);
+        }
+        
+        .input-group-text {
+            border-radius: 20px 0 0 20px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            color: #495057;
+        }
+        
+        .input-group-append .input-group-text {
+            border-radius: 0 20px 20px 0;
+        }
+        
+        /* Password Strength */
+        .password-strength .progress {
+            border-radius: 10px;
+            height: 6px;
+            margin-top: 8px;
+        }
+        
+        /* Buttons */
+        .btn {
+            border-radius: 20px;
+            padding: 8px 25px;
+            font-weight: 500;
+            transition: all 0.3s;
+            font-size: 0.95rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            border: none;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            border: none;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+        
+        /* Badge */
+        .badge-light {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        
+        /* Alert */
+        .alert {
+            border-radius: 10px;
+            border: none;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+        }
+        
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding: 10px 0;
+        }
+        
+        .timeline-item {
+            position: relative;
+            padding-left: 50px;
+            margin-bottom: 20px;
+        }
+        
+        .timeline-badge {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #007bff;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+        }
+        
+        .timeline:before {
+            content: '';
+            position: absolute;
+            left: 17px;
+            top: 10px;
+            bottom: 0;
+            width: 2px;
+            background: #e9ecef;
+        }
+        
+        .time-label {
+            margin-bottom: 20px;
+        }
+        
+        .time-label span {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            background: #007bff;
+            color: white;
+            font-size: 0.9rem;
+        }
+        
+        /* Activity Card */
+        .activity-card {
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        
+        .activity-header {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .activity-body {
+            padding: 10px 15px;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .profile-avatar, .profile-avatar-initials {
+                width: 100px;
+                height: 100px;
+                font-size: 40px;
+            }
+            
+            .upload-btn, .remove-btn {
+                width: 32px;
+                height: 32px;
+            }
+            
+            .stat-number {
+                font-size: 1.5rem;
+            }
+            
+            .nav-tabs .nav-link {
+                padding: 8px 12px;
+                font-size: 0.85rem;
+            }
+            
+            .nav-tabs .nav-link i {
+                margin-right: 4px;
+            }
+        }
+        
+        /* Dark mode adjustments */
+        body.dark-mode .info-title {
+            color: #e0e0e0;
+            border-bottom-color: #404040;
+        }
+        
+        body.dark-mode .info-label {
+            color: #aaa;
+        }
+        
+        body.dark-mode .info-value {
+            color: #e0e0e0;
+        }
+        
+        body.dark-mode .section-badge {
+            background: #2c3e50;
+            color: #5faee3;
+            border-left-color: #5faee3;
+        }
+        
+        body.dark-mode .nav-tabs {
+            border-bottom-color: #404040;
+        }
+        
+        body.dark-mode .nav-tabs .nav-link {
+            color: #aaa;
+        }
+        
+        body.dark-mode .nav-tabs .nav-link.active {
+            color: #5faee3;
+            border-bottom-color: #5faee3;
+        }
+        
+        body.dark-mode .nav-tabs .nav-link:hover {
+            color: #5faee3;
+            background: rgba(255,255,255,0.05);
+        }
+        
+        body.dark-mode .input-group-text {
+            background: #404040;
+            border-color: #4a4a4a;
+            color: #e0e0e0;
+        }
+        
+        body.dark-mode .timeline:before {
+            background: #404040;
+        }
+        
+        body.dark-mode .activity-card {
+            border-color: #404040;
+        }
+        
+        body.dark-mode .activity-header {
+            background: #2d2d2d;
+            border-bottom-color: #404040;
+        }
+    </style>
+</head>
+<body class="hold-transition sidebar-mini layout-fixed">
+    <div class="wrapper">
+        <!-- Navbar -->
+        <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" data-widget="pushmenu" href="#" role="button">
+                        <i class="fas fa-bars"></i>
+                    </a>
+                </li>
+                <li class="nav-item d-none d-sm-inline-block">
+                    <a href="index.php" class="nav-link">Home</a>
+                </li>
+            </ul>
+            
+            <ul class="navbar-nav ml-auto">
+                <!-- Time Display -->
+                <li class="nav-item">
+                    <a class="nav-link" href="#">
+                        <i class="far fa-clock mr-1"></i>
+                        <span id="current-time"><?php echo date('h:i A'); ?></span>
+                    </a>
+                </li>
+                
+                <!-- Theme toggle will appear here if included -->
+                
+                <!-- User Menu -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link" data-toggle="dropdown" href="#">
+                        <i class="fas fa-user-circle"></i>
+                        <?php echo htmlspecialchars($user['full_name'] ?? 'User'); ?>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-right">
+                        <a href="profile.php" class="dropdown-item">
+                            <i class="fas fa-user mr-2"></i> My Profile
+                        </a>
+                        <div class="dropdown-divider"></div>
+                        <a href="./endpoint/logout.php" class="dropdown-item text-danger">
+                            <i class="fas fa-sign-out-alt mr-2"></i> Logout
+                        </a>
+                    </div>
+                </li>
+            </ul>
+        </nav>
+        
+        <!-- Sidebar -->
+        <?php include 'adminlte-sidebar.php'; ?>
+        
+        <!-- Content Wrapper -->
+        <div class="content-wrapper">
+            <!-- Content Header -->
+            <section class="content-header">
+                <div class="container-fluid">
+                    <div class="row mb-2">
+                        <div class="col-sm-6">
+                            <h1><i class="fas fa-user-circle mr-2"></i>My Profile</h1>
+                        </div>
+                        <div class="col-sm-6">
+                            <ol class="breadcrumb float-sm-right">
+                                <li class="breadcrumb-item"><a href="index.php">Dashboard</a></li>
+                                <li class="breadcrumb-item active">My Profile</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Main content -->
+            <section class="content">
+                <div class="container-fluid">
+                    <!-- Alert Messages -->
+                    <?php if ($message): ?>
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <i class="fas fa-check-circle mr-2"></i><?php echo htmlspecialchars($message); ?>
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($error): ?>
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="fas fa-exclamation-circle mr-2"></i><?php echo htmlspecialchars($error); ?>
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <div class="row">
+                        <!-- Left Column - Profile Info -->
+                        <div class="col-md-4">
+                            <!-- Profile Card -->
+                            <div class="profile-card">
+                                <div class="profile-header">
+                                    <div class="avatar-container">
+                                        <?php 
+                                        // Check if user has profile picture
+                                        $hasProfilePic = false;
+                                        $profilePicPath = '';
+                                        
+                                        if (!empty($user['profile_picture']) && file_exists($user['profile_picture'])) {
+                                            $hasProfilePic = true;
+                                            $profilePicPath = $user['profile_picture'];
+                                        }
+                                        
+                                        if ($hasProfilePic): ?>
+                                            <img src="<?php echo htmlspecialchars($profilePicPath); ?>?v=<?php echo time(); ?>" 
+                                                 alt="Profile Picture" 
+                                                 class="profile-avatar"
+                                                 id="profileImage">
+                                        <?php else: ?>
+                                            <div class="profile-avatar-initials" id="profileInitials">
+                                                <?php echo $initials ?: 'U'; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <label for="profilePictureInput" class="upload-btn" title="Change Profile Picture">
+                                            <i class="fas fa-camera"></i>
+                                        </label>
+                                        
+                                        <?php if ($hasProfilePic): ?>
+                                            <form method="POST" style="display: inline;">
+                                                <button type="submit" name="remove_picture" class="remove-btn" title="Remove Profile Picture" onclick="return confirm('Are you sure you want to remove your profile picture?');">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
+                                    
+                                    <h4 class="mt-3 mb-1"><?php echo htmlspecialchars($user['full_name'] ?? 'User'); ?></h4>
+                                    <p>
+                                        <span class="badge-light">
+                                            <i class="fas fa-shield-alt mr-1"></i>
+                                            <?php echo ucfirst(str_replace('_', ' ', $user['role'] ?? 'facilitator')); ?>
+                                        </span>
+                                    </p>
+                                </div>
+                                
+                                <!-- Hidden Upload Form -->
+                                <form id="uploadForm" action="" method="POST" enctype="multipart/form-data" style="display: none;">
+                                    <input type="file" id="profilePictureInput" name="profile_picture" accept="image/*">
+                                    <input type="hidden" name="upload_picture" value="1">
+                                </form>
+                                
+                                <!-- Stats -->
+                                <div class="stats-grid px-3 pt-3">
+                                    <div class="stat-card">
+                                        <div class="stat-icon">
+                                            <i class="fas fa-users"></i>
+                                        </div>
+                                        <div class="stat-number"><?php echo $student_count; ?></div>
+                                        <div class="stat-label"><?php echo $isStudent ? 'Attendance' : 'Students'; ?></div>
+                                    </div>
+                                    <div class="stat-card success">
+                                        <div class="stat-icon">
+                                            <i class="fas fa-calendar-check"></i>
+                                        </div>
+                                        <div class="stat-number"><?php echo date('Y'); ?></div>
+                                        <div class="stat-label">Year</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Account Information -->
+                                <div class="info-section">
+                                    <div class="info-title">
+                                        <i class="fas fa-id-card"></i> Account Information
+                                    </div>
+                                    
+                                    <div class="info-item">
+                                        <div class="info-label">
+                                            <i class="fas fa-user"></i> Username
+                                        </div>
+                                        <div class="info-value"><?php echo htmlspecialchars($user['username'] ?? ''); ?></div>
+                                    </div>
+                                    
+                                    <div class="info-item">
+                                        <div class="info-label">
+                                            <i class="fas fa-envelope"></i> Email
+                                        </div>
+                                        <div class="info-value"><?php echo htmlspecialchars($user['email'] ?? ''); ?></div>
+                                    </div>
+
+                                    <?php if ($isStudent): ?>
+                                    <div class="info-item">
+                                        <div class="info-label">
+                                            <i class="fas fa-layer-group"></i> Component
+                                        </div>
+                                        <div class="info-value">
+                                            <?php if (!empty($user['program'])): ?>
+                                                <span class="section-badge"><?php echo htmlspecialchars($user['program']); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted">Not selected yet</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                    
+                                    <?php if ($user && $user['role'] == 'facilitator' && !empty($sections)): ?>
+                                    <div class="info-item">
+                                        <div class="info-label">
+                                            <i class="fas fa-book-open"></i> Assigned Sections
+                                        </div>
+                                        <div class="info-value">
+                                            <?php foreach ($sections as $section): ?>
+                                                <span class="section-badge">
+                                                    <?php echo htmlspecialchars($section); ?>
+                                                </span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                    
+                                    <div class="info-item">
+                                        <div class="info-label">
+                                            <i class="fas fa-calendar-alt"></i> Member Since
+                                        </div>
+                                        <div class="info-value">
+                                            <?php echo date('F d, Y', strtotime($user['created_at'] ?? date('Y-m-d'))); ?>
+                                        </div>
+                                    </div>
+                                    
+                                    <?php if (!empty($user['last_password_change'])): ?>
+                                    <div class="info-item">
+                                        <div class="info-label">
+                                            <i class="fas fa-clock"></i> Last Password Change
+                                        </div>
+                                        <div class="info-value">
+                                            <?php echo date('F d, Y', strtotime($user['last_password_change'])); ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Right Column - Tabs and Content -->
+                        <div class="col-md-8">
+                            <?php if ($isStudent): ?>
+                            <div class="profile-card">
+                                <div class="card-header bg-white">
+                                    <h5 class="mb-0"><i class="fas fa-id-badge mr-2"></i>Student QR</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="info-item">
+                                        <div class="info-label"><i class="fas fa-calendar-check"></i> Number of Attendance</div>
+                                        <div class="info-value"><?php echo $studentAttendanceCount; ?></div>
+                                    </div>
+
+                                    <?php if ($studentRecord): ?>
+                                        <?php $qrImage = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . urlencode($studentRecord['generated_code']); ?>
+                                        <div class="row align-items-center">
+                                            <div class="col-md-5 text-center mb-3 mb-md-0">
+                                                <img src="<?php echo htmlspecialchars($qrImage); ?>" alt="Student QR Code" class="img-thumbnail" style="max-width: 220px;">
+                                            </div>
+                                            <div class="col-md-7">
+                                                <div class="info-item">
+                                                    <div class="info-label"><i class="fas fa-qrcode"></i> QR Code</div>
+                                                    <div class="info-value"><code><?php echo htmlspecialchars($studentRecord['generated_code']); ?></code></div>
+                                                </div>
+                                                <div class="info-item">
+                                                    <div class="info-label"><i class="fas fa-clock"></i> Latest Attendance</div>
+                                                    <div class="info-value">
+                                                        <?php echo $studentLatestAttendance ? date('F d, Y h:i A', strtotime($studentLatestAttendance['time_in'])) : 'No attendance yet'; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="alert alert-info mb-0">
+                                            <i class="fas fa-info-circle mr-2"></i>
+                                            Select your NSTP component in the Component tab to generate your QR code.
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <div class="profile-card">
+                                <!-- Tabs -->
+                                <div class="card-header bg-white">
+                                    <ul class="nav nav-tabs card-header-tabs" id="profileTabs" role="tablist">
+                                        <li class="nav-item">
+                                            <a class="nav-link active" id="profile-tab" data-toggle="tab" href="#profile" role="tab">
+                                                <i class="fas fa-user-edit"></i> Edit Profile
+                                            </a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a class="nav-link" id="password-tab" data-toggle="tab" href="#password" role="tab">
+                                                <i class="fas fa-lock"></i> Change Password
+                                            </a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a class="nav-link" id="activity-tab" data-toggle="tab" href="#activity" role="tab">
+                                                <i class="fas fa-history"></i> Recent Activity
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                                
+                                <!-- Tab Content -->
+                                <div class="card-body">
+                                    <div class="tab-content">
+                                        <!-- Edit Profile Tab -->
+                                        <div class="tab-pane fade show active" id="profile" role="tabpanel">
+                                            <form action="" method="POST" id="profileForm">
+                                                <div class="form-group">
+                                                    <label for="full_name">Full Name</label>
+                                                    <div class="input-group">
+                                                        <div class="input-group-prepend">
+                                                            <span class="input-group-text">
+                                                                <i class="fas fa-user"></i>
+                                                            </span>
+                                                        </div>
+                                                        <input type="text" class="form-control" id="full_name" name="full_name" 
+                                                               value="<?php echo htmlspecialchars($user['full_name'] ?? ''); ?>" required>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="form-group">
+                                                    <label for="username">Username</label>
+                                                    <div class="input-group">
+                                                        <div class="input-group-prepend">
+                                                            <span class="input-group-text">
+                                                                <i class="fas fa-at"></i>
+                                                            </span>
+                                                        </div>
+                                                        <input type="text" class="form-control" id="username" name="username" 
+                                                               value="<?php echo htmlspecialchars($user['username'] ?? ''); ?>" required>
+                                                    </div>
+                                                    <small class="text-muted">Username must be unique</small>
+                                                </div>
+                                                
+                                                <div class="form-group">
+                                                    <label for="email">Email Address</label>
+                                                    <div class="input-group">
+                                                        <div class="input-group-prepend">
+                                                            <span class="input-group-text">
+                                                                <i class="fas fa-envelope"></i>
+                                                            </span>
+                                                        </div>
+                                                        <input type="email" class="form-control" id="email" name="email" 
+                                                               value="<?php echo htmlspecialchars($user['email'] ?? ''); ?>" required>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mt-4">
+                                                    <button type="submit" name="update_profile" class="btn btn-primary">
+                                                        <i class="fas fa-save mr-2"></i>Save Changes
+                                                    </button>
+                                                    <button type="reset" class="btn btn-secondary ml-2">
+                                                        <i class="fas fa-undo mr-2"></i>Reset
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+
+                                        <!-- Change Password Tab -->
+                                        <div class="tab-pane fade" id="password" role="tabpanel">
+                                            <form action="" method="POST" id="passwordForm">
+                                                <div class="form-group">
+                                                    <label for="current_password">Current Password</label>
+                                                    <div class="input-group">
+                                                        <div class="input-group-prepend">
+                                                            <span class="input-group-text">
+                                                                <i class="fas fa-lock"></i>
+                                                            </span>
+                                                        </div>
+                                                        <input type="password" class="form-control" id="current_password" 
+                                                               name="current_password" required>
+                                                        <div class="input-group-append">
+                                                            <span class="input-group-text toggle-password" style="cursor: pointer;">
+                                                                <i class="fas fa-eye"></i>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="form-group">
+                                                    <label for="new_password">New Password</label>
+                                                    <div class="input-group">
+                                                        <div class="input-group-prepend">
+                                                            <span class="input-group-text">
+                                                                <i class="fas fa-key"></i>
+                                                            </span>
+                                                        </div>
+                                                        <input type="password" class="form-control" id="new_password" 
+                                                               name="new_password" required>
+                                                        <div class="input-group-append">
+                                                            <span class="input-group-text toggle-password" style="cursor: pointer;">
+                                                                <i class="fas fa-eye"></i>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="password-strength">
+                                                        <div class="progress">
+                                                            <div class="progress-bar" id="passwordStrengthBar" 
+                                                                 role="progressbar" style="width: 0%;"></div>
+                                                        </div>
+                                                    </div>
+                                                    <small class="text-muted">
+                                                        Password must be at least 8 characters long.
+                                                    </small>
+                                                </div>
+                                                
+                                                <div class="form-group">
+                                                    <label for="confirm_password">Confirm New Password</label>
+                                                    <div class="input-group">
+                                                        <div class="input-group-prepend">
+                                                            <span class="input-group-text">
+                                                                <i class="fas fa-check-circle"></i>
+                                                            </span>
+                                                        </div>
+                                                        <input type="password" class="form-control" id="confirm_password" 
+                                                               name="confirm_password" required>
+                                                        <div class="input-group-append">
+                                                            <span class="input-group-text toggle-password" style="cursor: pointer;">
+                                                                <i class="fas fa-eye"></i>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <small id="passwordMatchMsg" class="form-text"></small>
+                                                </div>
+                                                
+                                                <div class="mt-4">
+                                                    <button type="submit" name="change_password" class="btn btn-primary" id="changePasswordBtn">
+                                                        <i class="fas fa-key mr-2"></i>Change Password
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                        
+                                        <!-- Recent Activity Tab -->
+                                        <div class="tab-pane fade" id="activity" role="tabpanel">
+                                            <?php if (count($activities) > 0): ?>
+                                                <div class="timeline">
+                                                    <?php 
+                                                    $current_date = '';
+                                                    foreach ($activities as $activity): 
+                                                        $activity_date = date('Y-m-d', strtotime($activity['time_in']));
+                                                    ?>
+                                                        <?php if ($activity_date != $current_date): ?>
+                                                            <?php $current_date = $activity_date; ?>
+                                                            <div class="time-label">
+                                                                <span>
+                                                                    <i class="fas fa-calendar mr-1"></i>
+                                                                    <?php echo date('F d, Y', strtotime($activity_date)); ?>
+                                                                </span>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                        
+                                                        <div class="timeline-item">
+                                                            <div class="timeline-badge">
+                                                                <i class="fas fa-clock"></i>
+                                                            </div>
+                                                            <div class="activity-card">
+                                                                <div class="activity-header">
+                                                                    <strong><?php echo htmlspecialchars($activity['student_name']); ?></strong>
+                                                                    <span class="badge badge-<?php echo ($activity['status'] ?? 'On Time') == 'On Time' ? 'success' : 'warning'; ?>">
+                                                                        <?php echo $activity['status'] ?? 'On Time'; ?>
+                                                                    </span>
+                                                                </div>
+                                                                <div class="activity-body">
+                                                                    <div>
+                                                                        <i class="fas fa-clock mr-1 text-muted"></i>
+                                                                        <?php echo date('h:i A', strtotime($activity['time_in'])); ?>
+                                                                    </div>
+                                                                    <div class="mt-1">
+                                                                        <i class="fas fa-book-open mr-1 text-muted"></i>
+                                                                        <?php echo htmlspecialchars($activity['course_section']); ?>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <div class="text-center py-5">
+                                                    <i class="fas fa-history fa-4x text-muted mb-3"></i>
+                                                    <h5 class="text-muted">No recent activity found</h5>
+                                                    <p class="text-muted">Your attendance records will appear here</p>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        
+        <!-- Footer -->
+                <!-- Footer -->
+                <!-- Footer -->
+        <?php include 'footer.php'; ?>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+    
+    <script>
+        $(document).ready(function() {
+            // Update time every second
+            function updateTime() {
+                const now = new Date();
+                const hours = now.getHours();
+                const minutes = now.getMinutes().toString().padStart(2, '0');
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+                $('#current-time').text(`${formattedHours}:${minutes} ${ampm}`);
+            }
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            // Toggle password visibility
+            $('.toggle-password').click(function() {
+                const input = $(this).closest('.input-group').find('input');
+                const icon = $(this).find('i');
+                
+                if (input.attr('type') === 'password') {
+                    input.attr('type', 'text');
+                    icon.removeClass('fa-eye').addClass('fa-eye-slash');
+                } else {
+                    input.attr('type', 'password');
+                    icon.removeClass('fa-eye-slash').addClass('fa-eye');
+                }
+            });
+            
+            // Auto upload when file is selected
+            $('#profilePictureInput').change(function() {
+                $('#uploadForm').submit();
+            });
+            
+            // Password strength checker
+            $('#new_password').on('keyup', function() {
+                const password = $(this).val();
+                const strengthBar = $('#passwordStrengthBar');
+                let strength = 0;
+                
+                if (password.length >= 8) strength += 40;
+                if (password.match(/[A-Z]/)) strength += 15;
+                if (password.match(/[a-z]/)) strength += 15;
+                if (password.match(/[0-9]/)) strength += 15;
+                if (password.match(/[^A-Za-z0-9]/)) strength += 15;
+                
+                strength = Math.min(strength, 100);
+                strengthBar.css('width', strength + '%').attr('aria-valuenow', strength);
+                
+                if (strength < 40) {
+                    strengthBar.removeClass('bg-success bg-warning').addClass('bg-danger');
+                } else if (strength < 70) {
+                    strengthBar.removeClass('bg-success bg-danger').addClass('bg-warning');
+                } else {
+                    strengthBar.removeClass('bg-danger bg-warning').addClass('bg-success');
+                }
+            });
+            
+            // Password match checker
+            $('#confirm_password').on('keyup', function() {
+                const password = $('#new_password').val();
+                const confirm = $(this).val();
+                const msg = $('#passwordMatchMsg');
+                
+                if (password === confirm) {
+                    msg.html('<span class="text-success"><i class="fas fa-check mr-1"></i>Passwords match</span>');
+                    $('#changePasswordBtn').prop('disabled', false);
+                } else {
+                    msg.html('<span class="text-danger"><i class="fas fa-times mr-1"></i>Passwords do not match</span>');
+                    $('#changePasswordBtn').prop('disabled', true);
+                }
+            });
+            
+            // Auto-hide alerts after 5 seconds
+            setTimeout(function() {
+                $('.alert').fadeOut('slow');
+            }, 5000);
+            
+            // Form validation
+            $('#profileForm').submit(function(e) {
+                const email = $('#email').val();
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                
+                if (!emailRegex.test(email)) {
+                    e.preventDefault();
+                    alert('Please enter a valid email address.');
+                }
+            });
+            
+            $('#passwordForm').submit(function(e) {
+                if ($('#changePasswordBtn').prop('disabled')) {
+                    e.preventDefault();
+                    alert('Please make sure your passwords match.');
+                }
+            });
+            
+            // After successful upload, refresh the page to update all images
+            <?php if ($message && strpos($message, 'Profile picture') !== false): ?>
+            setTimeout(function() {
+                location.reload();
+            }, 1500);
+            <?php endif; ?>
+        });
+    </script>
+</body>
+</html>
