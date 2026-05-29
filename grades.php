@@ -66,6 +66,22 @@ function ensureGradeTables(PDO $conn) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_grade_column_visibility (
+            grade_column_visibility_id INT AUTO_INCREMENT PRIMARY KEY,
+            grade_column_id INT NOT NULL,
+            user_id INT NOT NULL,
+            program_scope VARCHAR(20) NOT NULL DEFAULT 'global',
+            is_hidden TINYINT(1) NOT NULL DEFAULT 0,
+            updated_by INT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_grade_column_visibility (grade_column_id, user_id, program_scope),
+            INDEX idx_grade_column_visibility_user (user_id, program_scope),
+            CONSTRAINT fk_grade_column_visibility_column FOREIGN KEY (grade_column_id)
+                REFERENCES tbl_grade_columns (grade_column_id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     $columns = $conn->query("SHOW COLUMNS FROM tbl_grade_columns")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('program_scope', $columns, true)) {
         $conn->exec("ALTER TABLE tbl_grade_columns ADD COLUMN program_scope VARCHAR(20) NULL AFTER column_key");
@@ -166,6 +182,27 @@ function setGradeSetting(PDO $conn, $key, $value, $userId) {
         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by)
     ");
     $stmt->execute([$key, $value, $userId]);
+}
+
+function hideGradeColumnForCurrentSheet(PDO $conn, $columnId, $userId, $programScope) {
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_grade_column_visibility (grade_column_id, user_id, program_scope, is_hidden, updated_by)
+        VALUES (?, ?, ?, 1, ?)
+        ON DUPLICATE KEY UPDATE is_hidden = 1, updated_by = VALUES(updated_by)
+    ");
+    $stmt->execute([(int) $columnId, (int) $userId, $programScope, (int) $userId]);
+}
+
+function unhideDefaultGradeColumnsForCurrentSheet(PDO $conn, $userId, $programScope) {
+    $stmt = $conn->prepare("
+        UPDATE tbl_grade_column_visibility v
+        INNER JOIN tbl_grade_columns c ON c.grade_column_id = v.grade_column_id
+        SET v.is_hidden = 0, v.updated_by = ?
+        WHERE v.user_id = ?
+          AND (v.program_scope <=> ?)
+          AND c.is_default = 1
+    ");
+    $stmt->execute([(int) $userId, (int) $userId, $programScope]);
 }
 
 function formatGradeNumber($value, $decimals = 2) {
@@ -277,6 +314,7 @@ $errors = [];
 $currentUser = getCurrentUserRecord($conn);
 $currentProgram = normalizeProgram($_SESSION['program'] ?? ($currentUser['program'] ?? null));
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
+$columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
 $attendanceWeightKey = 'attendance_weight_' . $settingScope;
 $canManageColumns = in_array($userRole, ['coordinator', 'facilitator'], true);
@@ -292,9 +330,17 @@ $columnsStmt = $conn->prepare("
         OR created_by IS NULL
         OR created_by = ?
       )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tbl_grade_column_visibility v
+        WHERE v.grade_column_id = tbl_grade_columns.grade_column_id
+          AND v.user_id = ?
+          AND (v.program_scope <=> ?)
+          AND v.is_hidden = 1
+      )
     ORDER BY sort_order ASC, grade_column_id ASC
 ");
-$columnsStmt->execute([$currentProgram, $userRole, $userId]);
+$columnsStmt->execute([$currentProgram, $userRole, $userId, $userId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
@@ -367,14 +413,46 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'delete_column' && $canManageColumns) {
         $columnId = (int) ($_POST['column_id'] ?? 0);
-        if ($userRole === 'coordinator') {
+        $selectedColumn = null;
+        foreach ($gradeColumns as $column) {
+            if ((int) $column['grade_column_id'] === $columnId) {
+                $selectedColumn = $column;
+                break;
+            }
+        }
+
+        if (!$selectedColumn) {
+            $errors[] = 'Column not found in the current class record.';
+        } elseif ((int) $selectedColumn['is_default'] === 1) {
+            hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+            $messages[] = 'Column removed from your current class record.';
+        } elseif ($userRole === 'coordinator') {
             $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0");
             $stmt->execute([$userId, $columnId]);
+            hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+            $messages[] = 'Custom column removed from the class record.';
         } else {
             $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0 AND created_by = ?");
             $stmt->execute([$userId, $columnId, $userId]);
+            if ($stmt->rowCount() > 0) {
+                $messages[] = 'Custom column removed from the class record.';
+            } else {
+                hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                $messages[] = 'Column removed from your current class record.';
+            }
         }
-        $messages[] = $stmt->rowCount() > 0 ? 'Custom column removed from the class record.' : 'Only custom columns you created can be removed.';
+    }
+
+    if ($action === 'new_class_record' && $canManageColumns) {
+        foreach ($gradeColumns as $column) {
+            hideGradeColumnForCurrentSheet($conn, (int) $column['grade_column_id'], $userId, $columnVisibilityScope);
+        }
+        $messages[] = 'Current class record cleared. Add new columns to build a new grading sheet.';
+    }
+
+    if ($action === 'restore_default_record' && $canManageColumns) {
+        unhideDefaultGradeColumnsForCurrentSheet($conn, $userId, $columnVisibilityScope);
+        $messages[] = 'Default class record restored.';
     }
 
     if ($action === 'edit_column' && $canManageColumns) {
@@ -471,7 +549,7 @@ if (!empty($_SESSION['grade_errors'])) {
     unset($_SESSION['grade_errors']);
 }
 
-$columnsStmt->execute([$currentProgram, $userRole, $userId]);
+$columnsStmt->execute([$currentProgram, $userRole, $userId, $userId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
@@ -665,6 +743,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <button class="btn btn-primary" data-toggle="modal" data-target="#addColumnModal">
                                 <i class="fas fa-plus mr-1"></i>Add Column
                             </button>
+                            <form method="POST" class="d-inline" onsubmit="return confirm('Create a new blank class record? This will remove all current columns from your view. Saved scores remain in the database but will be hidden with the removed columns.');">
+                                <input type="hidden" name="action" value="new_class_record">
+                                <button class="btn btn-outline-danger">
+                                    <i class="fas fa-file-circle-plus mr-1"></i>New Class Record
+                                </button>
+                            </form>
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="action" value="restore_default_record">
+                                <button class="btn btn-outline-info">
+                                    <i class="fas fa-rotate-left mr-1"></i>Restore Defaults
+                                </button>
+                            </form>
                             <button class="btn btn-outline-secondary" data-toggle="modal" data-target="#settingsModal">
                                 <i class="fas fa-sliders-h mr-1"></i>Settings
                             </button>
@@ -732,24 +822,21 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <?php if ($canManageColumns): ?>
                     <div class="card grade-card">
                         <div class="card-header">
-                            <h3 class="card-title"><i class="fas fa-list mr-2"></i>Custom Columns</h3>
+                            <h3 class="card-title"><i class="fas fa-list mr-2"></i>Active Class Record Columns</h3>
                         </div>
                         <div class="card-body">
-                            <?php
-                            $customColumns = array_filter($gradeColumns, function ($column) {
-                                return (int) $column['is_default'] === 0;
-                            });
-                            ?>
-                            <?php if (empty($customColumns)): ?>
-                                <span class="text-muted">No custom columns yet.</span>
+                            <?php if (empty($gradeColumns)): ?>
+                                <span class="text-muted">No columns yet. Add a column to start a new class record.</span>
                             <?php else: ?>
-                                <?php foreach ($customColumns as $column): ?>
+                                <?php foreach ($gradeColumns as $column): ?>
                                     <span class="column-chip">
                                         <?php echo htmlspecialchars($column['label']); ?>
                                         <small class="text-muted">
                                             /<?php echo formatGradeNumber($column['max_score'], 0); ?>
                                             · <?php echo formatGradeNumber($column['weight_percent'], 0); ?>%
+                                            - <?php echo (int) $column['is_default'] === 1 ? 'Default' : 'Custom'; ?>
                                         </small>
+                                        <?php if ((int) $column['is_default'] === 0): ?>
                                         <button
                                             type="button"
                                             class="btn btn-xs btn-link text-primary p-0 edit-column-btn"
@@ -763,7 +850,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             data-weight-percent="<?php echo htmlspecialchars((string) $column['weight_percent']); ?>">
                                             <i class="fas fa-pen"></i>
                                         </button>
-                                        <form method="POST" class="d-inline" onsubmit="return confirm('Remove this custom column from the class record? Existing scores will be kept in the database but hidden.');">
+                                        <?php endif; ?>
+                                        <form method="POST" class="d-inline" onsubmit="return confirm('Remove this column from the current class record? Existing scores will be kept in the database but hidden with the removed column.');">
                                             <input type="hidden" name="action" value="delete_column">
                                             <input type="hidden" name="column_id" value="<?php echo (int) $column['grade_column_id']; ?>">
                                             <button class="btn btn-xs btn-link text-danger p-0" title="Remove column">
@@ -813,7 +901,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     </thead>
                                     <tbody>
                                         <?php if (empty($students)): ?>
-                                            <tr class="grade-row" data-attendance-count="<?php echo (int) $attendanceCount; ?>">
+                                            <tr>
                                                 <td colspan="<?php echo count($gradeColumns) + 9; ?>" class="text-center text-muted py-5">
                                                     <i class="fas fa-user-graduate fa-2x d-block mb-2"></i>
                                                     No students available for this account.
@@ -834,7 +922,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                 $attendanceWeight
                                             );
                                             ?>
-                                            <tr>
+                                            <tr class="grade-row" data-attendance-count="<?php echo (int) $attendanceCount; ?>">
                                                 <td class="sticky-name">
                                                     <strong><?php echo htmlspecialchars($student['student_name']); ?></strong>
                                                     <?php if (!empty($student['student_number'])): ?>
