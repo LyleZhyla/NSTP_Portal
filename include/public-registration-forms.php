@@ -7,11 +7,17 @@ function getPublicRegistrationFieldOptions() {
         'extension_name' => 'Extension Name',
         'middle_name' => 'Middle Name',
         'birth_info' => 'Place and Date of Birth',
+        'religion' => 'Religion',
         'address' => 'Address',
         'student_number' => 'Student Number',
         'course_section' => 'Course and Year/Section',
         'formal_picture' => 'Formal Picture',
     ];
+}
+
+function normalizePublicRegistrationRole($role) {
+    $role = strtolower(trim((string) $role));
+    return in_array($role, ['student', 'facilitator'], true) ? $role : 'student';
 }
 
 function getDefaultPublicRegistrationFields() {
@@ -44,6 +50,7 @@ function ensurePublicRegistrationFormsTable(PDO $conn) {
             form_id INT AUTO_INCREMENT PRIMARY KEY,
             form_title VARCHAR(150) NOT NULL,
             form_slug VARCHAR(80) NOT NULL,
+            registration_role VARCHAR(20) NOT NULL DEFAULT 'student',
             field_config TEXT NOT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_by INT NULL,
@@ -54,6 +61,22 @@ function ensurePublicRegistrationFormsTable(PDO $conn) {
             INDEX idx_created_at (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'tbl_public_registration_forms'
+              AND COLUMN_NAME = 'registration_role'
+        ");
+        $stmt->execute();
+        if ((int) $stmt->fetchColumn() === 0) {
+            $conn->exec("ALTER TABLE tbl_public_registration_forms ADD COLUMN registration_role VARCHAR(20) NOT NULL DEFAULT 'student' AFTER form_slug");
+        }
+    } catch (Throwable $error) {
+        // Older databases can still read existing forms; saves will surface schema issues if migration fails.
+    }
 
 }
 

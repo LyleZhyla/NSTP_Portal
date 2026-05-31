@@ -56,6 +56,15 @@ function birthdayPasswordFromDate($dateValue) {
     }
 }
 
+function generateStudentAccountPassword($length = 10) {
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    $password = '';
+    for ($i = 0; $i < $length; $i++) {
+        $password .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+    return $password;
+}
+
 function sendStudentAccountEmail(PDO $conn, array $registration, $studentNumber, $password) {
     $email = trim((string) ($registration['email'] ?? ''));
     if ($email === '' || isPlaceholderEmail($email)) {
@@ -137,7 +146,7 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
         $email = 'student' . $studentNumber . '@no-email.tau-nstp.local';
     }
 
-    $password = birthdayPasswordFromDate($registration['date_of_birth'] ?? '1900-01-01');
+    $password = generateStudentAccountPassword();
     $program = normalizeProgram($registration['component'] ?? null);
 
     $conn->beginTransaction();
@@ -156,8 +165,8 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
         ]);
         $userId = (int) $conn->lastInsertId();
 
-        $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ?, account_username = ? WHERE student_number = ?");
-        $stmt->execute([$userId, $studentNumber, $studentNumber]);
+        $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ? WHERE student_number = ?");
+        $stmt->execute([$userId, $studentNumber]);
 
         $stmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ?");
         $stmt->execute([$userId, $studentNumber]);
@@ -185,16 +194,16 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
     $stmt->execute([$studentNumber]);
     $existingUserId = $stmt->fetchColumn();
     if ($existingUserId) {
-        $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ?, account_username = ? WHERE student_number = ? AND (user_id IS NULL OR user_id = 0)");
-        $stmt->execute([$existingUserId, $studentNumber, $studentNumber]);
+        $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ? WHERE student_number = ? AND (user_id IS NULL OR user_id = 0)");
+        $stmt->execute([$existingUserId, $studentNumber]);
         return ['created' => false, 'user_id' => (int) $existingUserId, 'reason' => 'already_exists'];
     }
 
     $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_public_student_registrations WHERE student_number = ?");
     $stmt->execute([$studentNumber]);
     $submissionCount = (int) $stmt->fetchColumn();
-    if ($submissionCount < 2) {
-        return ['created' => false, 'reason' => 'public_submission_below_threshold', 'submission_count' => $submissionCount];
+    if ($submissionCount < 1) {
+        return ['created' => false, 'reason' => 'registration_not_found', 'submission_count' => $submissionCount];
     }
 
     $stmt = $conn->prepare("
@@ -226,7 +235,7 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
         $email = 'student' . $studentNumber . '@no-email.tau-nstp.local';
     }
 
-    $password = birthdayPasswordFromDate($registration['date_of_birth'] ?? '1900-01-01');
+    $password = generateStudentAccountPassword();
     $program = normalizeProgram($registration['component'] ?? null);
 
     $conn->beginTransaction();
@@ -245,8 +254,8 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
         ]);
         $userId = (int) $conn->lastInsertId();
 
-        $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ?, account_username = ? WHERE student_number = ?");
-        $stmt->execute([$userId, $studentNumber, $studentNumber]);
+        $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ? WHERE student_number = ?");
+        $stmt->execute([$userId, $studentNumber]);
 
         $stmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ?");
         $stmt->execute([$userId, $studentNumber]);

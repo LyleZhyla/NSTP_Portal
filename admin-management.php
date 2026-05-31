@@ -301,7 +301,8 @@ date_default_timezone_set('Asia/Manila');
                                                     <?php if ($admin['user_id'] != $_SESSION['user_id'] && $admin['role'] != 'super_admin'): ?>
                                                     <button class="btn btn-sm btn-danger delete-admin" 
                                                             data-id="<?php echo $admin['user_id']; ?>"
-                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>">
+                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>"
+                                                            data-role="<?php echo htmlspecialchars($admin['role']); ?>">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                     <?php endif; ?>
@@ -1300,6 +1301,7 @@ $('#changePasswordForm').on('submit', function(e) {
     $('.delete-admin').on('click', function() {
         const userId = $(this).data('id');
         const userName = $(this).data('name');
+        const userRole = String($(this).data('role') || 'user').replace('_', ' ');
         
         Swal.fire({
             title: 'Delete User?',
@@ -1330,7 +1332,7 @@ $('#changePasswordForm').on('submit', function(e) {
                             <div class="spinner-border text-danger mb-3" role="status">
                                 <span class="sr-only">Loading...</span>
                             </div>
-                            <p>Please wait while we delete the administrator...</p>
+                            <p>Please wait while we delete the ${userRole} account...</p>
                         </div>
                     `,
                     allowOutsideClick: false,
@@ -1376,7 +1378,7 @@ $('#changePasswordForm').on('submit', function(e) {
                         Swal.fire({
                             icon: 'error',
                             title: 'Failed to Delete',
-                            text: 'Failed to delete admin. Please try again.',
+                            text: `Failed to delete ${userRole} account. Please try again.`,
                             showConfirmButton: true,
                             confirmButtonText: 'OK'
                         });

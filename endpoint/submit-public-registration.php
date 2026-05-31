@@ -1,6 +1,7 @@
 <?php
 session_start();
 header('Content-Type: application/json');
+date_default_timezone_set('Asia/Manila');
 
 require_once '../conn/conn.php';
 require_once '../include/public-registration-forms.php';
@@ -48,12 +49,14 @@ function ensurePublicRegistrationTable(PDO $conn) {
             registration_id INT AUTO_INCREMENT PRIMARY KEY,
             form_id INT NULL,
             user_id INT NULL,
+            registrant_role VARCHAR(20) NOT NULL DEFAULT 'student',
             last_name VARCHAR(100) NOT NULL,
             extension_name VARCHAR(30) NULL,
             first_name VARCHAR(100) NOT NULL,
             middle_name VARCHAR(100) NOT NULL,
             place_of_birth VARCHAR(255) NOT NULL,
             date_of_birth DATE NOT NULL,
+            religion VARCHAR(120) NOT NULL DEFAULT 'N/A',
             email VARCHAR(150) NOT NULL,
             province VARCHAR(120) NOT NULL,
             city_municipality VARCHAR(120) NOT NULL,
@@ -67,7 +70,6 @@ function ensurePublicRegistrationTable(PDO $conn) {
             year_section VARCHAR(40) NOT NULL,
             component VARCHAR(20) NULL,
             formal_picture VARCHAR(255) NOT NULL,
-            account_username VARCHAR(80) NOT NULL,
             email_sent TINYINT(1) NOT NULL DEFAULT 0,
             status VARCHAR(40) NOT NULL DEFAULT 'submitted',
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -84,12 +86,13 @@ function ensurePublicRegistrationTable(PDO $conn) {
         $columnChecks = [
             'form_id' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN form_id INT NULL AFTER registration_id",
             'user_id' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN user_id INT NULL AFTER form_id",
+            'registrant_role' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN registrant_role VARCHAR(20) NOT NULL DEFAULT 'student' AFTER user_id",
+            'religion' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN religion VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER date_of_birth",
             'student_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN student_number VARCHAR(10) NULL AFTER house_no",
             'college' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN college VARCHAR(150) NOT NULL DEFAULT '' AFTER student_number",
             'major' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN major VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER course",
             'component' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN component VARCHAR(20) NULL AFTER year_section",
-            'account_username' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN account_username VARCHAR(80) NOT NULL DEFAULT '' AFTER formal_picture",
-            'email_sent' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN email_sent TINYINT(1) NOT NULL DEFAULT 0 AFTER account_username",
+            'email_sent' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN email_sent TINYINT(1) NOT NULL DEFAULT 0 AFTER formal_picture",
             'status' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'submitted' AFTER email_sent",
             'created_at' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER status",
         ];
@@ -102,6 +105,9 @@ function ensurePublicRegistrationTable(PDO $conn) {
 
         $conn->exec("ALTER TABLE tbl_public_student_registrations MODIFY student_number VARCHAR(10) NULL");
         $conn->exec("ALTER TABLE tbl_public_student_registrations MODIFY course VARCHAR(150) NOT NULL");
+        if (columnExists($conn, 'tbl_public_student_registrations', 'account_username')) {
+            $conn->exec("ALTER TABLE tbl_public_student_registrations DROP COLUMN account_username");
+        }
 
         ensureStudentNumberColumn($conn);
 
@@ -209,6 +215,244 @@ function uniqueUsernameFromBase(PDO $conn, $baseValue) {
     }
 }
 
+function fullNameFromRegistrationParts($firstName, $middleName, $lastName, $extensionName = '') {
+    $parts = [
+        $firstName,
+        $middleName === 'N/A' ? '' : $middleName,
+        $lastName,
+        $extensionName === 'N/A' ? '' : $extensionName,
+    ];
+    return trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($parts))));
+}
+
+function createFacilitatorAccountFromPublicRegistration(PDO $conn, array $registration) {
+    $email = strtolower(cleanText($registration['email'] ?? ''));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || isPlaceholderEmail($email)) {
+        throw new Exception('A valid email address is required for facilitator account creation.');
+    }
+
+    $fullName = cleanText($registration['full_name'] ?? '');
+    if ($fullName === '') {
+        $fullName = fullNameFromRegistrationParts(
+            cleanText($registration['first_name'] ?? ''),
+            cleanText($registration['middle_name'] ?? 'N/A') ?: 'N/A',
+            cleanText($registration['last_name'] ?? ''),
+            cleanText($registration['extension_name'] ?? 'N/A') ?: 'N/A'
+        );
+    }
+    if ($fullName === '') {
+        $fullName = $email;
+    }
+
+    $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE email = ? LIMIT 1");
+    $stmt->execute([$email]);
+    if ($stmt->fetchColumn()) {
+        throw new Exception('This email address already has an account.');
+    }
+
+    $username = uniqueUsername($conn, $email, $registration['last_name'] ?? 'facilitator');
+    $password = generatePassword(12);
+
+    $conn->beginTransaction();
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_users (username, email, password_hash, full_name, role, program, profile_picture)
+            VALUES (?, ?, ?, ?, 'facilitator', ?, ?)
+        ");
+        $stmt->execute([
+            $username,
+            $email,
+            password_hash($password, PASSWORD_DEFAULT),
+            $fullName,
+            null,
+            $registration['formal_picture'] ?? null,
+        ]);
+        $userId = (int) $conn->lastInsertId();
+
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_public_student_registrations (
+                form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
+                date_of_birth, religion, email, province, city_municipality, barangay, street, house_no,
+                student_number, college, course, major, year_section, component, formal_picture, status
+            ) VALUES (?, ?, 'facilitator', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $registration['form_id'],
+            $userId,
+            $registration['last_name'],
+            $registration['extension_name'] ?: null,
+            $registration['first_name'],
+            $registration['middle_name'],
+            $registration['place_of_birth'],
+            $registration['date_of_birth'],
+            $registration['religion'] ?? 'N/A',
+            $email,
+            $registration['province'],
+            $registration['city_municipality'],
+            $registration['barangay'],
+            $registration['street'],
+            $registration['house_no'],
+            null,
+            $registration['college'],
+            $registration['course'],
+            $registration['major'],
+            $registration['year_section'],
+            null,
+            $registration['formal_picture'],
+            'facilitator_account',
+        ]);
+
+        $conn->commit();
+        $emailSent = sendAccountCredentialsEmail($email, $fullName, $username, $password, 'facilitator');
+        if ($emailSent) {
+            $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET email_sent = 1 WHERE user_id = ? AND registrant_role = 'facilitator'");
+            $stmt->execute([$userId]);
+        }
+
+        return ['created' => true, 'user_id' => $userId, 'username' => $username, 'email_sent' => $emailSent];
+    } catch (Throwable $error) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $error;
+    }
+}
+
+function isStudentNumberOnlyForm(array $enabledFields) {
+    foreach ($enabledFields as $fieldKey => $enabled) {
+        if ($fieldKey !== 'student_number' && !empty($enabled)) {
+            return false;
+        }
+    }
+
+    return !empty($enabledFields['student_number']);
+}
+
+function findLatestPublicRegistrationByStudentNumber(PDO $conn, $studentNumber) {
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM tbl_public_student_registrations
+        WHERE student_number = ?
+        ORDER BY
+            CASE WHEN email LIKE '%@no-email.tau-nstp.local' THEN 1 ELSE 0 END,
+            created_at DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$studentNumber]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function publicRegistrationFullName(array $registration) {
+    $parts = [
+        $registration['last_name'] ?? '',
+        $registration['first_name'] ?? '',
+    ];
+    $name = trim(implode(', ', array_filter($parts)));
+    if ($name === ',' || $name === '') {
+        $name = 'Student #' . ($registration['student_number'] ?? '');
+    }
+
+    return $name;
+}
+
+function publicRegistrationCourseSection(array $registration) {
+    $yearSection = cleanText($registration['year_section'] ?? '');
+
+    if ($yearSection !== '' && $yearSection !== 'N/A') {
+        return $yearSection;
+    }
+
+    return 'Pending Section';
+}
+
+function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
+    ensureStudentNumberColumn($conn);
+
+    $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
+    if (!preg_match('/^\d{10}$/', $studentNumber)) {
+        throw new Exception('Student Number must be exactly 10 digits and numbers only.');
+    }
+
+    $stmt = $conn->prepare("SELECT * FROM tbl_student WHERE student_number = ? LIMIT 1");
+    $stmt->execute([$studentNumber]);
+    $student = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $studentName = publicRegistrationFullName($registration);
+    $courseSection = publicRegistrationCourseSection($registration);
+    $originalSection = cleanText($registration['year_section'] ?? '');
+    if ($originalSection === '' || $originalSection === 'N/A') {
+        $originalSection = $courseSection;
+    }
+
+    if ($student) {
+        $stmt = $conn->prepare("
+            UPDATE tbl_student
+            SET student_name = ?, original_section = ?, course_section = ?
+            WHERE tbl_student_id = ?
+        ");
+        $stmt->execute([$studentName, $originalSection, $courseSection, $student['tbl_student_id']]);
+        $student['student_name'] = $studentName;
+        $student['course_section'] = $courseSection;
+        return $student;
+    }
+
+    $generatedCode = 'PUB_' . $studentNumber;
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_student (user_id, student_number, student_name, original_section, course_section, generated_code, qr_code, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+    ");
+    $stmt->execute([
+        $registration['user_id'] ?? null,
+        $studentNumber,
+        $studentName,
+        $originalSection,
+        $courseSection,
+        $generatedCode,
+    ]);
+
+    return [
+        'tbl_student_id' => (int) $conn->lastInsertId(),
+        'student_number' => $studentNumber,
+        'student_name' => $studentName,
+        'course_section' => $courseSection,
+        'generated_code' => $generatedCode,
+    ];
+}
+
+function recordPublicRegistrationAttendance(PDO $conn, array $registration) {
+    $student = ensurePublicRegistrationStudent($conn, $registration);
+    $today = date('Y-m-d');
+
+    $stmt = $conn->prepare("
+        SELECT tbl_attendance_id
+        FROM tbl_attendance
+        WHERE tbl_student_id = ? AND DATE(time_in) = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$student['tbl_student_id'], $today]);
+    $existingAttendanceId = $stmt->fetchColumn();
+    if ($existingAttendanceId) {
+        return ['recorded' => false, 'attendance_id' => (int) $existingAttendanceId, 'student' => $student, 'reason' => 'already_attended'];
+    }
+
+    $timeIn = date('Y-m-d H:i:s');
+    $cutoff = date('Y-m-d') . ' 08:00:00';
+    $status = (strtotime($timeIn) > strtotime($cutoff)) ? 'Late' : 'On Time';
+
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_attendance (tbl_student_id, time_in, status, notes)
+        VALUES (?, ?, ?, ?)
+    ");
+    $stmt->execute([
+        $student['tbl_student_id'],
+        $timeIn,
+        $status,
+        'Public QR: ' . cleanText($registration['form_title'] ?? 'Public Registration'),
+    ]);
+
+    return ['recorded' => true, 'attendance_id' => (int) $conn->lastInsertId(), 'student' => $student, 'status' => $status];
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     failRegistration('Invalid request method.');
 }
@@ -225,26 +469,31 @@ try {
     }
 
     $enabledFields = decodePublicRegistrationFields($publicForm['field_config']);
-    $studentNumberBased = !empty($enabledFields['student_number']);
+    $studentNumberOnlyForm = isStudentNumberOnlyForm($enabledFields);
+    $studentNumberBased = $studentNumberOnlyForm;
+    $registrantRole = normalizePublicRegistrationRole($publicForm['registration_role'] ?? 'student');
+    $isFacilitatorRegistration = $registrantRole === 'facilitator';
     $showNameFields = !empty($enabledFields['name']);
     $showEmailField = !empty($enabledFields['email']);
 
     $requiredFields = [];
 
-    if (!$studentNumberBased && $showNameFields) {
+    if ($isFacilitatorRegistration && $showNameFields) {
+        $requiredFields[] = 'full_name';
+    } elseif (!$studentNumberBased && $showNameFields) {
         array_push($requiredFields, 'last_name', 'first_name');
     }
 
-    if (!$studentNumberBased && $showEmailField) {
+    if (!$studentNumberBased && ($showEmailField || $isFacilitatorRegistration)) {
         $requiredFields[] = 'email';
     }
 
-    if (!$studentNumberBased && $enabledFields['middle_name']) $requiredFields[] = 'middle_name';
-    if (!$studentNumberBased && $enabledFields['birth_info']) array_push($requiredFields, 'place_of_birth', 'date_of_birth');
-    if (!$studentNumberBased && $enabledFields['address']) array_push($requiredFields, 'province', 'city_municipality', 'barangay', 'street', 'house_no');
-    if ($enabledFields['student_number']) $requiredFields[] = 'student_number';
-    if (!$studentNumberBased && $enabledFields['course_section']) array_push($requiredFields, 'college', 'course', 'year_section');
-    if ($enabledFields['course_section']) $requiredFields[] = 'component';
+    if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['middle_name']) $requiredFields[] = 'middle_name';
+    if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['birth_info']) array_push($requiredFields, 'place_of_birth', 'date_of_birth');
+    if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['religion']) $requiredFields[] = 'religion';
+    if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['address']) array_push($requiredFields, 'province', 'city_municipality', 'barangay', 'street', 'house_no');
+    if (!$isFacilitatorRegistration && $enabledFields['student_number']) $requiredFields[] = 'student_number';
+    if (!$isFacilitatorRegistration && !$studentNumberOnlyForm && $enabledFields['course_section']) array_push($requiredFields, 'college', 'course', 'year_section');
 
     foreach ($requiredFields as $field) {
         if (cleanText($_POST[$field] ?? '') === '') {
@@ -252,24 +501,26 @@ try {
         }
     }
 
+    $fullName = cleanText($_POST['full_name'] ?? '');
     $lastName = cleanText($_POST['last_name'] ?? '');
     $extensionName = cleanText($_POST['extension_name'] ?? '');
     $firstName = cleanText($_POST['first_name'] ?? '');
     $middleName = cleanText($_POST['middle_name'] ?? '');
     $placeOfBirth = cleanText($_POST['place_of_birth'] ?? '');
     $dateOfBirthInput = cleanText($_POST['date_of_birth'] ?? '');
+    $religion = (!$isFacilitatorRegistration && $enabledFields['religion']) ? cleanText($_POST['religion'] ?? '') : 'N/A';
     $email = strtolower(cleanText($_POST['email'] ?? ''));
     $province = $enabledFields['address'] ? cleanText($_POST['province'] ?? '') : 'N/A';
     $cityMunicipality = $enabledFields['address'] ? cleanText($_POST['city_municipality'] ?? '') : 'N/A';
     $barangay = $enabledFields['address'] ? cleanText($_POST['barangay'] ?? '') : 'N/A';
     $street = $enabledFields['address'] ? cleanText($_POST['street'] ?? '') : 'N/A';
     $houseNo = $enabledFields['address'] ? cleanText($_POST['house_no'] ?? '') : 'N/A';
-    $studentNumber = $enabledFields['student_number'] ? cleanText($_POST['student_number']) : null;
+    $studentNumber = (!$isFacilitatorRegistration && $enabledFields['student_number']) ? cleanText($_POST['student_number']) : null;
     $college = $enabledFields['course_section'] ? cleanText($_POST['college'] ?? '') : 'N/A';
     $course = $enabledFields['course_section'] ? cleanText($_POST['course'] ?? '') : 'N/A';
     $major = $enabledFields['course_section'] ? cleanText($_POST['major'] ?? '') : 'N/A';
     $yearSection = $enabledFields['course_section'] ? cleanText($_POST['year_section'] ?? '') : 'N/A';
-    $component = $enabledFields['course_section'] ? normalizeProgram($_POST['component'] ?? null) : null;
+    $component = null;
 
     if (!$enabledFields['extension_name']) {
         $extensionName = 'N/A';
@@ -284,10 +535,33 @@ try {
         $dateOfBirthInput = '01/01/1900';
     }
 
+    if (!$enabledFields['religion'] || $religion === '') {
+        $religion = 'N/A';
+    }
+
     if (!$showNameFields) {
         $lastName = $studentNumber ?: 'Student';
         $firstName = 'Student';
         $extensionName = 'N/A';
+    }
+
+    if ($isFacilitatorRegistration) {
+        if ($fullName === '' && $showNameFields) {
+            $fullName = trim($firstName . ' ' . $lastName);
+        }
+        if ($fullName === '') {
+            $fullName = strtok($email, '@') ?: 'Facilitator';
+        }
+        $lastName = $fullName;
+        $firstName = $fullName;
+        if ($middleName === '') $middleName = 'N/A';
+        if ($placeOfBirth === '') $placeOfBirth = 'N/A';
+        if ($dateOfBirthInput === '') $dateOfBirthInput = '01/01/1900';
+        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection', 'religion'] as $optionalField) {
+            if ($$optionalField === '') {
+                $$optionalField = 'N/A';
+            }
+        }
     }
 
     if (!$showEmailField) {
@@ -315,7 +589,7 @@ try {
             $dateOfBirthInput = '01/01/1900';
         }
 
-        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection'] as $optionalField) {
+        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection', 'religion'] as $optionalField) {
             if ($$optionalField === '') {
                 $$optionalField = 'N/A';
             }
@@ -324,10 +598,6 @@ try {
         if ($email === '') {
             $email = 'student' . $studentNumber . '@no-email.tau-nstp.local';
         }
-    }
-
-    if ($enabledFields['course_section'] && !$component) {
-        failRegistration('Please select a valid NSTP component.');
     }
 
     if (isset($_POST['extension_name_na'])) {
@@ -350,11 +620,67 @@ try {
         failRegistration('House No. is required, or use N/A if there is no house number.');
     }
 
-    if ($enabledFields['student_number'] && !preg_match('/^\d{10}$/', (string) $studentNumber)) {
+    if (!$isFacilitatorRegistration && $enabledFields['student_number'] && !preg_match('/^\d{10}$/', (string) $studentNumber)) {
         failRegistration('Student Number must be exactly 10 digits and numbers only.');
     }
 
-    if (!$studentNumberBased && $enabledFields['course_section']) {
+    if ($studentNumberOnlyForm && !$isFacilitatorRegistration) {
+        $existingRegistration = findLatestPublicRegistrationByStudentNumber($conn, $studentNumber);
+        if (!$existingRegistration) {
+            failRegistration('Student number not found. Please complete the full public registration first.');
+        }
+
+        $attendanceOnlyRegistration = $existingRegistration;
+        $attendanceOnlyRegistration['form_title'] = $publicForm['form_title'];
+        $attendanceOnlyRegistration['component'] = null;
+        $attendanceOnlyRegistration['formal_picture'] = $existingRegistration['formal_picture'] ?? 'include/logo.png';
+
+        $conn->beginTransaction();
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_public_student_registrations (
+                form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
+                date_of_birth, religion, email, province, city_municipality, barangay, street, house_no,
+                student_number, college, course, major, year_section, component, formal_picture, status
+            ) VALUES (?, ?, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $formId,
+            $existingRegistration['user_id'] ?? null,
+            $existingRegistration['last_name'],
+            cleanText($existingRegistration['extension_name'] ?? 'N/A') ?: null,
+            $existingRegistration['first_name'],
+            $existingRegistration['middle_name'],
+            $existingRegistration['place_of_birth'],
+            $existingRegistration['date_of_birth'] ?? '1900-01-01',
+            $existingRegistration['religion'] ?? 'N/A',
+            strtolower(cleanText($existingRegistration['email'] ?? '')),
+            $existingRegistration['province'],
+            $existingRegistration['city_municipality'],
+            $existingRegistration['barangay'],
+            $existingRegistration['street'],
+            $existingRegistration['house_no'],
+            $studentNumber,
+            $existingRegistration['college'],
+            $existingRegistration['course'],
+            $existingRegistration['major'],
+            $existingRegistration['year_section'],
+            $attendanceOnlyRegistration['component'],
+            $attendanceOnlyRegistration['formal_picture'],
+            'attendance_only',
+        ]);
+
+        $attendanceResult = recordPublicRegistrationAttendance($conn, $attendanceOnlyRegistration);
+        $conn->commit();
+
+        $response['success'] = true;
+        $response['message'] = !empty($attendanceResult['recorded'])
+            ? 'Attendance recorded successfully using your student number.'
+            : 'You already have an attendance record for today.';
+        echo json_encode($response);
+        exit();
+    }
+
+    if (!$isFacilitatorRegistration && !$studentNumberBased && $enabledFields['course_section']) {
         if (isset($_POST['major_na'])) {
             $major = 'N/A';
         }
@@ -386,9 +712,69 @@ try {
     }
     $dateOfBirthValue = $dateOfBirth->format('Y-m-d');
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users WHERE email = ?");
+    if ($isFacilitatorRegistration) {
+        $dbPicturePath = 'include/logo.png';
+        if ($enabledFields['formal_picture'] && !empty($_FILES['formal_picture']) && ($_FILES['formal_picture']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $picture = $_FILES['formal_picture'];
+            if ($picture['size'] > 5 * 1024 * 1024) {
+                failRegistration('Profile picture must not exceed 5MB.');
+            }
+
+            $extension = detectImageExtension($picture['tmp_name']);
+            if (!$extension) {
+                failRegistration('Profile picture must be JPG, PNG, or WEBP.');
+            }
+
+            $uploadDir = __DIR__ . '/../uploads/formal_pictures';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+                failRegistration('Unable to prepare upload folder.');
+            }
+
+            $fileName = 'facilitator_' . date('YmdHis') . '_' . bin2hex(random_bytes(5)) . '.' . $extension;
+            $targetPath = $uploadDir . '/' . $fileName;
+            $dbPicturePath = 'uploads/formal_pictures/' . $fileName;
+
+            if (!move_uploaded_file($picture['tmp_name'], $targetPath)) {
+                failRegistration('Unable to upload profile picture.');
+            }
+        }
+
+        $facilitatorResult = createFacilitatorAccountFromPublicRegistration($conn, [
+            'form_id' => $formId,
+            'full_name' => $fullName,
+            'last_name' => $lastName,
+            'extension_name' => $extensionName,
+            'first_name' => $firstName,
+            'middle_name' => $middleName,
+            'place_of_birth' => $placeOfBirth,
+            'date_of_birth' => $dateOfBirthValue,
+            'religion' => $religion,
+            'email' => $email,
+            'province' => $province,
+            'city_municipality' => $cityMunicipality,
+            'barangay' => $barangay,
+            'street' => $street,
+            'house_no' => $houseNo,
+            'college' => $college,
+            'course' => $course,
+            'major' => $major,
+            'year_section' => $yearSection,
+            'component' => null,
+            'formal_picture' => $dbPicturePath,
+        ]);
+
+        $response['success'] = true;
+        $response['message'] = !empty($facilitatorResult['email_sent'])
+            ? 'Facilitator account created successfully. Login credentials were sent to the registered email.'
+            : 'Facilitator account created successfully, but the credentials email was not sent. Please contact the administrator.';
+        echo json_encode($response);
+        exit();
+    }
+
+    $stmt = $conn->prepare("SELECT username FROM tbl_users WHERE email = ? LIMIT 1");
     $stmt->execute([$email]);
-    if ((int) $stmt->fetchColumn() > 0) {
+    $existingEmailUsername = $stmt->fetchColumn();
+    if ($existingEmailUsername && (string) $existingEmailUsername !== (string) $studentNumber) {
         failRegistration('This email address already has an account.');
     }
 
@@ -441,20 +827,22 @@ try {
 
     $stmt = $conn->prepare("
         INSERT INTO tbl_public_student_registrations (
-            form_id, user_id, last_name, extension_name, first_name, middle_name, place_of_birth,
-            date_of_birth, email, province, city_municipality, barangay, street, house_no,
-            student_number, college, course, major, year_section, component, formal_picture, account_username
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
+            date_of_birth, religion, email, province, city_municipality, barangay, street, house_no,
+            student_number, college, course, major, year_section, component, formal_picture
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $formId,
         null,
+        'student',
         $lastName,
         $extensionName ?: null,
         $firstName,
         $middleName,
         $placeOfBirth,
         $dateOfBirthValue,
+        $religion,
         $email,
         $province,
         $cityMunicipality,
@@ -468,21 +856,35 @@ try {
         $yearSection,
         $component,
         $dbPicturePath,
-        $studentNumber ?: '',
     ]);
     $registrationId = (int) $conn->lastInsertId();
 
     $conn->commit();
 
+    $registrationForAttendance = [
+        'student_number' => $studentNumber,
+        'last_name' => $lastName,
+        'extension_name' => $extensionName,
+        'first_name' => $firstName,
+        'middle_name' => $middleName,
+        'year_section' => $yearSection,
+        'component' => $component,
+        'form_title' => $publicForm['form_title'],
+        'formal_picture' => $dbPicturePath,
+        'user_id' => null,
+    ];
+    $attendanceResult = recordPublicRegistrationAttendance($conn, $registrationForAttendance);
     $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
 
     $response['success'] = true;
     if (!empty($accountResult['created'])) {
         $response['message'] = !empty($accountResult['email_sent'])
-            ? 'Registration submitted successfully. Your student account was created and login credentials were sent to your registered email.'
-            : 'Registration submitted successfully. Your student account was created, but the credentials email was not sent. Please check the registered email or contact the administrator.';
+            ? 'Registration and attendance saved successfully. Your student account was created and login credentials were sent to your registered email.'
+            : 'Registration and attendance saved successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
     } else {
-        $response['message'] = 'Registration submitted successfully. Your account will be created after your second public registration submission.';
+        $response['message'] = !empty($attendanceResult['recorded'])
+            ? 'Registration and attendance saved successfully.'
+            : 'Registration saved successfully. You already have an attendance record for today.';
     }
 } catch (Throwable $error) {
     if ($conn->inTransaction()) {

@@ -24,12 +24,14 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
             registration_id INT AUTO_INCREMENT PRIMARY KEY,
             form_id INT NULL,
             user_id INT NULL,
+            registrant_role VARCHAR(20) NOT NULL DEFAULT 'student',
             last_name VARCHAR(100) NOT NULL,
             extension_name VARCHAR(30) NULL,
             first_name VARCHAR(100) NOT NULL,
             middle_name VARCHAR(100) NOT NULL,
             place_of_birth VARCHAR(255) NOT NULL,
             date_of_birth DATE NOT NULL,
+            religion VARCHAR(120) NOT NULL DEFAULT 'N/A',
             email VARCHAR(150) NOT NULL,
             province VARCHAR(120) NOT NULL,
             city_municipality VARCHAR(120) NOT NULL,
@@ -43,7 +45,6 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
             year_section VARCHAR(40) NOT NULL,
             component VARCHAR(20) NULL,
             formal_picture VARCHAR(255) NOT NULL,
-            account_username VARCHAR(80) NOT NULL,
             email_sent TINYINT(1) NOT NULL DEFAULT 0,
             status VARCHAR(40) NOT NULL DEFAULT 'submitted',
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -59,6 +60,8 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
     try {
         $columnChecks = [
             'form_id' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN form_id INT NULL AFTER registration_id",
+            'registrant_role' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN registrant_role VARCHAR(20) NOT NULL DEFAULT 'student' AFTER user_id",
+            'religion' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN religion VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER date_of_birth",
             'student_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN student_number VARCHAR(10) NULL AFTER house_no",
             'college' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN college VARCHAR(150) NOT NULL DEFAULT '' AFTER student_number",
             'major' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN major VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER course",
@@ -81,6 +84,17 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
 
         $conn->exec("ALTER TABLE tbl_public_student_registrations MODIFY student_number VARCHAR(10) NULL");
         $conn->exec("ALTER TABLE tbl_public_student_registrations MODIFY course VARCHAR(150) NOT NULL");
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'tbl_public_student_registrations'
+              AND COLUMN_NAME = 'account_username'
+        ");
+        $stmt->execute();
+        if ((int) $stmt->fetchColumn() > 0) {
+            $conn->exec("ALTER TABLE tbl_public_student_registrations DROP COLUMN account_username");
+        }
     } catch (Throwable $error) {
         // Keep the page available even if an older database needs manual migration.
     }
@@ -198,6 +212,11 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
             padding: 14px;
             margin-bottom: 16px;
         }
+        .qr-pagination-bar {
+            border-top: 1px solid #e3edf1;
+            padding-top: 12px;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
@@ -263,7 +282,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="row">
+                        <div class="row" id="qrFormsGrid">
                             <?php if (empty($publicForms)): ?>
                                 <div class="col-12">
                                     <div class="alert alert-info mb-0">
@@ -275,10 +294,11 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                             <?php foreach ($publicForms as $formRow): ?>
                                 <?php
                                     $formFields = decodePublicRegistrationFields($formRow['field_config']);
+                                    $formRole = normalizePublicRegistrationRole($formRow['registration_role'] ?? 'student');
                                     $publicUrl = 'http://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . '/public-registration.php?form=' . urlencode($formRow['form_slug']);
                                     $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=' . urlencode($publicUrl);
                                 ?>
-                                <div class="col-lg-6 mb-3">
+                                <div class="col-lg-6 mb-3 qr-form-item">
                                     <div class="qr-form-card">
                                         <div class="row align-items-center">
                                             <div class="col-sm-4 text-center mb-3 mb-sm-0">
@@ -292,6 +312,11 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                     <?php else: ?>
                                                         <span class="badge badge-secondary">Inactive</span>
                                                     <?php endif; ?>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="badge badge-<?php echo $formRole === 'facilitator' ? 'primary' : 'info'; ?>">
+                                                        QR for <?php echo htmlspecialchars(ucfirst($formRole)); ?>
+                                                    </span>
                                                 </div>
                                                 <div class="public-link-box mb-2">
                                                     <a href="<?php echo htmlspecialchars($publicUrl); ?>" target="_blank"><?php echo htmlspecialchars($publicUrl); ?></a>
@@ -321,12 +346,23 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                 </div>
                             <?php endforeach; ?>
                         </div>
+                        <?php if (count($publicForms) > 4): ?>
+                            <div class="qr-pagination-bar d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                                <div class="text-muted small mb-2 mb-md-0">
+                                    Showing <span id="qrFormsStart">1</span>-<span id="qrFormsEnd">4</span>
+                                    of <span id="qrFormsTotal"><?php echo count($publicForms); ?></span> QR forms
+                                </div>
+                                <nav aria-label="QR form pagination">
+                                    <ul class="pagination pagination-sm mb-0" id="qrFormsPagination"></ul>
+                                </nav>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-table mr-2"></i>Submitted Student Details</h3>
+                        <h3 class="card-title"><i class="fas fa-table mr-2"></i>Submitted Public Registrations</h3>
                     </div>
                     <div class="card-body">
                         <div class="table-filter-bar">
@@ -363,13 +399,14 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     <tr>
                                         <th>Photo</th>
                                         <th>Form</th>
+                                        <th>Type</th>
                                         <th>Name</th>
                                         <th>Email</th>
                                         <th>Student No.</th>
                                         <th>Academic Info</th>
                                         <th>Component</th>
                                         <th>Address</th>
-                                        <th>Account</th>
+                                        <th>Email Status</th>
                                         <th>Submitted</th>
                                         <th>Details</th>
                                     </tr>
@@ -378,7 +415,12 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     <?php foreach ($registrations as $row): ?>
                                         <?php
                                             $registrationId = (int) $row['registration_id'];
-                                            $fullName = trim($row['last_name'] . ', ' . $row['first_name'] . ' ' . ($row['middle_name'] === 'N/A' ? '' : $row['middle_name']) . ' ' . ($row['extension_name'] ?? ''));
+                                            $registrantRole = $row['registrant_role'] ?? 'student';
+                                            if ($registrantRole === 'facilitator') {
+                                                $fullName = trim($row['full_name'] ?: $row['first_name'] ?: $row['last_name']);
+                                            } else {
+                                                $fullName = trim($row['last_name'] . ', ' . $row['first_name'] . ' ' . ($row['middle_name'] === 'N/A' ? '' : $row['middle_name']) . ' ' . ($row['extension_name'] ?? ''));
+                                            }
                                             if (($row['first_name'] ?? '') === 'Student' && ($row['last_name'] ?? '') === ($row['student_number'] ?? '')) {
                                                 $fullName = 'Student #' . $row['student_number'];
                                             }
@@ -394,11 +436,16 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             <td><img class="registration-photo" src="<?php echo htmlspecialchars($photoPath); ?>" alt="Formal picture"></td>
                                             <td><?php echo htmlspecialchars($row['form_title'] ?: 'Default Public Registration'); ?></td>
                                             <td>
+                                                <span class="badge badge-<?php echo $registrantRole === 'facilitator' ? 'primary' : 'info'; ?>">
+                                                    <?php echo htmlspecialchars(ucfirst($registrantRole)); ?>
+                                                </span>
+                                            </td>
+                                            <td>
                                                 <strong><?php echo htmlspecialchars($fullName); ?></strong>
                                                 <small class="d-block text-muted">DOB: <?php echo htmlspecialchars($dobDisplay); ?></small>
                                             </td>
                                             <td><?php echo htmlspecialchars($displayEmail); ?></td>
-                                            <td><code><?php echo htmlspecialchars($row['student_number'] ?? ''); ?></code></td>
+                                            <td><code><?php echo htmlspecialchars($row['student_number'] ?: 'N/A'); ?></code></td>
                                             <td>
                                                 <span class="badge badge-info d-block mb-1"><?php echo htmlspecialchars($row['college'] ?? 'N/A'); ?></span>
                                                 <span class="badge badge-primary"><?php echo htmlspecialchars($row['course']); ?></span>
@@ -414,11 +461,10 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             </td>
                                             <td><?php echo htmlspecialchars($address); ?></td>
                                             <td>
-                                                <code><?php echo htmlspecialchars($row['account_username']); ?></code>
                                                 <?php if ((int) $row['email_sent'] === 1): ?>
-                                                    <span class="badge badge-success d-block mt-1">Email sent</span>
+                                                    <span class="badge badge-success">Email sent</span>
                                                 <?php else: ?>
-                                                    <span class="badge badge-warning d-block mt-1">Email not sent</span>
+                                                    <span class="badge badge-warning">Email not sent</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td><?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['created_at']))); ?></td>
@@ -435,6 +481,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                     <div class="modal-header">
                                                         <h5 class="modal-title">
                                                             <i class="fas fa-user-graduate mr-2"></i><?php echo htmlspecialchars($fullName); ?>
+                                                            <span class="badge badge-<?php echo $registrantRole === 'facilitator' ? 'primary' : 'info'; ?> ml-2"><?php echo htmlspecialchars(ucfirst($registrantRole)); ?></span>
                                                         </h5>
                                                         <button type="button" class="close" data-dismiss="modal">
                                                             <span>&times;</span>
@@ -444,8 +491,8 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                         <div class="row">
                                                             <div class="col-md-4 text-center mb-3">
                                                                 <img class="detail-photo" src="<?php echo htmlspecialchars($photoPath); ?>" alt="Formal picture">
-                                                                <span class="detail-label mt-3">Account Username</span>
-                                                                <span class="detail-value"><code><?php echo htmlspecialchars($row['account_username']); ?></code></span>
+                                                                <span class="detail-label mt-3">Login Username</span>
+                                                                <span class="detail-value"><code><?php echo htmlspecialchars($row['username'] ?: $row['student_number']); ?></code></span>
                                                             </div>
                                                             <div class="col-md-8">
                                                                 <div class="row">
@@ -472,6 +519,10 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                                     <div class="col-md-6 mb-3">
                                                                         <span class="detail-label">Date of Birth</span>
                                                                         <span class="detail-value"><?php echo htmlspecialchars($dobDisplay); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Religion</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['religion'] ?? 'N/A'); ?></span>
                                                                     </div>
                                                                     <div class="col-md-6 mb-3">
                                                                         <span class="detail-label">Email</span>
@@ -523,6 +574,7 @@ function renderPublicFormModal($modalId, $title, $fieldOptions, $formRow = null)
     $fields = $formRow ? decodePublicRegistrationFields($formRow['field_config']) : getDefaultPublicRegistrationFields();
     $formId = $formRow ? (int) $formRow['form_id'] : 0;
     $formTitle = $formRow ? $formRow['form_title'] : '';
+    $formRole = normalizePublicRegistrationRole($formRow['registration_role'] ?? 'student');
     $isActive = !$formRow || (int) $formRow['is_active'] === 1;
 ?>
 <div class="modal fade" id="<?php echo htmlspecialchars($modalId); ?>" tabindex="-1">
@@ -538,9 +590,16 @@ function renderPublicFormModal($modalId, $title, $fieldOptions, $formRow = null)
                     <label>Form Title <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" name="form_title" value="<?php echo htmlspecialchars($formTitle); ?>" placeholder="e.g., CWTS Batch 1 Registration" required>
                 </div>
+                <div class="form-group">
+                    <label>QR Registration Type <span class="text-danger">*</span></label>
+                    <select class="form-control public-registration-role" name="registration_role" required>
+                        <option value="student" <?php echo $formRole === 'student' ? 'selected' : ''; ?>>Student</option>
+                        <option value="facilitator" <?php echo $formRole === 'facilitator' ? 'selected' : ''; ?>>Facilitator</option>
+                    </select>
+                </div>
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle mr-1"></i>
-                    Use Select All if the QR form should ask for every student detail, including name and student number.
+                    Choose whether this QR is for student registrations/attendance or facilitator account creation.
                 </div>
                 <div class="custom-control custom-checkbox mb-3">
                     <input class="custom-control-input public-select-all" type="checkbox" id="<?php echo htmlspecialchars($modalId); ?>_select_all">
@@ -564,7 +623,7 @@ function renderPublicFormModal($modalId, $title, $fieldOptions, $formRow = null)
                 <hr>
                 <div class="custom-control custom-switch">
                     <input class="custom-control-input" type="checkbox" id="<?php echo htmlspecialchars($modalId); ?>_active" name="is_active" <?php echo $isActive ? 'checked' : ''; ?>>
-                    <label class="custom-control-label" for="<?php echo htmlspecialchars($modalId); ?>_active">Active and usable by students</label>
+                    <label class="custom-control-label" for="<?php echo htmlspecialchars($modalId); ?>_active">Active and usable by public registrants</label>
                 </div>
             </div>
             <div class="modal-footer">
@@ -594,7 +653,7 @@ foreach ($publicForms as $formRow) {
     $(function () {
         const registrationsTable = $('#registrationsTable').DataTable({
             responsive: true,
-            order: [[9, 'desc']],
+            order: [[10, 'desc']],
             pageLength: 25
         });
 
@@ -626,6 +685,59 @@ foreach ($publicForms as $formRow) {
 
         registrationsTable.on('draw', updateVisibleSubmissionCount);
         updateVisibleSubmissionCount();
+
+        const qrPageSize = 4;
+        let qrCurrentPage = 1;
+        const qrItems = $('.qr-form-item');
+        const qrTotalPages = Math.ceil(qrItems.length / qrPageSize);
+
+        function renderQrPagination() {
+            if (qrTotalPages <= 1) return;
+
+            const startIndex = (qrCurrentPage - 1) * qrPageSize;
+            const endIndex = Math.min(startIndex + qrPageSize, qrItems.length);
+            qrItems.hide().slice(startIndex, endIndex).show();
+            $('#qrFormsStart').text(startIndex + 1);
+            $('#qrFormsEnd').text(endIndex);
+
+            const pagination = $('#qrFormsPagination');
+            pagination.empty();
+
+            const prevDisabled = qrCurrentPage === 1 ? ' disabled' : '';
+            pagination.append(`
+                <li class="page-item${prevDisabled}">
+                    <button type="button" class="page-link qr-page-link" data-page="${qrCurrentPage - 1}" aria-label="Previous">&laquo;</button>
+                </li>
+            `);
+
+            for (let page = 1; page <= qrTotalPages; page++) {
+                const active = page === qrCurrentPage ? ' active' : '';
+                pagination.append(`
+                    <li class="page-item${active}">
+                        <button type="button" class="page-link qr-page-link" data-page="${page}">${page}</button>
+                    </li>
+                `);
+            }
+
+            const nextDisabled = qrCurrentPage === qrTotalPages ? ' disabled' : '';
+            pagination.append(`
+                <li class="page-item${nextDisabled}">
+                    <button type="button" class="page-link qr-page-link" data-page="${qrCurrentPage + 1}" aria-label="Next">&raquo;</button>
+                </li>
+            `);
+        }
+
+        $('#qrFormsPagination').on('click', '.qr-page-link', function() {
+            const targetPage = Number($(this).data('page'));
+            if (!targetPage || targetPage < 1 || targetPage > qrTotalPages || targetPage === qrCurrentPage) {
+                return;
+            }
+
+            qrCurrentPage = targetPage;
+            renderQrPagination();
+        });
+
+        renderQrPagination();
 
         $('.public-form-settings').on('submit', function(e) {
             e.preventDefault();
@@ -660,8 +772,21 @@ foreach ($publicForms as $formRow) {
             $(form).find('.public-select-all').prop('checked', fieldChecks.length > 0 && checkedCount === fieldChecks.length);
         }
 
+        function applyFormRoleSettings(form) {
+            const role = $(form).find('.public-registration-role').val();
+            if (role === 'facilitator') {
+                $(form).find('[name="fields[name]"], [name="fields[email]"]').prop('checked', true);
+                $(form).find('[name="fields[course_section]"], [name="fields[student_number]"], [name="fields[extension_name]"], [name="fields[middle_name]"], [name="fields[birth_info]"], [name="fields[religion]"], [name="fields[address]"], [name="fields[formal_picture]"]').prop('checked', false);
+            }
+            syncSelectAll(form);
+        }
+
         $('.public-form-settings').each(function() {
-            syncSelectAll(this);
+            applyFormRoleSettings(this);
+        });
+
+        $('.public-registration-role').on('change', function() {
+            applyFormRoleSettings($(this).closest('form'));
         });
 
         $('.public-select-all').on('change', function() {
@@ -670,7 +795,7 @@ foreach ($publicForms as $formRow) {
         });
 
         $('.public-field-check').on('change', function() {
-            syncSelectAll($(this).closest('form'));
+            applyFormRoleSettings($(this).closest('form'));
         });
 
         $('.delete-public-form').on('click', function() {

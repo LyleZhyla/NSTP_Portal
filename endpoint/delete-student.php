@@ -1,6 +1,7 @@
 <?php
 session_start(); // Add session start
 include('../conn/conn.php');
+require_once '../include/user-permissions.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo "
@@ -18,18 +19,8 @@ if (isset($_GET['student'])) {
     $userRole = $_SESSION['role'] ?? 'facilitator';
 
     try {
-        if ($userRole === 'super_admin') {
-            echo "
-                <script>
-                    alert('Super Admin has read-only access to student folders.');
-                    window.location.href = '../masterlist.php';
-                </script>
-            ";
-            exit();
-        }
-
         // First, check if student exists and user has permission
-        $checkStmt = $conn->prepare("SELECT created_by FROM tbl_student WHERE tbl_student_id = ?");
+        $checkStmt = $conn->prepare("SELECT tbl_student_id, student_name, created_by FROM tbl_student WHERE tbl_student_id = ?");
         $checkStmt->execute([$studentId]);
         
         if ($checkStmt->rowCount() === 0) {
@@ -44,8 +35,8 @@ if (isset($_GET['student'])) {
         
         $student = $checkStmt->fetch();
         
-        // Check permission: only the facilitator who owns the student can delete
-        if ($student['created_by'] != $userId) {
+        // Super admin can delete any student. Other staff can only delete students they created.
+        if ($userRole !== 'super_admin' && $student['created_by'] != $userId) {
             echo "
                 <script>
                     alert('You do not have permission to delete this student!');
@@ -54,13 +45,29 @@ if (isset($_GET['student'])) {
             ";
             exit();
         }
-        
+
+        if (function_exists('ensureSystemLogsTable')) {
+            ensureSystemLogsTable($conn);
+        }
+
+        $conn->beginTransaction();
+
+        $archiveStmt = $conn->prepare("DELETE FROM tbl_attendance_archive WHERE tbl_student_id = ?");
+        $archiveStmt->execute([$studentId]);
+
+        $attendanceStmt = $conn->prepare("DELETE FROM tbl_attendance WHERE tbl_student_id = ?");
+        $attendanceStmt->execute([$studentId]);
+
         // Delete student if permission granted
         $query = "DELETE FROM tbl_student WHERE tbl_student_id = ?";
         $stmt = $conn->prepare($query);
         $query_execute = $stmt->execute([$studentId]);
 
         if ($query_execute) {
+            if (function_exists('logSystemEvent')) {
+                logSystemEvent($conn, 'student_deleted', 'Deleted student record ID ' . $studentId . ': ' . ($student['student_name'] ?? 'Unknown'));
+            }
+            $conn->commit();
             echo "
                 <script>
                     alert('Student deleted successfully!');
@@ -68,6 +75,7 @@ if (isset($_GET['student'])) {
                 </script>
             ";
         } else {
+            $conn->rollBack();
             echo "
                 <script>
                     alert('Failed to delete student!');
@@ -77,6 +85,9 @@ if (isset($_GET['student'])) {
         }
 
     } catch (PDOException $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         echo "
             <script>
                 alert('Error: " . addslashes($e->getMessage()) . "');

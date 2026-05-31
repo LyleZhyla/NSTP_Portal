@@ -3,6 +3,17 @@ session_start();
 require_once '../conn/conn.php'; // Fixed path
 require_once '../include/user-permissions.php';
 
+function deleteAdminTableExists(PDO $conn, $tableName) {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+    ");
+    $stmt->execute([$tableName]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
     header('Content-Type: application/json');
@@ -56,12 +67,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Start transaction
         $conn->beginTransaction();
         
+        if ($user['role'] === 'student') {
+            if (deleteAdminTableExists($conn, 'tbl_student')) {
+                $unlinkStudentStmt = $conn->prepare("UPDATE tbl_student SET user_id = NULL WHERE user_id = ?");
+                $unlinkStudentStmt->execute([$user_id]);
+            }
+
+            if (deleteAdminTableExists($conn, 'tbl_public_student_registrations')) {
+                $unlinkRegistrationStmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = NULL WHERE user_id = ?");
+                $unlinkRegistrationStmt->execute([$user_id]);
+            }
+        }
+
         // First, delete related records in tbl_admin_sections
         $deleteSectionsStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE user_id = ?");
         $deleteSectionsStmt->execute([$user_id]);
         
         // Delete profile picture file if exists
-        if (!empty($user['profile_picture'])) {
+        if (!empty($user['profile_picture']) && strpos($user['profile_picture'], 'uploads/profile_pictures/') === 0) {
             $file_path = '../' . $user['profile_picture'];
             if (file_exists($file_path)) {
                 unlink($file_path);
@@ -78,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         echo json_encode([
             'success' => true, 
-            'message' => 'User deleted successfully'
+            'message' => ucfirst(str_replace('_', ' ', $user['role'])) . ' account deleted successfully'
         ]);
         
     } catch (PDOException $e) {
