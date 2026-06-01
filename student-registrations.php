@@ -282,6 +282,37 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="table-filter-bar">
+                            <div class="row align-items-end">
+                                <div class="col-md-4">
+                                    <label for="qrRoleFilter" class="mb-1">Filter by QR Type</label>
+                                    <select class="form-control" id="qrRoleFilter">
+                                        <option value="">All QR types</option>
+                                        <option value="student">Student</option>
+                                        <option value="facilitator">Facilitator</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mt-3 mt-md-0">
+                                    <label for="qrSortFilter" class="mb-1">Sort QR Forms</label>
+                                    <select class="form-control" id="qrSortFilter">
+                                        <option value="latest">Latest Created</option>
+                                        <option value="oldest">Oldest Created</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0">
+                                    <span class="detail-label">Visible QR Forms</span>
+                                    <span class="detail-value">
+                                        <span id="visibleQrFormsCount"><?php echo count($publicForms); ?></span>
+                                        of <?php echo count($publicForms); ?>
+                                    </span>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0 text-md-right">
+                                    <button type="button" class="btn btn-outline-secondary" id="clearQrFilters">
+                                        <i class="fas fa-filter-circle-xmark mr-1"></i> Clear QR Filter
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="row" id="qrFormsGrid">
                             <?php if (empty($publicForms)): ?>
                                 <div class="col-12">
@@ -298,7 +329,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     $publicUrl = 'http://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . '/public-registration.php?form=' . urlencode($formRow['form_slug']);
                                     $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=' . urlencode($publicUrl);
                                 ?>
-                                <div class="col-lg-6 mb-3 qr-form-item">
+                                <div class="col-lg-6 mb-3 qr-form-item" data-role="<?php echo htmlspecialchars($formRole); ?>" data-created="<?php echo (int) strtotime($formRow['created_at'] ?? 'now'); ?>">
                                     <div class="qr-form-card">
                                         <div class="row align-items-center">
                                             <div class="col-sm-4 text-center mb-3 mb-sm-0">
@@ -346,17 +377,19 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                 </div>
                             <?php endforeach; ?>
                         </div>
-                        <?php if (count($publicForms) > 4): ?>
-                            <div class="qr-pagination-bar d-flex flex-column flex-md-row justify-content-between align-items-md-center">
-                                <div class="text-muted small mb-2 mb-md-0">
-                                    Showing <span id="qrFormsStart">1</span>-<span id="qrFormsEnd">4</span>
-                                    of <span id="qrFormsTotal"><?php echo count($publicForms); ?></span> QR forms
-                                </div>
-                                <nav aria-label="QR form pagination">
-                                    <ul class="pagination pagination-sm mb-0" id="qrFormsPagination"></ul>
-                                </nav>
+                        <div class="alert alert-info mb-0" id="qrFormsEmpty" style="display:none;">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            No QR forms match the selected filters.
+                        </div>
+                        <div class="qr-pagination-bar d-flex flex-column flex-md-row justify-content-between align-items-md-center" id="qrPaginationBar">
+                            <div class="text-muted small mb-2 mb-md-0">
+                                Showing <span id="qrFormsStart">0</span>-<span id="qrFormsEnd">0</span>
+                                of <span id="qrFormsTotal"><?php echo count($publicForms); ?></span> QR forms
                             </div>
-                        <?php endif; ?>
+                            <nav aria-label="QR form pagination">
+                                <ul class="pagination pagination-sm mb-0" id="qrFormsPagination"></ul>
+                            </nav>
+                        </div>
                     </div>
                 </div>
 
@@ -367,7 +400,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                     <div class="card-body">
                         <div class="table-filter-bar">
                             <div class="row align-items-end">
-                                <div class="col-md-5">
+                                <div class="col-md-4">
                                     <label for="formTitleFilter" class="mb-1">Filter by Form Title</label>
                                     <select class="form-control" id="formTitleFilter">
                                         <option value="">All public registration forms</option>
@@ -376,17 +409,38 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 <?php echo htmlspecialchars($formRow['form_title']); ?>
                                             </option>
                                         <?php endforeach; ?>
-                                        <option value="Default Public Registration">Default Public Registration</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4 mt-3 mt-md-0">
+                                <div class="col-md-2 mt-3 mt-md-0">
+                                    <label for="componentFilter" class="mb-1">Component</label>
+                                    <select class="form-control" id="componentFilter" <?php echo $role === 'coordinator' ? 'disabled' : ''; ?>>
+                                        <?php if ($role === 'coordinator'): ?>
+                                            <option value="<?php echo htmlspecialchars(normalizeProgram($currentUser['program'] ?? null) ?? ''); ?>" selected>
+                                                <?php echo htmlspecialchars(normalizeProgram($currentUser['program'] ?? null) ?? 'Component'); ?>
+                                            </option>
+                                        <?php else: ?>
+                                            <option value="">All Components</option>
+                                            <option value="CWTS">CWTS</option>
+                                            <option value="LTS">LTS</option>
+                                            <option value="ROTC">ROTC</option>
+                                        <?php endif; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0">
                                     <span class="detail-label">Visible Submissions</span>
                                     <span class="detail-value">
                                         <span id="visibleSubmissionCount"><?php echo (int) $totalRegistrations; ?></span>
                                         of <?php echo (int) $totalRegistrations; ?>
                                     </span>
                                 </div>
-                                <div class="col-md-3 mt-3 mt-md-0 text-md-right">
+                                <div class="col-md-2 mt-3 mt-md-0">
+                                    <label for="publicAttendanceDate" class="mb-1">Attendance Date</label>
+                                    <input type="date" class="form-control" id="publicAttendanceDate" value="<?php echo date('Y-m-d'); ?>">
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0 text-md-right">
+                                    <a class="btn btn-success mb-2" id="downloadPublicAttendance" href="endpoint/download-public-registration-attendance.php?date=<?php echo date('Y-m-d'); ?>">
+                                        <i class="fas fa-file-excel mr-1"></i> Download Attendance
+                                    </a>
                                     <button type="button" class="btn btn-outline-secondary" id="clearFormTitleFilter">
                                         <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
                                     </button>
@@ -434,7 +488,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                         ?>
                                         <tr>
                                             <td><img class="registration-photo" src="<?php echo htmlspecialchars($photoPath); ?>" alt="Formal picture"></td>
-                                            <td><?php echo htmlspecialchars($row['form_title'] ?: 'Default Public Registration'); ?></td>
+                                            <td><?php echo htmlspecialchars($row['form_title'] ?: 'Unlinked QR Form'); ?></td>
                                             <td>
                                                 <span class="badge badge-<?php echo $registrantRole === 'facilitator' ? 'primary' : 'info'; ?>">
                                                     <?php echo htmlspecialchars(ucfirst($registrantRole)); ?>
@@ -665,8 +719,29 @@ foreach ($publicForms as $formRow) {
             $('#visibleSubmissionCount').text(registrationsTable.rows({ filter: 'applied' }).count());
         }
 
+        function updatePublicAttendanceDownloadLink() {
+            const params = new URLSearchParams();
+            params.set('date', $('#publicAttendanceDate').val() || new Date().toISOString().slice(0, 10));
+            const selectedFormTitle = $('#formTitleFilter').val();
+            if (selectedFormTitle) {
+                params.set('form_title', selectedFormTitle);
+            }
+            const selectedComponent = $('#componentFilter').val();
+            if (selectedComponent) {
+                params.set('component', selectedComponent);
+            }
+            $('#downloadPublicAttendance').attr('href', 'endpoint/download-public-registration-attendance.php?' + params.toString());
+        }
+
+        function applyComponentFilter() {
+            const selectedComponent = $('#componentFilter').val();
+            registrationsTable.column(7).search(selectedComponent || '').draw();
+            updatePublicAttendanceDownloadLink();
+        }
+
         $('#formTitleFilter').on('change', function() {
             const selectedFormTitle = $(this).val();
+            updatePublicAttendanceDownloadLink();
             if (selectedFormTitle === '') {
                 registrationsTable.column(1).search('').draw();
                 return;
@@ -680,28 +755,72 @@ foreach ($publicForms as $formRow) {
 
         $('#clearFormTitleFilter').on('click', function() {
             $('#formTitleFilter').val('');
+            <?php if ($role !== 'coordinator'): ?>
+            $('#componentFilter').val('');
+            <?php endif; ?>
+            updatePublicAttendanceDownloadLink();
+            registrationsTable.column(7).search('');
             registrationsTable.column(1).search('').draw();
         });
 
+        $('#publicAttendanceDate').on('change', updatePublicAttendanceDownloadLink);
+        $('#componentFilter').on('change', applyComponentFilter);
+
         registrationsTable.on('draw', updateVisibleSubmissionCount);
         updateVisibleSubmissionCount();
+        applyComponentFilter();
+        updatePublicAttendanceDownloadLink();
 
         const qrPageSize = 4;
         let qrCurrentPage = 1;
         const qrItems = $('.qr-form-item');
-        const qrTotalPages = Math.ceil(qrItems.length / qrPageSize);
+        let filteredQrItems = qrItems.toArray();
+
+        function applyQrFilters() {
+            const selectedRole = $('#qrRoleFilter').val();
+            const sortMode = $('#qrSortFilter').val();
+
+            filteredQrItems = qrItems.toArray().filter(item => {
+                return !selectedRole || $(item).data('role') === selectedRole;
+            });
+
+            filteredQrItems.sort((a, b) => {
+                const firstCreated = Number($(a).data('created')) || 0;
+                const secondCreated = Number($(b).data('created')) || 0;
+                return sortMode === 'oldest' ? firstCreated - secondCreated : secondCreated - firstCreated;
+            });
+
+            $('#qrFormsGrid').append(filteredQrItems);
+            qrCurrentPage = 1;
+            renderQrPagination();
+        }
 
         function renderQrPagination() {
-            if (qrTotalPages <= 1) return;
-
+            const qrTotalPages = Math.ceil(filteredQrItems.length / qrPageSize);
             const startIndex = (qrCurrentPage - 1) * qrPageSize;
-            const endIndex = Math.min(startIndex + qrPageSize, qrItems.length);
-            qrItems.hide().slice(startIndex, endIndex).show();
-            $('#qrFormsStart').text(startIndex + 1);
+            const endIndex = Math.min(startIndex + qrPageSize, filteredQrItems.length);
+
+            qrItems.hide();
+            $('#visibleQrFormsCount').text(filteredQrItems.length);
+            $('#qrFormsTotal').text(filteredQrItems.length);
+            $('#qrFormsEmpty').toggle(filteredQrItems.length === 0);
+            $('#qrPaginationBar').toggle(filteredQrItems.length > 0);
+            $('#qrFormsStart').text(filteredQrItems.length === 0 ? 0 : startIndex + 1);
             $('#qrFormsEnd').text(endIndex);
+
+            if (filteredQrItems.length === 0) {
+                $('#qrFormsPagination').empty();
+                return;
+            }
+
+            $(filteredQrItems).slice(startIndex, endIndex).show();
 
             const pagination = $('#qrFormsPagination');
             pagination.empty();
+
+            if (qrTotalPages <= 1) {
+                return;
+            }
 
             const prevDisabled = qrCurrentPage === 1 ? ' disabled' : '';
             pagination.append(`
@@ -729,6 +848,7 @@ foreach ($publicForms as $formRow) {
 
         $('#qrFormsPagination').on('click', '.qr-page-link', function() {
             const targetPage = Number($(this).data('page'));
+            const qrTotalPages = Math.ceil(filteredQrItems.length / qrPageSize);
             if (!targetPage || targetPage < 1 || targetPage > qrTotalPages || targetPage === qrCurrentPage) {
                 return;
             }
@@ -737,7 +857,14 @@ foreach ($publicForms as $formRow) {
             renderQrPagination();
         });
 
-        renderQrPagination();
+        $('#qrRoleFilter, #qrSortFilter').on('change', applyQrFilters);
+        $('#clearQrFilters').on('click', function() {
+            $('#qrRoleFilter').val('');
+            $('#qrSortFilter').val('latest');
+            applyQrFilters();
+        });
+
+        applyQrFilters();
 
         $('.public-form-settings').on('submit', function(e) {
             e.preventDefault();

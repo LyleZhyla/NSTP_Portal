@@ -202,8 +202,8 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
     $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_public_student_registrations WHERE student_number = ?");
     $stmt->execute([$studentNumber]);
     $submissionCount = (int) $stmt->fetchColumn();
-    if ($submissionCount < 1) {
-        return ['created' => false, 'reason' => 'registration_not_found', 'submission_count' => $submissionCount];
+    if ($submissionCount < 2) {
+        return ['created' => false, 'reason' => 'submission_below_threshold', 'submission_count' => $submissionCount];
     }
 
     $stmt = $conn->prepare("

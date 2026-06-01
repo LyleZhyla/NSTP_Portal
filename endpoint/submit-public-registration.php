@@ -671,11 +671,18 @@ try {
 
         $attendanceResult = recordPublicRegistrationAttendance($conn, $attendanceOnlyRegistration);
         $conn->commit();
+        $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
 
         $response['success'] = true;
-        $response['message'] = !empty($attendanceResult['recorded'])
-            ? 'Attendance recorded successfully using your student number.'
-            : 'You already have an attendance record for today.';
+        if (!empty($accountResult['created'])) {
+            $response['message'] = !empty($accountResult['email_sent'])
+                ? 'Attendance recorded successfully. Your student account was created and login credentials were sent to your registered email.'
+                : 'Attendance recorded successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
+        } else {
+            $response['message'] = !empty($attendanceResult['recorded'])
+                ? 'Attendance recorded successfully using your student number.'
+                : 'You already have an attendance record for today.';
+        }
         echo json_encode($response);
         exit();
     }

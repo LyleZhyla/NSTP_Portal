@@ -111,7 +111,7 @@ $showEmailField = !empty($fields['email']);
                     </div>
                     <div class="col-md-3 student-only-field">
                         <label class="form-label" for="date_of_birth">Date of Birth <?php if (!$studentNumberBased): ?><span class="required">*</span><?php endif; ?></label>
-                        <input type="text" class="form-control" id="date_of_birth" name="date_of_birth" placeholder="mm/dd/yyyy" <?php echo $studentNumberBased ? '' : 'required'; ?>>
+                        <input type="text" class="form-control" id="date_of_birth" name="date_of_birth" inputmode="numeric" maxlength="10" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="mm/dd/yyyy" <?php echo $studentNumberBased ? '' : 'required'; ?>>
                     </div>
                     <?php endif; ?>
                     <?php if (!$isFacilitatorForm && $fields['religion']): ?>
@@ -251,6 +251,7 @@ $showEmailField = !empty($fields['email']);
         const extensionNameNA = document.getElementById('extension_name_na');
         const middleName = document.getElementById('middle_name');
         const middleNameNA = document.getElementById('middle_name_na');
+        const dateOfBirth = document.getElementById('date_of_birth');
         const houseNo = document.getElementById('house_no');
         const houseNoNA = document.getElementById('house_no_na');
         const studentNumber = document.getElementById('student_number');
@@ -376,6 +377,15 @@ $showEmailField = !empty($fields['email']);
             studentNumber.value = studentNumber.value.replace(/\D/g, '').slice(0, 10);
         });
 
+        if (dateOfBirth) dateOfBirth.addEventListener('input', () => {
+            const digits = dateOfBirth.value.replace(/\D/g, '').slice(0, 8);
+            const parts = [];
+            if (digits.length > 0) parts.push(digits.slice(0, 2));
+            if (digits.length > 2) parts.push(digits.slice(2, 4));
+            if (digits.length > 4) parts.push(digits.slice(4, 8));
+            dateOfBirth.value = parts.join('/');
+        });
+
         function resetSelect(select, placeholder, disabled = true) {
             if (!select) return;
             select.innerHTML = `<option value="">${placeholder}</option>`;
@@ -495,6 +505,12 @@ $showEmailField = !empty($fields['email']);
             if (currentRegistrantRole() !== 'facilitator' && studentNumber && !/^\d{10}$/.test(studentNumber.value.trim())) {
                 showAlert('danger', 'Student Number must be exactly 10 digits.');
                 studentNumber.focus();
+                return;
+            }
+
+            if (currentRegistrantRole() !== 'facilitator' && !studentNumberBased && dateOfBirth && !/^\d{2}\/\d{2}\/\d{4}$/.test(dateOfBirth.value.trim())) {
+                showAlert('danger', 'Date of Birth must use mm/dd/yyyy format.');
+                dateOfBirth.focus();
                 return;
             }
 
