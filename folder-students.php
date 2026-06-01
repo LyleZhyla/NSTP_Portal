@@ -23,9 +23,106 @@ $component = normalizeProgram($_GET['component'] ?? null);
 $pageTitle = 'Folder Students';
 $folderMeta = '';
 $students = [];
+$facilitatorFolderCards = [];
+
+function folderStudentsTableExists(PDO $conn, $tableName) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+        ");
+        $stmt->execute([$tableName]);
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function attachLatestRegistrationDetails(PDO $conn, array $students) {
+    if (empty($students) || !folderStudentsTableExists($conn, 'tbl_public_student_registrations')) {
+        return $students;
+    }
+
+    $studentNumbers = [];
+    foreach ($students as $student) {
+        $studentNumber = trim((string) ($student['student_number'] ?? ''));
+        if ($studentNumber !== '') {
+            $studentNumbers[$studentNumber] = true;
+        }
+    }
+
+    if (empty($studentNumbers)) {
+        return $students;
+    }
+
+    $studentNumbers = array_keys($studentNumbers);
+    $placeholders = implode(',', array_fill(0, count($studentNumbers), '?'));
+    $stmt = $conn->prepare("
+        SELECT r.*
+        FROM tbl_public_student_registrations r
+        INNER JOIN (
+            SELECT student_number, MAX(registration_id) AS latest_registration_id
+            FROM tbl_public_student_registrations
+            WHERE student_number IN ($placeholders)
+            GROUP BY student_number
+        ) latest ON latest.latest_registration_id = r.registration_id
+    ");
+    $stmt->execute($studentNumbers);
+
+    $registrations = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $registration) {
+        $registrations[(string) $registration['student_number']] = $registration;
+    }
+
+    foreach ($students as &$student) {
+        $studentNumber = (string) ($student['student_number'] ?? '');
+        $student['_registration'] = $registrations[$studentNumber] ?? [];
+    }
+    unset($student);
+
+    return $students;
+}
+
+function detailValue(array $student, $key) {
+    $registration = $student['_registration'] ?? [];
+
+    if (array_key_exists($key, $registration)) {
+        return $registration[$key];
+    }
+
+    return $student[$key] ?? '';
+}
+
+function displayDetailValue($value) {
+    $value = trim((string) ($value ?? ''));
+    return $value === '' ? 'N/A' : $value;
+}
 
 try {
-    if ($scope === 'pending' && $role === 'coordinator') {
+    if ($scope === 'component' && $role === 'super_admin') {
+        $program = $component;
+        if (!$program) {
+            throw new RuntimeException('Invalid component folder.');
+        }
+
+        $stmt = $conn->prepare("
+            SELECT s.*
+            FROM tbl_student s
+            LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+            WHERE (creator.role = 'facilitator' AND creator.program = ?)
+               OR ((s.created_by IS NULL OR creator.role <> 'facilitator') AND s.course_section = ?)
+            ORDER BY
+                COALESCE(NULLIF(creator.full_name, ''), creator.username, 'Pending/System') ASC,
+                s.course_section ASC,
+                s.student_name ASC
+        ");
+        $stmt->execute([$program, $program]);
+        $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $pageTitle = $program;
+        $folderMeta = 'Component folder';
+    } elseif ($scope === 'pending' && $role === 'coordinator') {
         $program = $component ?: normalizeProgram($currentUser['program'] ?? null);
         if (!$program) {
             throw new RuntimeException('Coordinator component is missing.');
@@ -47,6 +144,49 @@ try {
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $pageTitle = $program . ' Pending Assignment';
         $folderMeta = 'Students waiting for facilitator folder assignment';
+    } elseif ($scope === 'coordinator_facilitator' && $role === 'coordinator') {
+        $program = normalizeProgram($currentUser['program'] ?? null);
+        if ($facilitatorId <= 0 || !$program) {
+            throw new RuntimeException('Invalid facilitator folder.');
+        }
+
+        $stmt = $conn->prepare("
+            SELECT full_name, username
+            FROM tbl_users
+            WHERE user_id = ? AND role = 'facilitator' AND program = ?
+        ");
+        $stmt->execute([$facilitatorId, $program]);
+        $facilitator = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$facilitator) {
+            throw new RuntimeException('You are not allowed to view this facilitator.');
+        }
+
+        $stmt = $conn->prepare("
+            SELECT
+                ads.admin_section_id,
+                ads.course_section,
+                COUNT(s.tbl_student_id) AS student_count
+            FROM tbl_admin_sections ads
+            LEFT JOIN tbl_student s
+                ON s.created_by = ads.user_id
+               AND s.course_section = ads.course_section
+            WHERE ads.user_id = ?
+            GROUP BY ads.admin_section_id, ads.course_section
+            ORDER BY ads.course_section ASC
+        ");
+        $stmt->execute([$facilitatorId]);
+        $facilitatorFolderCards = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmt = $conn->prepare("
+            SELECT *
+            FROM tbl_student
+            WHERE created_by = ?
+            ORDER BY course_section ASC, student_name ASC
+        ");
+        $stmt->execute([$facilitatorId]);
+        $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $pageTitle = $facilitator['full_name'] ?: $facilitator['username'];
+        $folderMeta = $program . ' Facilitator';
     } elseif ($scope === 'coordinator' && $role === 'coordinator') {
         $program = normalizeProgram($currentUser['program'] ?? null);
         if ($facilitatorId <= 0 || $folder === '' || !$program) {
@@ -158,6 +298,43 @@ try {
     $folderMeta = $error->getMessage();
     $students = [];
 }
+
+$students = attachLatestRegistrationDetails($conn, $students);
+
+$detailColumns = [
+    'student_name' => 'Student Name',
+    'student_number' => 'Student Number',
+    'formal_picture' => 'Formal Picture',
+    'last_name' => 'Last Name',
+    'extension_name' => 'Extension Name',
+    'first_name' => 'First Name',
+    'middle_name' => 'Middle Name',
+    'place_of_birth' => 'Place of Birth',
+    'date_of_birth' => 'Date of Birth',
+    'gender' => 'Gender',
+    'religion' => 'Religion',
+    'blood_type' => 'Blood Type',
+    'contact_number' => 'Contact Number',
+    'email' => 'Email',
+    'province' => 'Province',
+    'city_municipality' => 'City/Municipality',
+    'barangay' => 'Barangay',
+    'street' => 'Street',
+    'house_no' => 'House No.',
+    'emergency_name' => 'Emergency Name',
+    'emergency_relationship' => 'Emergency Relationship',
+    'emergency_contact_number' => 'Emergency Contact',
+    'emergency_address' => 'Emergency Address',
+    'college' => 'College',
+    'course' => 'Program',
+    'major' => 'Major',
+    'year_section' => 'Year/Section',
+    'component' => 'Component',
+    'course_section' => 'Folder Name',
+    'generated_code' => 'QR Code',
+    'status' => 'Registration Status',
+    'created_at' => 'Registered At',
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -177,24 +354,24 @@ try {
             background: #fff;
             border: 1px solid #d7e4ea;
             border-radius: 8px;
-            padding: 20px;
+            padding: 14px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 18px;
+            gap: 12px;
+            margin-bottom: 12px;
         }
         .folder-hero-icon {
-            width: 56px;
-            height: 56px;
+            width: 46px;
+            height: 46px;
             border-radius: 8px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             background: #eef7f9;
             color: #2f6f7e;
-            font-size: 1.6rem;
-            margin-right: 14px;
+            font-size: 1.25rem;
+            margin-right: 10px;
         }
         .folder-title-wrap {
             display: flex;
@@ -202,7 +379,7 @@ try {
             min-width: 0;
         }
         .folder-title-wrap h1 {
-            font-size: 1.45rem;
+            font-size: 1.25rem;
             margin: 0;
             line-height: 1.2;
         }
@@ -214,15 +391,96 @@ try {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 12px;
+            padding: 6px 10px;
             border-radius: 999px;
             background: #f4f8fa;
             color: #2f6f7e;
             font-weight: 800;
         }
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 12px;
+        }
+        .folder-box {
+            display: block;
+            height: 100%;
+            border: 1px solid #d7e4ea;
+            border-radius: 8px;
+            padding: 13px 14px;
+            color: #1f2937;
+            background: #fff;
+            transition: transform 0.16s ease, box-shadow 0.16s ease;
+        }
+        .folder-box:hover {
+            color: #1f2937;
+            text-decoration: none;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(31, 41, 55, 0.1);
+        }
+        .folder-box-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #eef7f9;
+            color: #2f6f7e;
+            margin-bottom: 8px;
+        }
+        .folder-box-title {
+            display: block;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+        .folder-box-meta,
+        .folder-box-count {
+            display: block;
+            color: #667784;
+            font-size: 0.88rem;
+        }
+        .folder-box-count {
+            margin-top: 10px;
+            font-weight: 800;
+            color: #2f6f7e;
+        }
         .qr-thumb {
             width: 74px;
             height: 74px;
+        }
+        .column-picker {
+            border-bottom: 1px solid #edf2f5;
+            padding: 14px 18px;
+            background: #fbfdfe;
+        }
+        .column-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 8px 14px;
+        }
+        .detail-photo {
+            width: 54px;
+            height: 54px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #d7e4ea;
+            background: #f4f8fa;
+        }
+        .student-detail-table th,
+        .student-detail-table td {
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+        .student-detail-table td.detail-long {
+            min-width: 220px;
+            white-space: normal;
+        }
+        .folder-group-row td {
+            background: #eef7f9;
+            color: #2f6f7e;
+            font-weight: 800;
+            border-top: 2px solid #d7e4ea;
         }
     </style>
 </head>
@@ -263,6 +521,33 @@ try {
 
         <section class="content">
             <div class="container-fluid">
+                <?php if ($scope === 'coordinator_facilitator' && $role === 'coordinator'): ?>
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-folder-tree mr-2"></i>Facilitator Folders</h3>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($facilitatorFolderCards)): ?>
+                            <div class="folder-grid">
+                                <?php foreach ($facilitatorFolderCards as $folderCard): ?>
+                                    <a class="folder-box" href="folder-students.php?scope=coordinator&facilitator_id=<?php echo (int) $facilitatorId; ?>&folder=<?php echo urlencode($folderCard['course_section']); ?>">
+                                        <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
+                                        <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['course_section']); ?></span>
+                                        <span class="folder-box-meta">Open this folder to view only its students.</span>
+                                        <span class="folder-box-count"><i class="fas fa-users mr-1"></i><?php echo (int) $folderCard['student_count']; ?> students</span>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                This facilitator has no assigned folders yet.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <div class="card">
                     <div class="card-header">
                         <h3 class="card-title"><i class="fas fa-user-graduate mr-2"></i>Student List</h3>
@@ -274,30 +559,90 @@ try {
                     </div>
                     <div class="card-body p-0">
                         <?php if (!empty($students)): ?>
+                            <div class="column-picker">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap mb-2" style="gap: 8px;">
+                                    <strong><i class="fas fa-columns mr-1"></i> Visible Details</strong>
+                                    <div>
+                                        <button type="button" class="btn btn-xs btn-outline-primary" id="showAllColumns">Show All</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary" id="hideOptionalColumns">Basic Only</button>
+                                    </div>
+                                </div>
+                                <div class="column-picker-grid">
+                                    <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input detail-column-toggle"
+                                                   type="checkbox"
+                                                   value="<?php echo htmlspecialchars($columnKey); ?>"
+                                                   id="toggle_<?php echo htmlspecialchars($columnKey); ?>"
+                                                   checked>
+                                            <label class="form-check-label" for="toggle_<?php echo htmlspecialchars($columnKey); ?>">
+                                                <?php echo htmlspecialchars($columnLabel); ?>
+                                            </label>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
                             <div class="table-responsive">
-                                <table class="table table-hover mb-0">
+                                <table class="table table-hover mb-0 student-detail-table">
                                     <thead>
                                         <tr>
                                             <th style="width: 70px;">No.</th>
-                                            <th>Student Name</th>
-                                            <th>Student Number</th>
-                                            <th>Original Section</th>
-                                            <th>Folder</th>
-                                            <th>QR</th>
+                                            <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                                <th class="detail-col detail-col-<?php echo htmlspecialchars($columnKey); ?>" data-column="<?php echo htmlspecialchars($columnKey); ?>">
+                                                    <?php echo htmlspecialchars($columnLabel); ?>
+                                                </th>
+                                            <?php endforeach; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        <?php $currentFolderGroup = null; ?>
                                         <?php foreach ($students as $index => $student): ?>
+                                            <?php
+                                                $studentFolderGroup = displayDetailValue($student['course_section'] ?? '');
+                                                if ($scope === 'coordinator_facilitator' && $studentFolderGroup !== $currentFolderGroup):
+                                                    $currentFolderGroup = $studentFolderGroup;
+                                            ?>
+                                                <tr class="folder-group-row">
+                                                    <td colspan="<?php echo count($detailColumns) + 1; ?>">
+                                                        <i class="fas fa-folder mr-1"></i>
+                                                        <?php echo htmlspecialchars($currentFolderGroup); ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endif; ?>
                                             <tr>
                                                 <td><?php echo $index + 1; ?></td>
-                                                <td><?php echo htmlspecialchars($student['student_name']); ?></td>
-                                                <td><code><?php echo htmlspecialchars($student['student_number'] ?: 'N/A'); ?></code></td>
-                                                <td><?php echo htmlspecialchars($student['original_section'] ?: 'N/A'); ?></td>
-                                                <td><span class="badge badge-info"><?php echo htmlspecialchars($student['course_section']); ?></span></td>
-                                                <td>
-                                                    <img class="qr-thumb" src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=<?php echo urlencode($student['generated_code']); ?>" alt="QR">
-                                                    <code class="ml-2"><?php echo htmlspecialchars($student['generated_code']); ?></code>
-                                                </td>
+                                                <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                                    <?php
+                                                        $value = detailValue($student, $columnKey);
+                                                        $displayValue = displayDetailValue($value);
+                                                        $longColumns = ['street', 'emergency_address', 'course', 'college'];
+                                                        $cellClass = in_array($columnKey, $longColumns, true) ? ' detail-long' : '';
+                                                    ?>
+                                                    <td class="detail-col detail-col-<?php echo htmlspecialchars($columnKey); ?><?php echo $cellClass; ?>" data-column="<?php echo htmlspecialchars($columnKey); ?>">
+                                                        <?php if ($columnKey === 'formal_picture'): ?>
+                                                            <?php if ($displayValue !== 'N/A'): ?>
+                                                                <a href="<?php echo htmlspecialchars($displayValue); ?>" target="_blank">
+                                                                    <img class="detail-photo" src="<?php echo htmlspecialchars($displayValue); ?>" alt="Formal Picture">
+                                                                </a>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">N/A</span>
+                                                            <?php endif; ?>
+                                                        <?php elseif ($columnKey === 'generated_code'): ?>
+                                                            <?php if ($displayValue !== 'N/A'): ?>
+                                                                <img class="qr-thumb" src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=<?php echo urlencode($displayValue); ?>" alt="QR">
+                                                                <code class="ml-2"><?php echo htmlspecialchars($displayValue); ?></code>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">N/A</span>
+                                                            <?php endif; ?>
+                                                        <?php elseif ($columnKey === 'course_section'): ?>
+                                                            <span class="badge badge-info"><?php echo htmlspecialchars($displayValue); ?></span>
+                                                        <?php elseif ($columnKey === 'student_number'): ?>
+                                                            <code><?php echo htmlspecialchars($displayValue); ?></code>
+                                                        <?php else: ?>
+                                                            <?php echo htmlspecialchars($displayValue); ?>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                <?php endforeach; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -322,5 +667,32 @@ try {
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script>
+$(function() {
+    const basicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'course_section', 'generated_code']);
+
+    function setColumnVisible(columnKey, visible) {
+        $('.detail-col-' + columnKey).toggle(visible);
+    }
+
+    $('.detail-column-toggle').on('change', function() {
+        setColumnVisible(this.value, this.checked);
+    });
+
+    $('#showAllColumns').on('click', function() {
+        $('.detail-column-toggle').prop('checked', true).each(function() {
+            setColumnVisible(this.value, true);
+        });
+    });
+
+    $('#hideOptionalColumns').on('click', function() {
+        $('.detail-column-toggle').each(function() {
+            const visible = basicColumns.has(this.value);
+            this.checked = visible;
+            setColumnVisible(this.value, visible);
+        });
+    });
+});
+</script>
 </body>
 </html>

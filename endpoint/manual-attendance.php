@@ -15,6 +15,12 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    echo json_encode(['success' => false, 'message' => 'Only staff accounts can record attendance']);
+    exit();
+}
+
 $student_id = $_POST['student_id'] ?? '';
 $time_in = $_POST['time_in'] ?? '';
 $notes = $_POST['notes'] ?? '';
@@ -25,21 +31,16 @@ if (empty($student_id)) {
 }
 
 try {
-    // Validate student exists AND is created by this admin OR enrolled in admin's sections
+    // Validate student exists and can be handled by this staff account.
     $stmt = $conn->prepare("
-        SELECT s.course_section
+        SELECT s.*
         FROM tbl_student s
-        LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
-        WHERE s.tbl_student_id = ? 
-        AND (
-            s.created_by = ? 
-            OR ads.user_id = ?
-        )
+        WHERE s.tbl_student_id = ?
     ");
-    $stmt->execute([$student_id, $_SESSION['user_id'], $_SESSION['user_id']]);
-    $studentCourseSection = $stmt->fetchColumn();
+    $stmt->execute([$student_id]);
+    $student = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$studentCourseSection) {
+    if (!$student || !canRecordStudentAttendance($conn, $currentUser, $student)) {
         echo json_encode(['success' => false, 'message' => 'Student not found or not enrolled in your section']);
         exit();
     }
@@ -61,7 +62,7 @@ try {
         exit();
     }
     
-    $status = getAttendanceStatus($conn, $studentCourseSection, $time_in);
+    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $time_in);
     
     // Insert record
     $columns = "tbl_student_id, time_in, status";

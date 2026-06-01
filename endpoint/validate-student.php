@@ -15,7 +15,12 @@ if (!canAccessStaffTools($_SESSION['role'] ?? '')) {
     exit;
 }
 
-$admin_id = $_SESSION['user_id'];
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    echo json_encode(['valid' => false, 'message' => 'Only staff accounts can scan attendance']);
+    exit;
+}
+
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';
 
 if (empty($qr_code)) {
@@ -62,6 +67,14 @@ try {
     }
     
     if ($student) {
+        if (!canRecordStudentAttendance($conn, $currentUser, $student)) {
+            echo json_encode([
+                'valid' => false,
+                'message' => 'This student is assigned to another facilitator'
+            ]);
+            exit;
+        }
+
         // Check if student has already attended today
         $today = date('Y-m-d');
         $checkStmt = $conn->prepare("

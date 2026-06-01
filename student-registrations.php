@@ -31,13 +31,20 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
             middle_name VARCHAR(100) NOT NULL,
             place_of_birth VARCHAR(255) NOT NULL,
             date_of_birth DATE NOT NULL,
+            gender VARCHAR(30) NOT NULL DEFAULT 'N/A',
             religion VARCHAR(120) NOT NULL DEFAULT 'N/A',
+            blood_type VARCHAR(20) NOT NULL DEFAULT 'N/A',
+            contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A',
             email VARCHAR(150) NOT NULL,
             province VARCHAR(120) NOT NULL,
             city_municipality VARCHAR(120) NOT NULL,
             barangay VARCHAR(120) NOT NULL,
             street VARCHAR(180) NOT NULL,
             house_no VARCHAR(80) NOT NULL,
+            emergency_name VARCHAR(150) NOT NULL DEFAULT 'N/A',
+            emergency_relationship VARCHAR(80) NOT NULL DEFAULT 'N/A',
+            emergency_contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A',
+            emergency_address VARCHAR(255) NOT NULL DEFAULT 'N/A',
             student_number VARCHAR(10) NULL,
             college VARCHAR(150) NOT NULL,
             course VARCHAR(150) NOT NULL,
@@ -62,6 +69,13 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
             'form_id' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN form_id INT NULL AFTER registration_id",
             'registrant_role' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN registrant_role VARCHAR(20) NOT NULL DEFAULT 'student' AFTER user_id",
             'religion' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN religion VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER date_of_birth",
+            'gender' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN gender VARCHAR(30) NOT NULL DEFAULT 'N/A' AFTER date_of_birth",
+            'blood_type' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN blood_type VARCHAR(20) NOT NULL DEFAULT 'N/A' AFTER religion",
+            'contact_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A' AFTER blood_type",
+            'emergency_name' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_name VARCHAR(150) NOT NULL DEFAULT 'N/A' AFTER house_no",
+            'emergency_relationship' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_relationship VARCHAR(80) NOT NULL DEFAULT 'N/A' AFTER emergency_name",
+            'emergency_contact_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A' AFTER emergency_relationship",
+            'emergency_address' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_address VARCHAR(255) NOT NULL DEFAULT 'N/A' AFTER emergency_contact_number",
             'student_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN student_number VARCHAR(10) NULL AFTER house_no",
             'college' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN college VARCHAR(150) NOT NULL DEFAULT '' AFTER student_number",
             'major' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN major VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER course",
@@ -579,6 +593,18 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                                         <span class="detail-value"><?php echo htmlspecialchars($row['religion'] ?? 'N/A'); ?></span>
                                                                     </div>
                                                                     <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Gender</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['gender'] ?? 'N/A'); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Blood Type</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['blood_type'] ?? 'N/A'); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Contact Number</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
                                                                         <span class="detail-label">Email</span>
                                                                         <span class="detail-value"><?php echo htmlspecialchars($displayEmail); ?></span>
                                                                     </div>
@@ -599,6 +625,23 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                                     <div class="col-12 mb-3">
                                                                         <span class="detail-label">Complete Address</span>
                                                                         <span class="detail-value"><?php echo htmlspecialchars($address); ?></span>
+                                                                    </div>
+                                                                    <div class="col-12"><hr></div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Emergency Contact Name</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['emergency_name'] ?? 'N/A'); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Relationship</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['emergency_relationship'] ?? 'N/A'); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Emergency Contact Number</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['emergency_contact_number'] ?? 'N/A'); ?></span>
+                                                                    </div>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">Emergency Address</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($row['emergency_address'] ?? 'N/A'); ?></span>
                                                                     </div>
                                                                 </div>
                                                             </div>

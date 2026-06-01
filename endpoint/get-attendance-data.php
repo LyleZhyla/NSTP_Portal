@@ -9,13 +9,17 @@ if (!isset($_SESSION['user_id'])) {
 
 date_default_timezone_set('Asia/Manila');
 include('../conn/conn.php');
+require_once '../include/user-permissions.php';
 
 $admin_id = $_SESSION['user_id'];
 $admin_role = $_SESSION['role'] ?? 'facilitator';
+$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
+$canViewAllAttendance = $admin_role === 'super_admin'
+    || ($admin_role === 'facilitator' && !$facilitatorScanRestrictionEnabled);
 
 try {
     // Get statistics
-    if ($admin_role == 'super_admin') {
+    if ($canViewAllAttendance) {
         // Total present today
         $totalStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 

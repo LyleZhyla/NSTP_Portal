@@ -81,7 +81,31 @@ try {
     $stmt = $conn->prepare("UPDATE tbl_student SET created_by = ?, course_section = ? WHERE tbl_student_id = ?");
     $stmt->execute([$facilitatorId, $courseSection, $studentId]);
 
-    echo json_encode(['success' => true, 'message' => 'Student assigned to facilitator successfully']);
+    $stmt = $conn->prepare("
+        SELECT s.tbl_student_id, s.student_name, s.course_section, s.created_by,
+               u.full_name AS facilitator_name, u.username AS facilitator_username
+        FROM tbl_student s
+        LEFT JOIN tbl_users u ON s.created_by = u.user_id
+        WHERE s.tbl_student_id = ?
+    ");
+    $stmt->execute([$studentId]);
+    $updatedStudent = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$updatedStudent || (int) $updatedStudent['created_by'] !== $facilitatorId || $updatedStudent['course_section'] !== $courseSection) {
+        echo json_encode(['success' => false, 'message' => 'Assignment was not saved. Please try again.']);
+        exit();
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Student assigned to facilitator folder successfully',
+        'student' => [
+            'id' => (int) $updatedStudent['tbl_student_id'],
+            'name' => $updatedStudent['student_name'],
+            'folder' => $updatedStudent['course_section'],
+            'facilitator' => $updatedStudent['facilitator_name'] ?: $updatedStudent['facilitator_username'],
+        ],
+    ]);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $error->getMessage()]);
 }

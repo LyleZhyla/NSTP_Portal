@@ -22,7 +22,12 @@ $stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $stmt = $conn->prepare("
-    SELECT s.*, r.college, r.course, r.major, r.year_section, r.formal_picture
+    SELECT s.*, r.last_name, r.extension_name, r.first_name, r.middle_name, r.place_of_birth,
+           r.date_of_birth, r.gender, r.religion, r.blood_type, r.contact_number, r.email,
+           r.province, r.city_municipality, r.barangay, r.street, r.house_no,
+           r.emergency_name, r.emergency_relationship, r.emergency_contact_number, r.emergency_address,
+           r.student_number AS registration_student_number, r.college, r.course, r.major, r.year_section,
+           r.component, r.formal_picture, r.created_at AS registration_date
     FROM tbl_student s
     LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
     WHERE s.user_id = ?
@@ -42,6 +47,45 @@ if ($student) {
     $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? ORDER BY time_in DESC LIMIT 1");
     $stmt->execute([$student['tbl_student_id']]);
     $latestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+$registrationSections = [];
+if ($student) {
+    $registrationSections = [
+        'Personal Information' => [
+            'Full Name' => $student['student_name'] ?? 'N/A',
+            'Student Number' => $student['student_number'] ?? ($student['registration_student_number'] ?? 'N/A'),
+            'Gender' => $student['gender'] ?? 'N/A',
+            'Date of Birth' => !empty($student['date_of_birth']) && $student['date_of_birth'] !== '0000-00-00' ? date('F d, Y', strtotime($student['date_of_birth'])) : 'N/A',
+            'Place of Birth' => $student['place_of_birth'] ?? 'N/A',
+            'Religion' => $student['religion'] ?? 'N/A',
+            'Blood Type' => $student['blood_type'] ?? 'N/A',
+        ],
+        'Contact Information' => [
+            'Email' => $student['email'] ?? ($user['email'] ?? 'N/A'),
+            'Contact Number' => $student['contact_number'] ?? 'N/A',
+            'Address' => implode(', ', array_filter([
+                $student['house_no'] ?? '',
+                $student['street'] ?? '',
+                $student['barangay'] ?? '',
+                $student['city_municipality'] ?? '',
+                $student['province'] ?? '',
+            ], fn($value) => trim((string) $value) !== '' && strtoupper(trim((string) $value)) !== 'N/A')) ?: 'N/A',
+        ],
+        'Emergency Contact' => [
+            'Name' => $student['emergency_name'] ?? 'N/A',
+            'Relationship' => $student['emergency_relationship'] ?? 'N/A',
+            'Contact Number' => $student['emergency_contact_number'] ?? 'N/A',
+            'Address' => $student['emergency_address'] ?? 'N/A',
+        ],
+        'Academic Information' => [
+            'College' => $student['college'] ?? 'N/A',
+            'Course' => $student['course'] ?? 'N/A',
+            'Major' => $student['major'] ?? 'N/A',
+            'Year and Section' => $student['year_section'] ?? ($student['original_section'] ?? 'N/A'),
+            'Component' => $student['course_section'] ?? ($student['component'] ?? 'N/A'),
+        ],
+    ];
 }
 ?>
 <!DOCTYPE html>
@@ -90,6 +134,41 @@ if ($student) {
         }
         .download-actions .btn {
             min-width: 126px;
+        }
+        .detail-card {
+            border: 1px solid rgba(47, 111, 126, 0.14);
+            border-radius: 8px;
+            padding: 18px;
+            height: 100%;
+            background: #fff;
+        }
+        .detail-card h6 {
+            font-weight: 700;
+            color: #2f6f7e;
+        }
+        .detail-row {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+        }
+        .detail-row:last-child {
+            border-bottom: 0;
+        }
+        .detail-label {
+            color: #6b7280;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        .detail-value {
+            color: #1f2937;
+        }
+        @media (max-width: 575.98px) {
+            .detail-row {
+                grid-template-columns: 1fr;
+                gap: 2px;
+            }
         }
     </style>
 </head>
@@ -216,6 +295,31 @@ if ($student) {
                         <?php endif; ?>
                     </div>
                 </div>
+
+                <?php if ($student): ?>
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-id-card mr-2"></i>My Registration Details</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <?php foreach ($registrationSections as $sectionTitle => $details): ?>
+                                <div class="col-lg-6 mb-3">
+                                    <div class="detail-card">
+                                        <h6 class="mb-3"><?php echo htmlspecialchars($sectionTitle); ?></h6>
+                                        <?php foreach ($details as $label => $value): ?>
+                                            <div class="detail-row">
+                                                <div class="detail-label"><?php echo htmlspecialchars($label); ?></div>
+                                                <div class="detail-value"><?php echo htmlspecialchars($value ?: 'N/A'); ?></div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </section>
     </div>

@@ -213,14 +213,6 @@ if (isset($_SESSION['user_id'])) {
                 <!-- Divider -->
                 <li class="nav-header">SYSTEM</li>
 
-                <!-- My Profile -->
-                <li class="nav-item">
-                    <a href="profile.php" class="nav-link <?= ($currentPage == 'profile.php') ? 'active' : '' ?>">
-                        <i class="nav-icon fas fa-user-circle"></i>
-                        <p>My Profile</p>
-                    </a>
-                </li>
-
                 <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'student'): ?>
                 <li class="nav-item">
                     <a href="component.php" class="nav-link <?= ($currentPage == 'component.php') ? 'active' : '' ?>">
@@ -230,6 +222,14 @@ if (isset($_SESSION['user_id'])) {
                 </li>
                 <?php endif; ?>
 
+                <!-- My Profile -->
+                <li class="nav-item">
+                    <a href="profile.php" class="nav-link <?= ($currentPage == 'profile.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-user-circle"></i>
+                        <p>My Profile</p>
+                    </a>
+                </li>
+
                 <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin'): ?>
                 <li class="nav-item">
                     <a href="system-logs.php" class="nav-link <?= ($currentPage == 'system-logs.php') ? 'active' : '' ?>">
@@ -237,12 +237,16 @@ if (isset($_SESSION['user_id'])) {
                         <p>System Logs</p>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator'], true)): ?>
                 <li class="nav-item">
                     <a href="attendance-settings.php" class="nav-link <?= ($currentPage == 'attendance-settings.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-user-clock"></i>
                         <p>Attendance Settings</p>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin'): ?>
                 <li class="nav-item">
                     <a href="system-maintenance.php" class="nav-link <?= ($currentPage == 'system-maintenance.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-database"></i>

@@ -52,8 +52,10 @@ $coordinatorStudentsByFacilitator = [];
 $coordinatorFacilitators = [];
 $coordinatorFacilitatorFolders = [];
 $coordinatorFolderCards = [];
+$coordinatorFacilitatorCards = [];
 $superAdminFolderCards = [];
 $superAdminSystemFolderCards = [];
+$superAdminComponentCards = [];
 $superAdminExportFacilitators = [];
 $admins_with_sections = [];
 
@@ -114,6 +116,7 @@ if ($user_role === 'coordinator') {
     foreach ($coordinatorFacilitators as $facilitator) {
         $facilitatorId = (int) $facilitator['user_id'];
         $facilitatorName = trim($facilitator['full_name'] ?? '') ?: $facilitator['username'];
+        $facilitatorStudentCount = 0;
         foreach ($coordinatorFacilitatorFolders[$facilitatorId] ?? [] as $folderInfo) {
             $folderName = $folderInfo['course_section'];
             $stmt = $conn->prepare("
@@ -122,14 +125,23 @@ if ($user_role === 'coordinator') {
                 WHERE created_by = ? AND course_section = ?
             ");
             $stmt->execute([$facilitatorId, $folderName]);
+            $folderStudentCount = (int) $stmt->fetchColumn();
+            $facilitatorStudentCount += $folderStudentCount;
             $coordinatorFolderCards[] = [
                 'assignment_id' => (int) $folderInfo['assignment_id'],
                 'facilitator_id' => $facilitatorId,
                 'facilitator_name' => $facilitatorName,
                 'folder' => $folderName,
-                'count' => (int) $stmt->fetchColumn(),
+                'count' => $folderStudentCount,
             ];
         }
+        $coordinatorFacilitatorCards[] = [
+            'facilitator_id' => $facilitatorId,
+            'facilitator_name' => $facilitatorName,
+            'assigned_section' => $facilitator['assigned_section'] ?? '',
+            'folder_count' => count($coordinatorFacilitatorFolders[$facilitatorId] ?? []),
+            'student_count' => $facilitatorStudentCount,
+        ];
     }
 }
 
@@ -151,33 +163,24 @@ if ($user_role === 'facilitator' && $sections_count > 1) {
         $sections_with_students[$section] = $students;
     }
     
-    // Also get students that might be in other sections (shouldn't happen, but just in case)
-    if (!empty($assignedSections)) {
-        $placeholders = str_repeat('?,', count($assignedSections) - 1) . '?';
+} else if ($user_role === 'facilitator') {
+    // Regular admin with single section - simple list
+    if (!empty($assignedSection)) {
         $stmt = $conn->prepare("
             SELECT s.*, s.original_section 
             FROM tbl_student s 
-            WHERE s.created_by = ? AND s.course_section NOT IN ($placeholders)
-            ORDER BY s.course_section ASC, s.student_name ASC
+            WHERE s.created_by = ? AND s.course_section = ?
+            ORDER BY s.student_name DESC
         ");
-        $params = array_merge([$user_id], $assignedSections);
-        $stmt->execute($params);
-        $other_section_students = $stmt->fetchAll();
-        
-        if (!empty($other_section_students)) {
-            $sections_with_students['Other Sections'] = $other_section_students;
-        }
+        $stmt->execute([$user_id, $assignedSection]);
+    } else {
+        $stmt = $conn->prepare("
+            SELECT s.*, s.original_section 
+            FROM tbl_student s 
+            WHERE 1 = 0
+        ");
+        $stmt->execute();
     }
-    
-} else if ($user_role === 'facilitator') {
-    // Regular admin with single section - simple list
-    $stmt = $conn->prepare("
-        SELECT s.*, s.original_section 
-        FROM tbl_student s 
-        WHERE s.created_by = ? 
-        ORDER BY s.student_name DESC
-    ");
-    $stmt->execute([$user_id]);
     $result = $stmt->fetchAll();
 }
 
@@ -189,6 +192,26 @@ if ($user_role === 'coordinator') {
     }
     $my_students_count = $total_students;
 } elseif ($user_role === 'super_admin') {
+    foreach (['CWTS', 'LTS', 'ROTC'] as $componentName) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(DISTINCT s.tbl_student_id)
+            FROM tbl_student s
+            LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+            WHERE (creator.role = 'facilitator' AND creator.program = ?)
+               OR ((s.created_by IS NULL OR creator.role <> 'facilitator') AND s.course_section = ?)
+        ");
+        $stmt->execute([$componentName, $componentName]);
+
+        $facilitatorStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users WHERE role = 'facilitator' AND program = ?");
+        $facilitatorStmt->execute([$componentName]);
+
+        $superAdminComponentCards[] = [
+            'component' => $componentName,
+            'student_count' => (int) $stmt->fetchColumn(),
+            'facilitator_count' => (int) $facilitatorStmt->fetchColumn(),
+        ];
+    }
+
     $folderStmt = $conn->prepare("
         SELECT
             ads.user_id AS facilitator_id,
@@ -255,9 +278,19 @@ if ($user_role === 'super_admin') {
     $total_coordinators_stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users WHERE role = 'coordinator'");
     $total_coordinators_stmt->execute();
     $total_coordinators = $total_coordinators_stmt->fetchColumn();
-} else {
-    $total_stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_student WHERE created_by = ?");
-    $total_stmt->execute([$user_id]);
+} elseif ($user_role === 'facilitator') {
+    if (!empty($assignedSections)) {
+        $placeholders = implode(',', array_fill(0, count($assignedSections), '?'));
+        $total_stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM tbl_student
+            WHERE created_by = ? AND course_section IN ($placeholders)
+        ");
+        $total_stmt->execute(array_merge([$user_id], $assignedSections));
+    } else {
+        $total_stmt = $conn->prepare("SELECT 0");
+        $total_stmt->execute();
+    }
     $total_students = $total_stmt->fetchColumn();
     $my_students_count = $total_students;
 }
@@ -324,20 +357,48 @@ if ($user_role === 'super_admin') {
         
         .multiple-sections-container {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
+            padding: 12px 14px;
             border-radius: 8px;
-            margin-bottom: 15px;
+            border: 0;
+            height: 100%;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.18);
+        }
+
+        .multiple-sections-container .folder-summary-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .multiple-sections-container .folder-summary-title h4 {
+            font-size: 1rem;
+            margin: 0;
+            font-weight: 800;
+        }
+
+        .multiple-sections-container .folder-summary-text {
+            margin: 0 0 8px;
+            color: rgba(255,255,255,0.9);
+            font-size: 0.88rem;
+            line-height: 1.3;
         }
         
         .section-chip {
             display: inline-block;
-            padding: 5px 15px;
-            margin: 3px;
-            background: rgba(255,255,255,0.2);
+            padding: 4px 10px;
+            margin: 2px;
+            background: rgba(255,255,255,0.18);
             border-radius: 25px;
-            font-size: 0.9rem;
+            font-size: 0.82rem;
             border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
         }
         
         .section-chip i {
@@ -490,13 +551,13 @@ if ($user_role === 'super_admin') {
         .folder-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-            gap: 16px;
+            gap: 12px;
         }
 
         .folder-box {
             display: block;
-            min-height: 150px;
-            padding: 18px;
+            min-height: 126px;
+            padding: 14px;
             border: 1px solid #d7e4ea;
             border-radius: 8px;
             background: #fff;
@@ -537,16 +598,16 @@ if ($user_role === 'super_admin') {
         }
 
         .folder-box-icon {
-            width: 44px;
-            height: 44px;
+            width: 38px;
+            height: 38px;
             border-radius: 8px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             background: #eef7f9;
             color: #2f6f7e;
-            font-size: 1.35rem;
-            margin-bottom: 14px;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
         }
 
         .folder-box-title {
@@ -567,7 +628,7 @@ if ($user_role === 'super_admin') {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            margin-top: 14px;
+            margin-top: 10px;
             padding: 5px 10px;
             border-radius: 999px;
             background: #f4f8fa;
@@ -904,14 +965,25 @@ if ($user_role === 'super_admin') {
                     <?php endif; ?>
                     
                     <?php if ($user_role === 'facilitator' && $sections_count > 1): ?>
-                    <div class="col-lg-3 col-6">
-                        <div class="small-box bg-primary">
-                            <div class="inner">
-                                <h3><?php echo $sections_count; ?></h3>
-                                <p>Admin Folders</p>
-                            </div>
-                            <div class="icon">
+                    <div class="col-lg-9 col-12">
+                        <div class="multiple-sections-container">
+                            <div class="folder-summary-title">
                                 <i class="fas fa-folder-tree"></i>
+                                <h4>Your Admin Folders</h4>
+                            </div>
+                            <p class="folder-summary-text">
+                                You have <strong><?php echo $sections_count; ?> admin folders</strong>. Students are organized by folder.
+                                <span class="info-tooltip" title="Students will show their original college section separately">
+                                    <i class="fas fa-info-circle ml-1"></i>
+                                </span>
+                            </p>
+                            <div>
+                                <?php foreach ($assignedSections as $section): ?>
+                                <span class="section-chip">
+                                    <i class="fas fa-folder"></i>
+                                    <?php echo htmlspecialchars($section); ?>
+                                </span>
+                                <?php endforeach; ?>
                             </div>
                         </div>
                     </div>
@@ -933,32 +1005,10 @@ if ($user_role === 'super_admin') {
                 </div>
 
                 <!-- Section Information for Regular Admins -->
-                <?php if ($user_role === 'facilitator'): ?>
+                <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>
                 <div class="row mb-3">
                     <div class="col-12">
-                        <?php if ($sections_count > 1): ?>
-                        <div class="multiple-sections-container">
-                            <div class="d-flex align-items-center mb-2">
-                                <i class="fas fa-folder-tree mr-2" style="font-size: 1.5rem;"></i>
-                                <h4 class="mb-0">Your Admin Folders</h4>
-                            </div>
-                            <p class="mb-2">
-                                You have <strong><?php echo $sections_count; ?> admin folders</strong>. 
-                                Students are organized in folders for your convenience.
-                                <span class="info-tooltip" title="Students will show their original college section separately">
-                                    <i class="fas fa-info-circle ml-2"></i>
-                                </span>
-                            </p>
-                            <div class="mt-2">
-                                <?php foreach ($assignedSections as $section): ?>
-                                <span class="section-chip">
-                                    <i class="fas fa-folder"></i>
-                                    <?php echo htmlspecialchars($section); ?>
-                                </span>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                        <?php elseif ($assignedSection): ?>
+                        <?php if ($assignedSection): ?>
                         <div class="section-info">
                             <i class="fas fa-folder mr-2"></i>
                             <strong>Your Admin Folder:</strong>
@@ -1100,11 +1150,11 @@ if ($user_role === 'super_admin') {
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="fas fa-folder-open mr-2"></i>
-                            <?php echo htmlspecialchars($coordinatorProgram); ?> Facilitator Folders
+                            <?php echo htmlspecialchars($coordinatorProgram); ?> Facilitators
                         </h3>
                     </div>
                     <div class="card-body">
-                        <?php if (!empty($coordinatorFolderCards) || !empty($coordinatorPendingStudents)): ?>
+                        <?php if (!empty($coordinatorFacilitatorCards) || !empty($coordinatorPendingStudents)): ?>
                             <div class="folder-grid">
                                 <?php if (!empty($coordinatorPendingStudents)): ?>
                                     <a class="folder-box pending" href="folder-students.php?scope=pending&component=<?php echo urlencode($coordinatorProgram); ?>">
@@ -1114,27 +1164,24 @@ if ($user_role === 'super_admin') {
                                         <span class="folder-box-count"><i class="fas fa-users"></i><?php echo count($coordinatorPendingStudents); ?> students</span>
                                     </a>
                                 <?php endif; ?>
-                                <?php foreach ($coordinatorFolderCards as $folderCard): ?>
-                                    <div class="folder-box-wrap">
-                                        <a class="folder-box" href="folder-students.php?scope=coordinator&facilitator_id=<?php echo (int) $folderCard['facilitator_id']; ?>&folder=<?php echo urlencode($folderCard['folder']); ?>">
-                                            <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
-                                            <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['folder']); ?></span>
-                                            <span class="folder-box-meta"><?php echo htmlspecialchars($folderCard['facilitator_name']); ?></span>
-                                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $folderCard['count']; ?> students</span>
-                                        </a>
-                                        <button type="button"
-                                                class="btn btn-sm btn-danger folder-delete-btn"
-                                                title="Delete folder"
-                                                onclick='deleteCoordinatorFolder(<?php echo (int) $folderCard['assignment_id']; ?>, <?php echo htmlspecialchars(json_encode($folderCard['folder']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($folderCard['facilitator_name']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo (int) $folderCard['count']; ?>)'>
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
+                                <?php foreach ($coordinatorFacilitatorCards as $facilitatorCard): ?>
+                                    <a class="folder-box" href="folder-students.php?scope=coordinator_facilitator&facilitator_id=<?php echo (int) $facilitatorCard['facilitator_id']; ?>">
+                                        <span class="folder-box-icon"><i class="fas fa-user-tie"></i></span>
+                                        <span class="folder-box-title"><?php echo htmlspecialchars($facilitatorCard['facilitator_name']); ?></span>
+                                        <span class="folder-box-meta">
+                                            <?php echo (int) $facilitatorCard['folder_count']; ?> section folder<?php echo (int) $facilitatorCard['folder_count'] === 1 ? '' : 's'; ?>
+                                            <?php if (!empty($facilitatorCard['assigned_section'])): ?>
+                                                / <?php echo htmlspecialchars($facilitatorCard['assigned_section']); ?>
+                                            <?php endif; ?>
+                                        </span>
+                                        <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $facilitatorCard['student_count']; ?> students</span>
+                                    </a>
                                 <?php endforeach; ?>
                             </div>
                         <?php else: ?>
                             <div class="alert alert-info mb-0">
                                 <i class="fas fa-info-circle mr-2"></i>
-                                No <?php echo htmlspecialchars($coordinatorProgram); ?> facilitator folders found yet. Create folders from User Management first.
+                                No facilitators are assigned to <?php echo htmlspecialchars($coordinatorProgram); ?> yet.
                             </div>
                         <?php endif; ?>
                     </div>
@@ -1158,7 +1205,20 @@ if ($user_role === 'super_admin') {
                                             </span>
                                             <div class="info-box-content">
                                                 <span class="info-box-text"><?php echo htmlspecialchars(trim($facilitator['full_name'] ?? '') ?: $facilitator['username']); ?></span>
-                                                <span class="info-box-number"><?php echo htmlspecialchars($facilitator['assigned_section'] ?: 'No designated section'); ?></span>
+                                                <span class="info-box-number">
+                                                    <?php
+                                                        $facilitatorFolders = $coordinatorFacilitatorFolders[(int) $facilitator['user_id']] ?? [];
+                                                    ?>
+                                                    <?php if (!empty($facilitatorFolders)): ?>
+                                                        <?php foreach ($facilitatorFolders as $folderInfo): ?>
+                                                            <span class="badge badge-info mr-1 mb-1">
+                                                                <i class="fas fa-folder mr-1"></i><?php echo htmlspecialchars($folderInfo['course_section']); ?>
+                                                            </span>
+                                                        <?php endforeach; ?>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">No assigned folders</span>
+                                                    <?php endif; ?>
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -1239,28 +1299,19 @@ if ($user_role === 'super_admin') {
                     <i class="fas fa-eye fa-2x mr-3"></i>
                     <div>
                         <strong>Read-only security view:</strong>
-                        Super Admin can review all facilitator and system folders. Open a folder to view the student list.
+                        Super Admin can review students by component. Open a component to view its student list.
                     </div>
                 </div>
 
                 <div class="folder-grid">
-                    <?php foreach ($superAdminFolderCards as $folderCard): ?>
-                        <a class="folder-box" href="folder-students.php?scope=super_facilitator&facilitator_id=<?php echo (int) $folderCard['facilitator_id']; ?>&folder=<?php echo urlencode($folderCard['folder']); ?>">
-                            <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
-                            <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['folder']); ?></span>
+                    <?php foreach ($superAdminComponentCards as $componentCard): ?>
+                        <a class="folder-box" href="folder-students.php?scope=component&component=<?php echo urlencode($componentCard['component']); ?>">
+                            <span class="folder-box-icon"><i class="fas fa-layer-group"></i></span>
+                            <span class="folder-box-title"><?php echo htmlspecialchars($componentCard['component']); ?></span>
                             <span class="folder-box-meta">
-                                <?php echo htmlspecialchars($folderCard['program'] ?: 'NSTP'); ?> / <?php echo htmlspecialchars($folderCard['facilitator_name'] ?: $folderCard['facilitator_username']); ?>
+                                <?php echo (int) $componentCard['facilitator_count']; ?> facilitator<?php echo (int) $componentCard['facilitator_count'] === 1 ? '' : 's'; ?>
                             </span>
-                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $folderCard['student_count']; ?> students</span>
-                        </a>
-                    <?php endforeach; ?>
-
-                    <?php foreach ($superAdminSystemFolderCards as $folderCard): ?>
-                        <a class="folder-box pending" href="folder-students.php?scope=system&folder=<?php echo urlencode($folderCard['folder']); ?>">
-                            <span class="folder-box-icon"><i class="fas fa-cog"></i></span>
-                            <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['folder']); ?></span>
-                            <span class="folder-box-meta">System / public registration folder</span>
-                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $folderCard['student_count']; ?> students</span>
+                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $componentCard['student_count']; ?> students</span>
                         </a>
                     <?php endforeach; ?>
                 </div>

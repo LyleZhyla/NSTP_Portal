@@ -8,6 +8,7 @@ require_once '../include/public-registration-forms.php';
 require_once '../include/college-courses.php';
 require_once '../include/student-account-automation.php';
 require_once '../include/attendance-settings.php';
+require_once '../include/religions.php';
 
 $response = ['success' => false, 'message' => ''];
 
@@ -57,13 +58,20 @@ function ensurePublicRegistrationTable(PDO $conn) {
             middle_name VARCHAR(100) NOT NULL,
             place_of_birth VARCHAR(255) NOT NULL,
             date_of_birth DATE NOT NULL,
+            gender VARCHAR(30) NOT NULL DEFAULT 'N/A',
             religion VARCHAR(120) NOT NULL DEFAULT 'N/A',
+            blood_type VARCHAR(20) NOT NULL DEFAULT 'N/A',
+            contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A',
             email VARCHAR(150) NOT NULL,
             province VARCHAR(120) NOT NULL,
             city_municipality VARCHAR(120) NOT NULL,
             barangay VARCHAR(120) NOT NULL,
             street VARCHAR(180) NOT NULL,
             house_no VARCHAR(80) NOT NULL,
+            emergency_name VARCHAR(150) NOT NULL DEFAULT 'N/A',
+            emergency_relationship VARCHAR(80) NOT NULL DEFAULT 'N/A',
+            emergency_contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A',
+            emergency_address VARCHAR(255) NOT NULL DEFAULT 'N/A',
             student_number VARCHAR(10) NULL,
             college VARCHAR(150) NOT NULL,
             course VARCHAR(150) NOT NULL,
@@ -89,6 +97,13 @@ function ensurePublicRegistrationTable(PDO $conn) {
             'user_id' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN user_id INT NULL AFTER form_id",
             'registrant_role' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN registrant_role VARCHAR(20) NOT NULL DEFAULT 'student' AFTER user_id",
             'religion' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN religion VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER date_of_birth",
+            'gender' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN gender VARCHAR(30) NOT NULL DEFAULT 'N/A' AFTER date_of_birth",
+            'blood_type' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN blood_type VARCHAR(20) NOT NULL DEFAULT 'N/A' AFTER religion",
+            'contact_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A' AFTER blood_type",
+            'emergency_name' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_name VARCHAR(150) NOT NULL DEFAULT 'N/A' AFTER house_no",
+            'emergency_relationship' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_relationship VARCHAR(80) NOT NULL DEFAULT 'N/A' AFTER emergency_name",
+            'emergency_contact_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_contact_number VARCHAR(30) NOT NULL DEFAULT 'N/A' AFTER emergency_relationship",
+            'emergency_address' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN emergency_address VARCHAR(255) NOT NULL DEFAULT 'N/A' AFTER emergency_contact_number",
             'student_number' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN student_number VARCHAR(10) NULL AFTER house_no",
             'college' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN college VARCHAR(150) NOT NULL DEFAULT '' AFTER student_number",
             'major' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN major VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER course",
@@ -383,7 +398,13 @@ function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
         throw new Exception('Student Number must be exactly 10 digits and numbers only.');
     }
 
-    $stmt = $conn->prepare("SELECT * FROM tbl_student WHERE student_number = ? LIMIT 1");
+    $stmt = $conn->prepare("
+        SELECT s.*, creator.role AS creator_role
+        FROM tbl_student s
+        LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+        WHERE s.student_number = ?
+        LIMIT 1
+    ");
     $stmt->execute([$studentNumber]);
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -395,14 +416,27 @@ function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
     }
 
     if ($student) {
-        $stmt = $conn->prepare("
-            UPDATE tbl_student
-            SET student_name = ?, original_section = ?, course_section = ?
-            WHERE tbl_student_id = ?
-        ");
-        $stmt->execute([$studentName, $originalSection, $courseSection, $student['tbl_student_id']]);
+        $isAssignedToFacilitator = !empty($student['created_by']) && ($student['creator_role'] ?? '') === 'facilitator';
+
+        if ($isAssignedToFacilitator) {
+            $stmt = $conn->prepare("
+                UPDATE tbl_student
+                SET student_name = ?, original_section = ?
+                WHERE tbl_student_id = ?
+            ");
+            $stmt->execute([$studentName, $originalSection, $student['tbl_student_id']]);
+        } else {
+            $stmt = $conn->prepare("
+                UPDATE tbl_student
+                SET student_name = ?, original_section = ?, course_section = ?
+                WHERE tbl_student_id = ?
+            ");
+            $stmt->execute([$studentName, $originalSection, $courseSection, $student['tbl_student_id']]);
+            $student['course_section'] = $courseSection;
+        }
+
         $student['student_name'] = $studentName;
-        $student['course_section'] = $courseSection;
+        $student['original_section'] = $originalSection;
         return $student;
     }
 
@@ -500,6 +534,7 @@ try {
     if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['middle_name']) $requiredFields[] = 'middle_name';
     if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['birth_info']) array_push($requiredFields, 'place_of_birth', 'date_of_birth');
     if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['religion']) $requiredFields[] = 'religion';
+    if (!$studentNumberBased && !$isFacilitatorRegistration) array_push($requiredFields, 'gender', 'contact_number', 'emergency_name', 'emergency_relationship', 'emergency_contact_number');
     if (!$studentNumberBased && !$isFacilitatorRegistration && $enabledFields['address']) array_push($requiredFields, 'province', 'city_municipality', 'barangay', 'street', 'house_no');
     if (!$isFacilitatorRegistration && $enabledFields['student_number']) $requiredFields[] = 'student_number';
     if (!$isFacilitatorRegistration && !$studentNumberOnlyForm && $enabledFields['course_section']) array_push($requiredFields, 'college', 'course', 'year_section');
@@ -517,13 +552,21 @@ try {
     $middleName = cleanText($_POST['middle_name'] ?? '');
     $placeOfBirth = cleanText($_POST['place_of_birth'] ?? '');
     $dateOfBirthInput = cleanText($_POST['date_of_birth'] ?? '');
+    $gender = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['gender'] ?? '') : 'N/A';
     $religion = (!$isFacilitatorRegistration && $enabledFields['religion']) ? cleanText($_POST['religion'] ?? '') : 'N/A';
+    $religionOther = (!$isFacilitatorRegistration && $enabledFields['religion']) ? cleanText($_POST['religion_other'] ?? '') : '';
+    $bloodType = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['blood_type'] ?? '') : 'N/A';
+    $contactNumber = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['contact_number'] ?? '') : 'N/A';
     $email = strtolower(cleanText($_POST['email'] ?? ''));
     $province = $enabledFields['address'] ? cleanText($_POST['province'] ?? '') : 'N/A';
     $cityMunicipality = $enabledFields['address'] ? cleanText($_POST['city_municipality'] ?? '') : 'N/A';
     $barangay = $enabledFields['address'] ? cleanText($_POST['barangay'] ?? '') : 'N/A';
     $street = $enabledFields['address'] ? cleanText($_POST['street'] ?? '') : 'N/A';
     $houseNo = $enabledFields['address'] ? cleanText($_POST['house_no'] ?? '') : 'N/A';
+    $emergencyName = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['emergency_name'] ?? '') : 'N/A';
+    $emergencyRelationship = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['emergency_relationship'] ?? '') : 'N/A';
+    $emergencyContactNumber = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['emergency_contact_number'] ?? '') : 'N/A';
+    $emergencyAddress = (!$isFacilitatorRegistration && !$studentNumberBased) ? cleanText($_POST['emergency_address'] ?? '') : 'N/A';
     $studentNumber = (!$isFacilitatorRegistration && $enabledFields['student_number']) ? cleanText($_POST['student_number']) : null;
     $college = $enabledFields['course_section'] ? cleanText($_POST['college'] ?? '') : 'N/A';
     $course = $enabledFields['course_section'] ? cleanText($_POST['course'] ?? '') : 'N/A';
@@ -546,6 +589,20 @@ try {
 
     if (!$enabledFields['religion'] || $religion === '') {
         $religion = 'N/A';
+    } else {
+        try {
+            $religion = normalizeSubmittedReligion($religion, $religionOther);
+        } catch (InvalidArgumentException $error) {
+            failRegistration($error->getMessage());
+        }
+
+        if (!$studentNumberBased && $religion === 'N/A') {
+            failRegistration('Please select your religion.');
+        }
+    }
+
+    if ($bloodType === '') {
+        $bloodType = 'N/A';
     }
 
     if (!$showNameFields) {
@@ -566,7 +623,7 @@ try {
         if ($middleName === '') $middleName = 'N/A';
         if ($placeOfBirth === '') $placeOfBirth = 'N/A';
         if ($dateOfBirthInput === '') $dateOfBirthInput = '01/01/1900';
-        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection', 'religion'] as $optionalField) {
+        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection', 'religion', 'gender', 'bloodType', 'contactNumber', 'emergencyName', 'emergencyRelationship', 'emergencyContactNumber', 'emergencyAddress'] as $optionalField) {
             if ($$optionalField === '') {
                 $$optionalField = 'N/A';
             }
@@ -598,7 +655,7 @@ try {
             $dateOfBirthInput = '01/01/1900';
         }
 
-        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection', 'religion'] as $optionalField) {
+        foreach (['province', 'cityMunicipality', 'barangay', 'street', 'houseNo', 'college', 'course', 'major', 'yearSection', 'religion', 'gender', 'bloodType', 'contactNumber', 'emergencyName', 'emergencyRelationship', 'emergencyContactNumber', 'emergencyAddress'] as $optionalField) {
             if ($$optionalField === '') {
                 $$optionalField = 'N/A';
             }
@@ -629,6 +686,15 @@ try {
         failRegistration('House No. is required, or use N/A if there is no house number.');
     }
 
+    if (!$isFacilitatorRegistration && !$studentNumberBased && isset($_POST['emergency_same_address'])) {
+        $studentAddressParts = array_filter([$houseNo, $street, $barangay, $cityMunicipality, $province], fn($value) => trim((string) $value) !== '' && strtoupper(trim((string) $value)) !== 'N/A');
+        $emergencyAddress = $studentAddressParts ? implode(', ', $studentAddressParts) : 'N/A';
+    }
+
+    if (!$isFacilitatorRegistration && !$studentNumberBased && $emergencyAddress === '') {
+        failRegistration('Emergency contact address is required, or use same as student address.');
+    }
+
     if (!$isFacilitatorRegistration && $enabledFields['student_number'] && !preg_match('/^\d{10}$/', (string) $studentNumber)) {
         failRegistration('Student Number must be exactly 10 digits and numbers only.');
     }
@@ -648,9 +714,10 @@ try {
         $stmt = $conn->prepare("
             INSERT INTO tbl_public_student_registrations (
                 form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
-                date_of_birth, religion, email, province, city_municipality, barangay, street, house_no,
+                date_of_birth, gender, religion, blood_type, contact_number, email, province, city_municipality, barangay, street, house_no,
+                emergency_name, emergency_relationship, emergency_contact_number, emergency_address,
                 student_number, college, course, major, year_section, component, formal_picture, status
-            ) VALUES (?, ?, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $formId,
@@ -661,13 +728,20 @@ try {
             $existingRegistration['middle_name'],
             $existingRegistration['place_of_birth'],
             $existingRegistration['date_of_birth'] ?? '1900-01-01',
+            $existingRegistration['gender'] ?? 'N/A',
             $existingRegistration['religion'] ?? 'N/A',
+            $existingRegistration['blood_type'] ?? 'N/A',
+            $existingRegistration['contact_number'] ?? 'N/A',
             strtolower(cleanText($existingRegistration['email'] ?? '')),
             $existingRegistration['province'],
             $existingRegistration['city_municipality'],
             $existingRegistration['barangay'],
             $existingRegistration['street'],
             $existingRegistration['house_no'],
+            $existingRegistration['emergency_name'] ?? 'N/A',
+            $existingRegistration['emergency_relationship'] ?? 'N/A',
+            $existingRegistration['emergency_contact_number'] ?? 'N/A',
+            $existingRegistration['emergency_address'] ?? 'N/A',
             $studentNumber,
             $existingRegistration['college'],
             $existingRegistration['course'],
@@ -844,9 +918,10 @@ try {
     $stmt = $conn->prepare("
         INSERT INTO tbl_public_student_registrations (
             form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
-            date_of_birth, religion, email, province, city_municipality, barangay, street, house_no,
+            date_of_birth, gender, religion, blood_type, contact_number, email, province, city_municipality, barangay, street, house_no,
+            emergency_name, emergency_relationship, emergency_contact_number, emergency_address,
             student_number, college, course, major, year_section, component, formal_picture
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $formId,
@@ -858,13 +933,20 @@ try {
         $middleName,
         $placeOfBirth,
         $dateOfBirthValue,
+        $gender,
         $religion,
+        $bloodType,
+        $contactNumber,
         $email,
         $province,
         $cityMunicipality,
         $barangay,
         $street,
         $houseNo,
+        $emergencyName,
+        $emergencyRelationship,
+        $emergencyContactNumber,
+        $emergencyAddress,
         $studentNumber,
         $college,
         $course,

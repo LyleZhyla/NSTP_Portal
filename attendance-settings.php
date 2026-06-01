@@ -6,12 +6,13 @@ require_once './include/user-permissions.php';
 require_once './include/attendance-settings.php';
 
 $currentUser = getCurrentUserRecord($conn);
-if (!$currentUser || $currentUser['role'] !== 'super_admin') {
+if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true)) {
     header("Location: index.php");
     exit();
 }
 
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
+$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
 
 date_default_timezone_set('Asia/Manila');
@@ -116,6 +117,7 @@ date_default_timezone_set('Asia/Manila');
         <section class="content">
             <div class="container-fluid">
                 <div class="row">
+                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
                     <div class="col-lg-5">
                         <div class="card settings-card">
                             <div class="card-header">
@@ -125,7 +127,7 @@ date_default_timezone_set('Asia/Manila');
                                 <div class="setting-summary">
                                     <i class="fas fa-toggle-on"></i>
                                     <div class="flex-fill">
-                                        <strong>Student component choosing is <?php echo $componentSelectionEnabled ? 'open' : 'closed'; ?>.</strong>
+                                        <strong id="componentSelectionStatus">Student component choosing is <?php echo $componentSelectionEnabled ? 'open' : 'closed'; ?>.</strong>
                                         <span class="text-muted small">Open or close the component selection option for student accounts.</span>
                                     </div>
                                     <div class="custom-control custom-switch">
@@ -138,8 +140,35 @@ date_default_timezone_set('Asia/Manila');
                             </div>
                         </div>
                     </div>
+                    <?php endif; ?>
 
-                    <div class="col-lg-7">
+                    <div class="col-lg-<?php echo ($currentUser['role'] ?? '') === 'super_admin' ? '7' : '6'; ?>">
+                        <div class="card settings-card">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>Facilitator Scan Restriction</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="setting-summary">
+                                    <i class="fas fa-user-shield"></i>
+                                    <div class="flex-fill">
+                                        <strong id="scanRestrictionStatus">
+                                            Facilitator restriction is <?php echo $facilitatorScanRestrictionEnabled ? 'active' : 'off'; ?>.
+                                        </strong>
+                                        <span class="text-muted small">Turn this on after common module so facilitators can scan only students assigned to them.</span>
+                                    </div>
+                                    <div class="custom-control custom-switch">
+                                        <input type="checkbox" class="custom-control-input" id="scanRestrictionToggle" <?php echo $facilitatorScanRestrictionEnabled ? 'checked' : ''; ?>>
+                                        <label class="custom-control-label font-weight-bold" for="scanRestrictionToggle">
+                                            <?php echo $facilitatorScanRestrictionEnabled ? 'Active' : 'Off'; ?>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
+                    <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-clock mr-2"></i>Attendance Cutoff Times</h3>
@@ -173,6 +202,7 @@ date_default_timezone_set('Asia/Manila');
                             </form>
                         </div>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </section>
@@ -196,7 +226,7 @@ $(function() {
             success: function(response) {
                 if (response.success) {
                     $('#componentSelectionToggle').next('label').text(response.enabled ? 'Open' : 'Closed');
-                    $('.setting-summary strong').text('Student component choosing is ' + (response.enabled ? 'open' : 'closed') + '.');
+                    $('#componentSelectionStatus').text('Student component choosing is ' + (response.enabled ? 'open' : 'closed') + '.');
                     Swal.fire({
                         icon: 'success',
                         title: response.enabled ? 'Selection Open' : 'Selection Closed',
@@ -212,6 +242,37 @@ $(function() {
             error: function() {
                 Swal.fire('Error', 'Failed to update component selection setting.', 'error');
                 $('#componentSelectionToggle').prop('checked', !enabled);
+            }
+        });
+    });
+
+    $('#scanRestrictionToggle').on('change', function() {
+        const enabled = $(this).is(':checked') ? 1 : 0;
+
+        $.ajax({
+            url: 'endpoint/toggle-facilitator-scan-restriction.php',
+            method: 'POST',
+            data: { enabled: enabled },
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    $('#scanRestrictionToggle').next('label').text(response.enabled ? 'Active' : 'Off');
+                    $('#scanRestrictionStatus').text('Facilitator restriction is ' + (response.enabled ? 'active' : 'off') + '.');
+                    Swal.fire({
+                        icon: 'success',
+                        title: response.enabled ? 'Restriction Active' : 'Restriction Off',
+                        text: response.message,
+                        timer: 1800,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire('Error', response.message, 'error');
+                    $('#scanRestrictionToggle').prop('checked', !enabled);
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Failed to update facilitator scan restriction.', 'error');
+                $('#scanRestrictionToggle').prop('checked', !enabled);
             }
         });
     });

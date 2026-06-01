@@ -18,6 +18,9 @@ if (!canAccessStaffTools($admin_role)) {
     header("Location: profile.php");
     exit();
 }
+$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
+$canViewAllAttendance = $admin_role === 'super_admin'
+    || ($admin_role === 'facilitator' && !$facilitatorScanRestrictionEnabled);
 
 if ($admin_role === 'super_admin') {
     header("Location: admin-management.php");
@@ -582,7 +585,7 @@ if ($admin_role === 'super_admin') {
                         <span class="info-box-text">Total Present Today</span>
                         <span class="info-box-number" id="totalPresentCount">
                             <?php
-                            if ($admin_role == 'super_admin') {
+                            if ($canViewAllAttendance) {
                                 $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_attendance WHERE DATE(time_in) = CURDATE()");
                                 $stmt->execute();
                             } else {
@@ -612,7 +615,7 @@ if ($admin_role === 'super_admin') {
                         <span class="info-box-text">On Time</span>
                         <span class="info-box-number" id="onTimeCount">
                             <?php
-                            if ($admin_role == 'super_admin') {
+                            if ($canViewAllAttendance) {
                                 $stmt = $conn->prepare("
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance 
@@ -648,7 +651,7 @@ if ($admin_role === 'super_admin') {
                         <span class="info-box-text">Late</span>
                         <span class="info-box-number" id="lateCount">
                             <?php
-                            if ($admin_role == 'super_admin') {
+                            if ($canViewAllAttendance) {
                                 $stmt = $conn->prepare("
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance 
@@ -812,7 +815,7 @@ if ($admin_role === 'super_admin') {
     <tbody id="attendanceTableBody">
         <?php
         // Fetch attendance records with JOIN to get student info
-        if ($admin_role == 'super_admin') {
+        if ($canViewAllAttendance) {
             $stmt = $conn->prepare("
                 SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
                        s.student_name, s.course_section 
@@ -941,7 +944,7 @@ if ($admin_role === 'super_admin') {
                         <select class="form-control select2" id="studentSelect" name="student_id" style="width: 100%;" required>
                             <option value="">-- Select a student --</option>
                             <?php
-                            if ($admin_role == 'super_admin') {
+                            if ($canViewAllAttendance) {
                                 $stmt = $conn->prepare("
                                     SELECT tbl_student_id, student_name, course_section 
                                     FROM tbl_student 

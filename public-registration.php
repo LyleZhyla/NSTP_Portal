@@ -3,6 +3,7 @@ session_start();
 require_once './conn/conn.php';
 require_once './include/public-registration-forms.php';
 require_once './include/college-courses.php';
+require_once './include/religions.php';
 
 if (isset($_SESSION['user_id'])) {
     $home = ($_SESSION['role'] ?? '') === 'student' ? 'student-dashboard.php' : 'index.php';
@@ -22,6 +23,7 @@ $enabledFieldCount = count(array_filter($fields));
 $studentNumberBased = !$isFacilitatorForm && !empty($fields['student_number']) && $enabledFieldCount === 1;
 $showNameFields = !empty($fields['name']);
 $showEmailField = !empty($fields['email']);
+$religionOptions = philippinesReligionOptions();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -59,7 +61,7 @@ $showEmailField = !empty($fields['email']);
         <form id="publicRegistrationForm" class="form-card" action="endpoint/submit-public-registration.php" method="POST" enctype="multipart/form-data" novalidate>
             <input type="hidden" name="form_id" value="<?php echo (int) $registrationForm['form_id']; ?>">
             <input type="hidden" name="registrant_role" value="<?php echo htmlspecialchars($registrationRole); ?>">
-            <?php if ($isFacilitatorForm || $showNameFields || $showEmailField || (!$isFacilitatorForm && ($fields['extension_name'] || $fields['middle_name'] || $fields['birth_info'] || $fields['religion']))): ?>
+            <?php if ($isFacilitatorForm || $showNameFields || $showEmailField || (!$isFacilitatorForm && (!$studentNumberBased || $fields['extension_name'] || $fields['middle_name'] || $fields['birth_info'] || $fields['religion']))): ?>
             <div class="form-block">
                 <div class="section-title"><i class="fa-solid fa-user"></i> Personal Information</div>
                 <div class="row g-3">
@@ -117,7 +119,46 @@ $showEmailField = !empty($fields['email']);
                     <?php if (!$isFacilitatorForm && $fields['religion']): ?>
                     <div class="col-md-3 student-only-field">
                         <label class="form-label" for="religion">Religion <?php if (!$studentNumberBased): ?><span class="required">*</span><?php endif; ?></label>
-                        <input type="text" class="form-control" id="religion" name="religion" <?php echo $studentNumberBased ? '' : 'required'; ?>>
+                        <select class="form-select" id="religion" name="religion" <?php echo $studentNumberBased ? '' : 'required'; ?>>
+                            <option value="">Select Religion</option>
+                            <?php foreach ($religionOptions as $religionOption): ?>
+                                <option value="<?php echo htmlspecialchars($religionOption); ?>"><?php echo htmlspecialchars($religionOption); ?></option>
+                            <?php endforeach; ?>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 student-only-field" id="religionOtherWrap" style="display: none;">
+                        <label class="form-label" for="religion_other">Specify Religion <span class="required">*</span></label>
+                        <input type="text" class="form-control" id="religion_other" name="religion_other" placeholder="Enter full religion name">
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!$isFacilitatorForm && !$studentNumberBased): ?>
+                    <div class="col-md-3 student-only-field">
+                        <label class="form-label" for="gender">Gender <span class="required">*</span></label>
+                        <select class="form-select" id="gender" name="gender" required>
+                            <option value="">Select Gender</option>
+                            <option value="Female">Female</option>
+                            <option value="Male">Male</option>
+                            <option value="Prefer not to say">Prefer not to say</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 student-only-field">
+                        <label class="form-label" for="blood_type">Blood Type</label>
+                        <select class="form-select" id="blood_type" name="blood_type">
+                            <option value="N/A">N/A - I do not know</option>
+                            <option value="A+">A+</option>
+                            <option value="A-">A-</option>
+                            <option value="B+">B+</option>
+                            <option value="B-">B-</option>
+                            <option value="AB+">AB+</option>
+                            <option value="AB-">AB-</option>
+                            <option value="O+">O+</option>
+                            <option value="O-">O-</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 student-only-field">
+                        <label class="form-label" for="contact_number">Contact Number <span class="required">*</span></label>
+                        <input type="tel" class="form-control" id="contact_number" name="contact_number" inputmode="tel" maxlength="20" required>
                     </div>
                     <?php endif; ?>
                     <?php if ($isFacilitatorForm || $showEmailField): ?>
@@ -168,6 +209,38 @@ $showEmailField = !empty($fields['email']);
                             <label class="form-check-label fw-semibold" for="house_no_na">N/A - No House No.</label>
                         </div>
                     </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!$isFacilitatorForm && !$studentNumberBased): ?>
+            <div class="form-block student-only-block">
+                <div class="section-title"><i class="fa-solid fa-triangle-exclamation"></i> Contact Details In Case of Emergency</div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label" for="emergency_name">Name <span class="required">*</span></label>
+                        <input type="text" class="form-control" id="emergency_name" name="emergency_name" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="emergency_relationship">Relationship <span class="required">*</span></label>
+                        <input type="text" class="form-control" id="emergency_relationship" name="emergency_relationship" placeholder="Mother, Father, Sister, etc." required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="emergency_contact_number">Contact Number <span class="required">*</span></label>
+                        <input type="tel" class="form-control" id="emergency_contact_number" name="emergency_contact_number" inputmode="tel" maxlength="20" required>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label" for="emergency_address">Address <span class="required">*</span></label>
+                        <textarea class="form-control" id="emergency_address" name="emergency_address" rows="2" required></textarea>
+                    </div>
+                    <?php if ($fields['address']): ?>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check option-check">
+                            <input class="form-check-input" type="checkbox" id="emergency_same_address" name="emergency_same_address" value="1">
+                            <label class="form-check-label fw-semibold" for="emergency_same_address">Same as student address</label>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endif; ?>
@@ -252,8 +325,15 @@ $showEmailField = !empty($fields['email']);
         const middleName = document.getElementById('middle_name');
         const middleNameNA = document.getElementById('middle_name_na');
         const dateOfBirth = document.getElementById('date_of_birth');
+        const religionSelect = document.getElementById('religion');
+        const religionOtherWrap = document.getElementById('religionOtherWrap');
+        const religionOther = document.getElementById('religion_other');
         const houseNo = document.getElementById('house_no');
         const houseNoNA = document.getElementById('house_no_na');
+        const contactNumber = document.getElementById('contact_number');
+        const emergencyContactNumber = document.getElementById('emergency_contact_number');
+        const emergencyAddress = document.getElementById('emergency_address');
+        const emergencySameAddress = document.getElementById('emergency_same_address');
         const studentNumber = document.getElementById('student_number');
         const collegeSelect = document.getElementById('college');
         const courseSelect = document.getElementById('course');
@@ -373,6 +453,69 @@ $showEmailField = !empty($fields['email']);
             }
         });
 
+        function sanitizePhone(input) {
+            if (!input) return;
+            input.addEventListener('input', () => {
+                input.value = input.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 20);
+            });
+        }
+
+        sanitizePhone(contactNumber);
+        sanitizePhone(emergencyContactNumber);
+
+        function isAbbreviationOnly(value) {
+            const text = String(value || '').trim();
+            const lettersOnly = text.replace(/[^A-Za-z]/g, '');
+            const words = text.split(/\s+/).filter(Boolean);
+            return lettersOnly.length < 4 || (words.length === 1 && lettersOnly === lettersOnly.toUpperCase() && lettersOnly.length <= 6);
+        }
+
+        function updateReligionOther() {
+            if (!religionSelect || !religionOtherWrap || !religionOther) return;
+            const showOther = religionSelect.value === 'Others';
+            religionOtherWrap.style.display = showOther ? '' : 'none';
+            religionOther.required = showOther && !studentNumberBased && currentRegistrantRole() !== 'facilitator';
+            if (!showOther) {
+                religionOther.value = '';
+                religionOther.setCustomValidity('');
+            }
+        }
+
+        if (religionSelect) religionSelect.addEventListener('change', updateReligionOther);
+        if (religionOther) religionOther.addEventListener('input', () => {
+            religionOther.setCustomValidity(isAbbreviationOnly(religionOther.value) ? 'Please enter the full religion name, not an abbreviation.' : '');
+        });
+
+        function studentAddressText() {
+            const parts = [
+                houseNo?.value,
+                document.getElementById('street')?.value,
+                barangaySelect?.value,
+                citySelect?.value,
+                provinceSelect?.value,
+            ].filter(value => value && String(value).trim() !== '' && String(value).trim().toUpperCase() !== 'N/A');
+            return parts.join(', ');
+        }
+
+        function syncEmergencyAddress() {
+            if (!emergencySameAddress || !emergencyAddress) return;
+            if (emergencySameAddress.checked) {
+                emergencyAddress.value = studentAddressText() || 'N/A';
+                emergencyAddress.readOnly = true;
+            } else {
+                emergencyAddress.readOnly = false;
+                emergencyAddress.value = '';
+            }
+        }
+
+        if (emergencySameAddress) {
+            emergencySameAddress.addEventListener('change', syncEmergencyAddress);
+            [provinceSelect, citySelect, barangaySelect, houseNo, document.getElementById('street')].forEach(input => {
+                if (input) input.addEventListener('change', syncEmergencyAddress);
+                if (input) input.addEventListener('input', syncEmergencyAddress);
+            });
+        }
+
         if (studentNumber) studentNumber.addEventListener('input', () => {
             studentNumber.value = studentNumber.value.replace(/\D/g, '').slice(0, 10);
         });
@@ -489,6 +632,7 @@ $showEmailField = !empty($fields['email']);
             });
 
             submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i> ' + (studentNumberBased ? 'Record Attendance' : (isFacilitator ? 'Create Facilitator Account' : 'Submit Registration'));
+            updateReligionOther();
         }
 
         form.addEventListener('submit', async (event) => {
@@ -520,6 +664,12 @@ $showEmailField = !empty($fields['email']);
                 return;
             }
 
+            if (currentRegistrantRole() !== 'facilitator' && religionSelect && religionSelect.value === 'Others' && isAbbreviationOnly(religionOther.value)) {
+                showAlert('danger', 'Please enter the full religion name, not an abbreviation.');
+                religionOther.focus();
+                return;
+            }
+
             if (!form.checkValidity()) {
                 form.classList.add('was-validated');
                 showAlert('danger', 'Please complete all required fields correctly.');
@@ -546,6 +696,7 @@ $showEmailField = !empty($fields['email']);
                 if (extensionName) extensionName.readOnly = false;
                 if (middleName) middleName.readOnly = false;
                 if (houseNo) houseNo.readOnly = false;
+                updateReligionOther();
                 showAlert('success', data.message || 'Registration submitted successfully.');
             } catch (error) {
                 showAlert('danger', error.message || 'Unable to submit registration. Please try again.');

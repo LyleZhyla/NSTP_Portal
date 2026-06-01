@@ -52,6 +52,50 @@ function canAccessStaffTools($role) {
     return in_array($role, ['super_admin', 'coordinator', 'facilitator'], true);
 }
 
+function isFacilitatorScanRestrictionEnabled(PDO $conn) {
+    return getSystemSetting($conn, 'facilitator_scan_restriction_enabled', '0') === '1';
+}
+
+function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
+    $role = $actor['role'] ?? '';
+
+    if ($role === 'super_admin') {
+        return true;
+    }
+
+    if ($role === 'coordinator') {
+        $actorProgram = normalizeProgram($actor['program'] ?? null);
+        $studentProgram = normalizeProgram($student['course_section'] ?? null)
+            ?: inferProgramFromText($student['course_section'] ?? '');
+
+        return $actorProgram && $actorProgram === $studentProgram;
+    }
+
+    if ($role !== 'facilitator') {
+        return false;
+    }
+
+    if (!isFacilitatorScanRestrictionEnabled($conn)) {
+        return true;
+    }
+
+    $actorId = (int) ($actor['user_id'] ?? 0);
+    $studentCreatorId = (int) ($student['created_by'] ?? 0);
+
+    if ($actorId <= 0 || $studentCreatorId !== $actorId) {
+        return false;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_admin_sections
+        WHERE user_id = ? AND course_section = ?
+    ");
+    $stmt->execute([$actorId, $student['course_section'] ?? '']);
+
+    return (int) $stmt->fetchColumn() > 0;
+}
+
 function canManageUserRecord(array $actor, array $target) {
     if (($actor['role'] ?? '') === 'super_admin') {
         return true;

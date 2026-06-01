@@ -153,11 +153,24 @@ $user = $stmt->fetch();
 
 $isStudent = $user && ($user['role'] ?? '') === 'student';
 $studentRecord = null;
+$studentRegistrationSections = [];
 $studentAttendanceCount = 0;
 $studentLatestAttendance = null;
 
 if ($isStudent) {
-    $stmt = $conn->prepare("SELECT * FROM tbl_student WHERE user_id = ? LIMIT 1");
+    $stmt = $conn->prepare("
+        SELECT s.*, r.last_name, r.extension_name, r.first_name, r.middle_name, r.place_of_birth,
+               r.date_of_birth, r.gender, r.religion, r.blood_type, r.contact_number, r.email AS registration_email,
+               r.province, r.city_municipality, r.barangay, r.street, r.house_no,
+               r.emergency_name, r.emergency_relationship, r.emergency_contact_number, r.emergency_address,
+               r.student_number AS registration_student_number, r.college, r.course, r.major, r.year_section,
+               r.component, r.formal_picture, r.created_at AS registration_date
+        FROM tbl_student s
+        LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
+        WHERE s.user_id = ?
+        ORDER BY r.created_at DESC
+        LIMIT 1
+    ");
     $stmt->execute([$user_id]);
     $studentRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
@@ -169,6 +182,44 @@ if ($isStudent) {
         $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? ORDER BY time_in DESC LIMIT 1");
         $stmt->execute([$studentRecord['tbl_student_id']]);
         $studentLatestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        $studentAddress = implode(', ', array_filter([
+            $studentRecord['house_no'] ?? '',
+            $studentRecord['street'] ?? '',
+            $studentRecord['barangay'] ?? '',
+            $studentRecord['city_municipality'] ?? '',
+            $studentRecord['province'] ?? '',
+        ], fn($value) => trim((string) $value) !== '' && strtoupper(trim((string) $value)) !== 'N/A')) ?: 'N/A';
+
+        $studentRegistrationSections = [
+            'Personal Information' => [
+                'Full Name' => $studentRecord['student_name'] ?? ($user['full_name'] ?? 'N/A'),
+                'Student Number' => $studentRecord['student_number'] ?? ($studentRecord['registration_student_number'] ?? 'N/A'),
+                'Gender' => $studentRecord['gender'] ?? 'N/A',
+                'Date of Birth' => !empty($studentRecord['date_of_birth']) && $studentRecord['date_of_birth'] !== '0000-00-00' ? date('F d, Y', strtotime($studentRecord['date_of_birth'])) : 'N/A',
+                'Place of Birth' => $studentRecord['place_of_birth'] ?? 'N/A',
+                'Religion' => $studentRecord['religion'] ?? 'N/A',
+                'Blood Type' => $studentRecord['blood_type'] ?? 'N/A',
+            ],
+            'Contact Information' => [
+                'Email' => $studentRecord['registration_email'] ?? ($user['email'] ?? 'N/A'),
+                'Contact Number' => $studentRecord['contact_number'] ?? 'N/A',
+                'Address' => $studentAddress,
+            ],
+            'Emergency Contact' => [
+                'Name' => $studentRecord['emergency_name'] ?? 'N/A',
+                'Relationship' => $studentRecord['emergency_relationship'] ?? 'N/A',
+                'Contact Number' => $studentRecord['emergency_contact_number'] ?? 'N/A',
+                'Address' => $studentRecord['emergency_address'] ?? 'N/A',
+            ],
+            'Academic Information' => [
+                'College' => $studentRecord['college'] ?? 'N/A',
+                'Course' => $studentRecord['course'] ?? 'N/A',
+                'Major' => $studentRecord['major'] ?? 'N/A',
+                'Year and Section' => $studentRecord['year_section'] ?? ($studentRecord['original_section'] ?? 'N/A'),
+                'Component' => $studentRecord['course_section'] ?? ($studentRecord['component'] ?? 'N/A'),
+            ],
+        ];
     }
 }
 
@@ -1000,6 +1051,33 @@ if (!empty($user['full_name'])) {
                                             Select your NSTP component in the Component tab to generate your QR code.
                                         </div>
                                     <?php endif; ?>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <?php if ($isStudent && $studentRecord): ?>
+                            <div class="profile-card">
+                                <div class="card-header bg-white">
+                                    <h5 class="mb-0"><i class="fas fa-address-card mr-2"></i>Registration Details</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <?php foreach ($studentRegistrationSections as $sectionTitle => $details): ?>
+                                            <div class="col-lg-6 mb-3">
+                                                <div class="info-section h-100 mb-0">
+                                                    <div class="info-title">
+                                                        <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($sectionTitle); ?>
+                                                    </div>
+                                                    <?php foreach ($details as $label => $value): ?>
+                                                        <div class="info-item">
+                                                            <div class="info-label"><?php echo htmlspecialchars($label); ?></div>
+                                                            <div class="info-value"><?php echo htmlspecialchars($value ?: 'N/A'); ?></div>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                             </div>
                             <?php endif; ?>

@@ -16,7 +16,12 @@ if (!canAccessStaffTools($_SESSION['role'] ?? '')) {
     exit;
 }
 
-$admin_id = $_SESSION['user_id'];
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    echo json_encode(['success' => false, 'message' => 'Only staff accounts can scan attendance']);
+    exit;
+}
+
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';
 
 if (empty($qr_code)) {
@@ -39,6 +44,14 @@ try {
     if (!$student) {
         error_log("Student not found for QR code: " . $qr_code);
         echo json_encode(['success' => false, 'message' => 'Student not found']);
+        exit;
+    }
+
+    if (!canRecordStudentAttendance($conn, $currentUser, $student)) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'This student is assigned to another facilitator. Attendance was not recorded.'
+        ]);
         exit;
     }
     
