@@ -10,7 +10,6 @@ if (!$currentUser || $currentUser['role'] !== 'super_admin') {
     exit();
 }
 
-$componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_minutes', '5');
 $timeoutOptions = [1, 3, 5, 10, 15, 30, 60];
 if (!in_array($inactivityTimeoutMinutes, $timeoutOptions, true)) {
@@ -178,23 +177,6 @@ date_default_timezone_set('Asia/Manila');
                     <div class="col-lg-5">
                         <div class="card maintenance-card">
                             <div class="card-header">
-                                <h3 class="card-title"><i class="fas fa-layer-group mr-2"></i>Student Component Selection</h3>
-                            </div>
-                            <div class="card-body d-flex align-items-center justify-content-between">
-                                <div class="pr-3">
-                                    <p class="mb-0 text-muted">Open or close the component selection option for student accounts.</p>
-                                </div>
-                                <div class="custom-control custom-switch">
-                                    <input type="checkbox" class="custom-control-input" id="componentSelectionToggle" <?php echo $componentSelectionEnabled ? 'checked' : ''; ?>>
-                                    <label class="custom-control-label font-weight-bold" for="componentSelectionToggle">
-                                        <?php echo $componentSelectionEnabled ? 'Open' : 'Closed'; ?>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card maintenance-card">
-                            <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-clock mr-2"></i>Inactivity Auto Logout</h3>
                             </div>
                             <div class="card-body">
@@ -306,36 +288,6 @@ date_default_timezone_set('Asia/Manila');
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(function() {
-    $('#componentSelectionToggle').on('change', function() {
-        const enabled = $(this).is(':checked') ? 1 : 0;
-
-        $.ajax({
-            url: 'endpoint/toggle-component-selection.php',
-            method: 'POST',
-            data: { enabled: enabled },
-            dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    $('#componentSelectionToggle').next('label').text(response.enabled ? 'Open' : 'Closed');
-                    Swal.fire({
-                        icon: 'success',
-                        title: response.enabled ? 'Selection Open' : 'Selection Closed',
-                        text: response.message,
-                        timer: 1800,
-                        showConfirmButton: false
-                    });
-                } else {
-                    Swal.fire('Error', response.message, 'error');
-                    $('#componentSelectionToggle').prop('checked', !enabled);
-                }
-            },
-            error: function() {
-                Swal.fire('Error', 'Failed to update component selection setting.', 'error');
-                $('#componentSelectionToggle').prop('checked', !enabled);
-            }
-        });
-    });
-
     $('#saveTimeoutBtn').on('click', function() {
         const button = $(this);
         const originalHtml = button.html();

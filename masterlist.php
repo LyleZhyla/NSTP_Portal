@@ -50,6 +50,12 @@ $coordinatorProgram = null;
 $coordinatorPendingStudents = [];
 $coordinatorStudentsByFacilitator = [];
 $coordinatorFacilitators = [];
+$coordinatorFacilitatorFolders = [];
+$coordinatorFolderCards = [];
+$superAdminFolderCards = [];
+$superAdminSystemFolderCards = [];
+$superAdminExportFacilitators = [];
+$admins_with_sections = [];
 
 if ($user_role === 'coordinator') {
     $coordinatorProgram = normalizeProgram($_SESSION['program'] ?? null);
@@ -84,38 +90,46 @@ if ($user_role === 'coordinator') {
     $coordinatorFacilitators = $stmt->fetchAll();
 
     foreach ($coordinatorFacilitators as $facilitator) {
-        $folderName = trim($facilitator['full_name'] ?? '') ?: $facilitator['username'];
-        if (!isset($coordinatorStudentsByFacilitator[$folderName])) {
-            $coordinatorStudentsByFacilitator[$folderName] = [];
+        $coordinatorFacilitatorFolders[(int) $facilitator['user_id']] = [];
+    }
+
+    if (!empty($coordinatorFacilitators)) {
+        $facilitatorIds = array_map(fn($facilitator) => (int) $facilitator['user_id'], $coordinatorFacilitators);
+        $placeholders = implode(',', array_fill(0, count($facilitatorIds), '?'));
+        $stmt = $conn->prepare("
+            SELECT admin_section_id, user_id, course_section
+            FROM tbl_admin_sections
+            WHERE user_id IN ($placeholders)
+            ORDER BY user_id ASC, course_section ASC
+        ");
+        $stmt->execute($facilitatorIds);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $folder) {
+            $coordinatorFacilitatorFolders[(int) $folder['user_id']][] = [
+                'assignment_id' => (int) $folder['admin_section_id'],
+                'course_section' => $folder['course_section'],
+            ];
         }
     }
 
-    $stmt = $conn->prepare("
-        SELECT
-            s.*,
-            s.original_section,
-            CASE
-                WHEN facilitator.role = 'facilitator' AND facilitator.program = ? THEN COALESCE(NULLIF(facilitator.full_name, ''), facilitator.username)
-                ELSE 'Pending Facilitator Assignment'
-            END AS facilitator_name,
-            CASE
-                WHEN facilitator.role = 'facilitator' AND facilitator.program = ? THEN facilitator.username
-                ELSE 'pending'
-            END AS facilitator_username
-        FROM tbl_student s
-        LEFT JOIN tbl_users facilitator ON s.created_by = facilitator.user_id
-        WHERE s.course_section = ?
-        ORDER BY facilitator_name ASC, s.student_name ASC
-    ");
-    $stmt->execute([$coordinatorProgram, $coordinatorProgram, $coordinatorProgram]);
-    $coordinatorStudents = $stmt->fetchAll();
-
-    foreach ($coordinatorStudents as $student) {
-        $folderName = $student['facilitator_name'];
-        if (!isset($coordinatorStudentsByFacilitator[$folderName])) {
-            $coordinatorStudentsByFacilitator[$folderName] = [];
+    foreach ($coordinatorFacilitators as $facilitator) {
+        $facilitatorId = (int) $facilitator['user_id'];
+        $facilitatorName = trim($facilitator['full_name'] ?? '') ?: $facilitator['username'];
+        foreach ($coordinatorFacilitatorFolders[$facilitatorId] ?? [] as $folderInfo) {
+            $folderName = $folderInfo['course_section'];
+            $stmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM tbl_student
+                WHERE created_by = ? AND course_section = ?
+            ");
+            $stmt->execute([$facilitatorId, $folderName]);
+            $coordinatorFolderCards[] = [
+                'assignment_id' => (int) $folderInfo['assignment_id'],
+                'facilitator_id' => $facilitatorId,
+                'facilitator_name' => $facilitatorName,
+                'folder' => $folderName,
+                'count' => (int) $stmt->fetchColumn(),
+            ];
         }
-        $coordinatorStudentsByFacilitator[$folderName][] = $student;
     }
 }
 
@@ -169,70 +183,56 @@ if ($user_role === 'facilitator' && $sections_count > 1) {
 
 // SUPER ADMIN - Get all data with folder organization
 if ($user_role === 'coordinator') {
-    $total_students = count($coordinatorStudents);
+    $total_students = count($coordinatorPendingStudents);
+    foreach ($coordinatorFolderCards as $folderCard) {
+        $total_students += (int) ($folderCard['count'] ?? 0);
+    }
     $my_students_count = $total_students;
 } elseif ($user_role === 'super_admin') {
-    // Super admin gets a read-only coordinator folder view.
-    $admins_stmt = $conn->prepare("
-        SELECT 
-            u.user_id,
-            u.full_name,
-            u.username,
-            u.program,
-            COUNT(DISTINCT s.tbl_student_id) as student_count
-        FROM tbl_users u
-        LEFT JOIN tbl_student s ON s.course_section = u.program
-        WHERE u.role = 'coordinator'
-        GROUP BY u.user_id, u.full_name, u.username, u.program
-        ORDER BY FIELD(u.program, 'CWTS', 'LTS', 'ROTC'), u.full_name ASC
+    $folderStmt = $conn->prepare("
+        SELECT
+            ads.user_id AS facilitator_id,
+            ads.course_section AS folder,
+            facilitator.full_name AS facilitator_name,
+            facilitator.username AS facilitator_username,
+            facilitator.program,
+            COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users facilitator ON ads.user_id = facilitator.user_id
+        LEFT JOIN tbl_student s ON s.created_by = ads.user_id AND s.course_section = ads.course_section
+        WHERE facilitator.role = 'facilitator'
+        GROUP BY ads.user_id, ads.course_section, facilitator.full_name, facilitator.username, facilitator.program
+        ORDER BY FIELD(facilitator.program, 'CWTS', 'LTS', 'ROTC'), facilitator.full_name ASC, ads.course_section ASC
     ");
-    $admins_stmt->execute();
-    $admins = $admins_stmt->fetchAll();
-    
-    // For each coordinator, group students by facilitator folder.
-    $admins_with_sections = [];
-    foreach ($admins as $admin) {
-        $sections_data = [];
-
-        $student_stmt = $conn->prepare("
-            SELECT 
-                s.*,
-                s.original_section,
-                CASE
-                    WHEN f.role = 'facilitator' AND f.program = ? THEN f.full_name
-                    ELSE 'Pending Facilitator Assignment'
-                END AS facilitator_name,
-                CASE
-                    WHEN f.role = 'facilitator' AND f.program = ? THEN f.username
-                    ELSE 'pending'
-                END AS facilitator_username
-            FROM tbl_student s
-            LEFT JOIN tbl_users f ON s.created_by = f.user_id
-            WHERE s.course_section = ?
-            ORDER BY facilitator_name ASC, s.course_section ASC, s.student_name ASC
-        ");
-        $student_stmt->execute([$admin['program'], $admin['program'], $admin['program']]);
-        $students = $student_stmt->fetchAll();
-
-        foreach ($students as $student) {
-            $folderName = $student['facilitator_name'];
-            if (!isset($sections_data[$folderName])) {
-                $sections_data[$folderName] = [];
-            }
-            $sections_data[$folderName][] = $student;
+    $folderStmt->execute();
+    $superAdminFolderCards = $folderStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($superAdminFolderCards as $folderCard) {
+        $facilitatorId = (int) $folderCard['facilitator_id'];
+        if (!isset($superAdminExportFacilitators[$facilitatorId])) {
+            $superAdminExportFacilitators[$facilitatorId] = [
+                'user_id' => $facilitatorId,
+                'full_name' => $folderCard['facilitator_name'],
+                'username' => $folderCard['facilitator_username'],
+                'program' => $folderCard['program'],
+                'student_count' => 0,
+            ];
         }
-        
-        $admins_with_sections[] = [
-            'user_id' => $admin['user_id'],
-            'full_name' => $admin['full_name'],
-            'username' => $admin['username'],
-            'program' => $admin['program'],
-            'student_count' => $admin['student_count'],
-            'sections' => $sections_data,
-            'section_count' => count($sections_data)
-        ];
+        $superAdminExportFacilitators[$facilitatorId]['student_count'] += (int) $folderCard['student_count'];
     }
-    
+
+    $systemFolderStmt = $conn->prepare("
+        SELECT
+            COALESCE(NULLIF(s.course_section, ''), 'Unassigned') AS folder,
+            COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_student s
+        LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+        WHERE s.created_by IS NULL OR creator.role <> 'facilitator'
+        GROUP BY COALESCE(NULLIF(s.course_section, ''), 'Unassigned')
+        ORDER BY folder ASC
+    ");
+    $systemFolderStmt->execute();
+    $superAdminSystemFolderCards = $systemFolderStmt->fetchAll(PDO::FETCH_ASSOC);
+
     $my_students_by_section = [];
     $system_students = [];
     $system_by_section = [];
@@ -485,6 +485,105 @@ if ($user_role === 'super_admin') {
             font-size: 3rem;
             margin-bottom: 15px;
             opacity: 0.3;
+        }
+
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 16px;
+        }
+
+        .folder-box {
+            display: block;
+            min-height: 150px;
+            padding: 18px;
+            border: 1px solid #d7e4ea;
+            border-radius: 8px;
+            background: #fff;
+            color: #1f2933;
+            text-decoration: none;
+            box-shadow: 0 8px 20px rgba(32,72,84,0.08);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+
+        .folder-box:hover {
+            color: #1f2933;
+            text-decoration: none;
+            transform: translateY(-2px);
+            border-color: #2f6f7e;
+            box-shadow: 0 12px 28px rgba(32,72,84,0.14);
+        }
+
+        .folder-box-wrap {
+            position: relative;
+        }
+
+        .folder-box-wrap .folder-box {
+            height: 100%;
+            padding-right: 54px;
+        }
+
+        .folder-delete-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 2;
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .folder-box-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #eef7f9;
+            color: #2f6f7e;
+            font-size: 1.35rem;
+            margin-bottom: 14px;
+        }
+
+        .folder-box-title {
+            display: block;
+            font-weight: 800;
+            margin-bottom: 6px;
+            line-height: 1.25;
+        }
+
+        .folder-box-meta {
+            display: block;
+            color: #667784;
+            font-size: 0.87rem;
+            line-height: 1.35;
+        }
+
+        .folder-box-count {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 14px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: #f4f8fa;
+            color: #2f6f7e;
+            font-weight: 700;
+            font-size: 0.82rem;
+        }
+
+        .folder-box.pending {
+            border-color: #ffe3a3;
+            background: #fffaf0;
+        }
+
+        .folder-box.pending .folder-box-icon {
+            background: #fff0c2;
+            color: #946200;
         }
         
         /* Admin Folder Styles (for super admin) */
@@ -794,8 +893,8 @@ if ($user_role === 'super_admin') {
                     <div class="col-lg-3 col-6">
                         <div class="small-box bg-primary">
                             <div class="inner">
-                                <h3><?php echo count($admins_with_sections); ?></h3>
-                                <p>Component Folders</p>
+                                <h3><?php echo count($superAdminFolderCards) + count($superAdminSystemFolderCards); ?></h3>
+                                <p>Folder Boxes</p>
                             </div>
                             <div class="icon">
                                 <i class="fas fa-folder-tree"></i>
@@ -885,12 +984,8 @@ if ($user_role === 'super_admin') {
                 <?php if ($user_role === 'facilitator'): ?>
                 <div class="row mb-3">
                     <div class="col-12">
-                        <button class="btn btn-success" data-toggle="modal" data-target="#importExcelModal">
-                            <i class="fas fa-file-excel mr-2"></i> Import Excel
-                        </button>
-                        
                         <!-- Export QR Button -->
-                        <button class="btn btn-info ml-2" data-toggle="modal" data-target="#exportQRModal"
+                        <button class="btn btn-info" data-toggle="modal" data-target="#exportQRModal"
                                 <?php echo ($user_role === 'facilitator' && empty($assignedSections)) ? 'disabled' : ''; ?>>
                             <i class="fas fa-file-export mr-2"></i> Export QR Codes (ZIP)
                         </button>
@@ -902,11 +997,6 @@ if ($user_role === 'super_admin') {
                             <i class="fas fa-file-archive mr-2"></i> Quick Export ZIP
                         </a>
                         <?php endif; ?>
-                        
-                        <button class="btn btn-primary float-right" data-toggle="modal" data-target="#addStudentModal" 
-                                <?php echo ($user_role === 'facilitator' && empty($assignedSections)) ? 'disabled' : ''; ?>>
-                            <i class="fas fa-plus mr-2"></i> Add Student
-                        </button>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -932,6 +1022,15 @@ if ($user_role === 'super_admin') {
                 <!-- COORDINATOR VIEW - STUDENT INTAKE AND ASSIGNMENT -->
                 <!-- ==================== -->
                 <?php if ($user_role === 'coordinator'): ?>
+
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <button class="btn btn-success" data-toggle="modal" data-target="#importExcelModal"
+                                <?php echo empty($coordinatorFolderCards) ? 'disabled' : ''; ?>>
+                            <i class="fas fa-file-excel mr-2"></i> Import Students
+                        </button>
+                    </div>
+                </div>
 
                 <div class="card">
                     <div class="card-header">
@@ -961,15 +1060,22 @@ if ($user_role === 'super_admin') {
                                                 <td><span class="badge badge-success"><?php echo htmlspecialchars($student['course_section']); ?></span></td>
                                                 <td><code><?php echo htmlspecialchars($student['generated_code']); ?></code></td>
                                                 <td>
-                                                    <form class="assign-student-form d-flex" method="POST">
+                                                    <form class="assign-student-form" method="POST">
                                                         <input type="hidden" name="student_id" value="<?php echo (int) $student['tbl_student_id']; ?>">
-                                                        <select class="form-control form-control-sm mr-2" name="facilitator_id" required>
+                                                        <select class="form-control form-control-sm mb-2 facilitator-select" name="facilitator_id" required>
                                                             <option value="">Select facilitator</option>
                                                             <?php foreach ($coordinatorFacilitators as $facilitator): ?>
-                                                                <option value="<?php echo (int) $facilitator['user_id']; ?>">
+                                                                <?php
+                                                                    $facilitatorId = (int) $facilitator['user_id'];
+                                                                    $folders = array_column($coordinatorFacilitatorFolders[$facilitatorId] ?? [], 'course_section');
+                                                                ?>
+                                                                <option value="<?php echo $facilitatorId; ?>" data-folders="<?php echo htmlspecialchars(json_encode($folders), ENT_QUOTES, 'UTF-8'); ?>">
                                                                     <?php echo htmlspecialchars($facilitator['full_name'] ?: $facilitator['username']); ?>
                                                                 </option>
                                                             <?php endforeach; ?>
+                                                        </select>
+                                                        <select class="form-control form-control-sm mb-2 folder-select" name="course_section" required disabled>
+                                                            <option value="">Select facilitator first</option>
                                                         </select>
                                                         <button type="submit" class="btn btn-sm btn-primary">
                                                             <i class="fas fa-user-plus"></i> Assign
@@ -998,77 +1104,37 @@ if ($user_role === 'super_admin') {
                         </h3>
                     </div>
                     <div class="card-body">
-                        <?php if (!empty($coordinatorStudentsByFacilitator)): ?>
-                            <?php foreach ($coordinatorStudentsByFacilitator as $facilitatorName => $students):
-                                $student_count = count($students);
-                                $folder_id = preg_replace('/[^a-zA-Z0-9]/', '_', $coordinatorProgram . '_' . $facilitatorName);
-                                $isPendingFolder = $facilitatorName === 'Pending Facilitator Assignment';
-                            ?>
-                                <div class="section-folder" data-section="<?php echo htmlspecialchars($facilitatorName); ?>">
-                                    <div class="section-folder-header collapsed">
-                                        <div class="section-info-header">
-                                            <i class="fas fa-folder folder-icon"></i>
-                                            <span class="section-name">
-                                                <i class="<?php echo $isPendingFolder ? 'fas fa-user-clock' : 'fas fa-user-tie'; ?> mr-1"></i>
-                                                <?php echo htmlspecialchars($facilitatorName); ?>
-                                            </span>
-                                            <span class="section-badge">
-                                                <i class="fas fa-tag mr-1"></i>
-                                                <?php echo $isPendingFolder ? 'Pending' : 'Facilitator'; ?>
-                                            </span>
-                                        </div>
-                                        <div class="section-stats">
-                                            <span class="stat-badge">
-                                                <i class="fas fa-users"></i>
-                                                <?php echo $student_count; ?> student<?php echo $student_count === 1 ? '' : 's'; ?>
-                                            </span>
-                                            <i class="fas fa-chevron-circle-right expand-collapse-icon"></i>
-                                        </div>
+                        <?php if (!empty($coordinatorFolderCards) || !empty($coordinatorPendingStudents)): ?>
+                            <div class="folder-grid">
+                                <?php if (!empty($coordinatorPendingStudents)): ?>
+                                    <a class="folder-box pending" href="folder-students.php?scope=pending&component=<?php echo urlencode($coordinatorProgram); ?>">
+                                        <span class="folder-box-icon"><i class="fas fa-user-clock"></i></span>
+                                        <span class="folder-box-title">Pending Facilitator Assignment</span>
+                                        <span class="folder-box-meta">Students still waiting for an existing facilitator folder.</span>
+                                        <span class="folder-box-count"><i class="fas fa-users"></i><?php echo count($coordinatorPendingStudents); ?> students</span>
+                                    </a>
+                                <?php endif; ?>
+                                <?php foreach ($coordinatorFolderCards as $folderCard): ?>
+                                    <div class="folder-box-wrap">
+                                        <a class="folder-box" href="folder-students.php?scope=coordinator&facilitator_id=<?php echo (int) $folderCard['facilitator_id']; ?>&folder=<?php echo urlencode($folderCard['folder']); ?>">
+                                            <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
+                                            <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['folder']); ?></span>
+                                            <span class="folder-box-meta"><?php echo htmlspecialchars($folderCard['facilitator_name']); ?></span>
+                                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $folderCard['count']; ?> students</span>
+                                        </a>
+                                        <button type="button"
+                                                class="btn btn-sm btn-danger folder-delete-btn"
+                                                title="Delete folder"
+                                                onclick='deleteCoordinatorFolder(<?php echo (int) $folderCard['assignment_id']; ?>, <?php echo htmlspecialchars(json_encode($folderCard['folder']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($folderCard['facilitator_name']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo (int) $folderCard['count']; ?>)'>
+                                            <i class="fas fa-trash"></i>
+                                        </button>
                                     </div>
-                                    <div class="section-folder-body" style="display: none;">
-                                        <?php if ($student_count > 0): ?>
-                                        <div class="table-responsive">
-                                            <table class="table table-sm table-hover folder-table" id="coordinator_table_<?php echo $folder_id; ?>">
-                                                <thead>
-                                                    <tr>
-                                                        <th>No.</th>
-                                                        <th>Student Name</th>
-                                                        <th>Student Number</th>
-                                                        <th>Original Section</th>
-                                                        <th>Component</th>
-                                                        <th>QR Code</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <?php foreach ($students as $index => $student): ?>
-                                                        <tr class="student-row"
-                                                            data-student-name="<?php echo strtolower(htmlspecialchars($student['student_name'])); ?>"
-                                                            data-original-section="<?php echo strtolower(htmlspecialchars($student['original_section'] ?: '')); ?>"
-                                                            data-folder-section="<?php echo strtolower(htmlspecialchars($facilitatorName . ' ' . $student['course_section'])); ?>">
-                                                            <td><?php echo $index + 1; ?></td>
-                                                            <td><?php echo htmlspecialchars($student['student_name']); ?></td>
-                                                            <td><code><?php echo htmlspecialchars($student['student_number'] ?: 'N/A'); ?></code></td>
-                                                            <td><?php echo htmlspecialchars($student['original_section'] ?: 'N/A'); ?></td>
-                                                            <td><span class="badge badge-success"><?php echo htmlspecialchars($student['course_section']); ?></span></td>
-                                                            <td><code><?php echo htmlspecialchars($student['generated_code']); ?></code></td>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        <?php else: ?>
-                                            <div class="empty-folder">
-                                                <i class="fas fa-folder-open fa-2x mb-2"></i>
-                                                <p class="text-muted mb-0">No students in this facilitator folder yet.</p>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </div>
                         <?php else: ?>
                             <div class="alert alert-info mb-0">
                                 <i class="fas fa-info-circle mr-2"></i>
-                                No <?php echo htmlspecialchars($coordinatorProgram); ?> facilitator folders found yet.
+                                No <?php echo htmlspecialchars($coordinatorProgram); ?> facilitator folders found yet. Create folders from User Management first.
                             </div>
                         <?php endif; ?>
                     </div>
@@ -1117,10 +1183,9 @@ if ($user_role === 'super_admin') {
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="alert alert-info d-flex align-items-center">
-                            <i class="fas fa-folder-tree fa-2x mr-3"></i>
+                            <i class="fas fa-file-export fa-2x mr-3"></i>
                             <div>
-                                <strong>Folder View Active:</strong> Students are organized by admin folders.
-                                Each student shows their original college section separately.
+                                <strong>View and export access:</strong> Your folders are shown below. Open a folder to review students before exporting.
                                 <span class="badge badge-light ml-2">
                                     <i class="fas fa-users mr-1"></i> Total: <?php echo $total_students; ?> students
                                 </span>
@@ -1128,268 +1193,42 @@ if ($user_role === 'super_admin') {
                         </div>
                     </div>
                 </div>
-                
-                <!-- Section Folders -->
-                <?php foreach ($sections_with_students as $section_name => $students): 
-                    $student_count = count($students);
-                    $folder_id = preg_replace('/[^a-zA-Z0-9]/', '_', $section_name);
-                ?>
-                <div class="section-folder" data-section="<?php echo htmlspecialchars($section_name); ?>">
-                    <div class="section-folder-header collapsed">
-                        <div class="section-info-header">
-                            <i class="fas fa-folder folder-icon"></i>
-                            <span class="section-name">
-                                <i class="fas fa-users mr-1"></i>
-                                Admin Folder: <?php echo htmlspecialchars($section_name); ?>
-                            </span>
-                            <span class="section-badge">
-                                <i class="fas fa-tag mr-1"></i>
-                                Section
-                            </span>
-                        </div>
-                        <div class="section-stats">
-                            <span class="stat-badge">
-                                <i class="fas fa-users"></i>
-                                <?php echo $student_count; ?> student<?php echo $student_count != 1 ? 's' : ''; ?>
-                            </span>
-                            <i class="fas fa-chevron-circle-right expand-collapse-icon"></i>
-                        </div>
-                    </div>
-                    <div class="section-folder-body" style="display: none;">
-                        <?php if ($student_count > 0): ?>
-                        <div class="table-responsive">
-                            <table class="table table-hover folder-table" id="table_<?php echo $folder_id; ?>">
-                                <thead>
-                                    <tr>
-                                        <th>No.</th>
-                                        <th>Student Name</th>
-                                        <th>Original College Section</th>
-                                        <th>Admin Folder</th>
-                                        <th>QR Code</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php 
-                                    $counter = 1;
-                                    foreach ($students as $row): 
-                                    ?>
-                                        <?php
-                                        $studentID = $row["tbl_student_id"];
-                                        $studentName = $row["student_name"];
-                                        $originalSection = $row["original_section"] ?? $row["course_section"];
-                                        $folderSection = $row["course_section"];
-                                        $qrCode = $row["generated_code"];
-                                        ?>
-                                        <tr class="student-row" 
-                                            data-student-name="<?php echo strtolower(htmlspecialchars($studentName)); ?>"
-                                            data-original-section="<?php echo strtolower(htmlspecialchars($originalSection)); ?>"
-                                            data-folder-section="<?php echo strtolower(htmlspecialchars($folderSection)); ?>">
-                                            <td><?= $counter++ ?></td>
-                                            <td><?= htmlspecialchars($studentName) ?></td>
-                                            <td>
-                                                <span class="original-section-badge">
-                                                    <i class="fas fa-university mr-1"></i>
-                                                    <?= htmlspecialchars($originalSection) ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <span class="folder-section-badge">
-                                                    <i class="fas fa-folder mr-1"></i>
-                                                    <?= htmlspecialchars($folderSection) ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <button class="btn btn-info btn-sm" data-toggle="modal" data-target="#qrCodeModal<?= $studentID ?>">
-                                                    <i class="fas fa-qrcode"></i> View QR
-                                                </button>
-                                            </td>
-                                            <td>
-                                                <div class="action-buttons">
-                                                    <button class="btn btn-warning btn-sm" onclick="updateStudent(<?= $studentID ?>)">
-                                                        <i class="fas fa-edit"></i> Edit
-                                                    </button>
-                                                    <button class="btn btn-danger btn-sm" onclick="deleteStudent(<?= $studentID ?>)">
-                                                        <i class="fas fa-trash"></i> Delete
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
 
-                                        <!-- QR Modal -->
-                                        <div class="modal fade" id="qrCodeModal<?= $studentID ?>" tabindex="-1">
-                                            <div class="modal-dialog">
-                                                <div class="modal-content">
-                                                    <div class="modal-header">
-                                                        <h5 class="modal-title">
-                                                            <i class="fas fa-qrcode mr-2"></i>
-                                                            <?= $studentName ?>'s QR Code
-                                                        </h5>
-                                                        <button type="button" class="close" data-dismiss="modal">
-                                                            <span>&times;</span>
-                                                        </button>
-                                                    </div>
-                                                    <div class="modal-body text-center">
-                                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=<?= urlencode($qrCode) ?>" 
-                                                             alt="QR Code" class="qr-modal-img">
-                                                        <div class="mt-3 text-left">
-                                                            <p class="mb-1">
-                                                                <strong>Original Section:</strong> 
-                                                                <span class="original-section-badge"><?= htmlspecialchars($originalSection) ?></span>
-                                                            </p>
-                                                            <p class="mb-1">
-                                                                <strong>Admin Folder:</strong> 
-                                                                <span class="folder-section-badge"><?= htmlspecialchars($folderSection) ?></span>
-                                                            </p>
-                                                        </div>
-                                                        <p><small>Code: <code><?= $qrCode ?></code></small></p>
-                                                    </div>
-                                                    <div class="modal-footer">
-                                                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                                                        <button type="button" class="btn btn-primary" onclick="printQR('<?= $qrCode ?>')">
-                                                            <i class="fas fa-print"></i> Print
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        <?php else: ?>
-                        <div class="empty-folder">
-                            <i class="fas fa-folder-open"></i>
-                            <h5>No Students in this Admin Folder</h5>
-                            <p class="text-muted">Click "Add Student" to add students to <?= htmlspecialchars($section_name) ?></p>
-                            <button class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addStudentModal">
-                                <i class="fas fa-plus mr-1"></i> Add Student
-                            </button>
-                        </div>
-                        <?php endif; ?>
-                    </div>
+                <div class="folder-grid">
+                    <?php foreach ($sections_with_students as $section_name => $students): ?>
+                        <a class="folder-box" href="folder-students.php?scope=facilitator&folder=<?php echo urlencode($section_name); ?>">
+                            <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
+                            <span class="folder-box-title"><?php echo htmlspecialchars($section_name); ?></span>
+                            <span class="folder-box-meta">Open this folder to view the student list.</span>
+                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo count($students); ?> students</span>
+                        </a>
+                    <?php endforeach; ?>
                 </div>
-                <?php endforeach; ?>
 
                 <!-- ==================== -->
                 <!-- REGULAR ADMIN VIEW - SINGLE SECTION (TABLE VIEW) -->
                 <!-- ==================== -->
                 <?php elseif ($user_role === 'facilitator'): ?>
                 
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-folder-open mr-2"></i>
-                            Students in Admin Folder: <?php echo htmlspecialchars($assignedSection); ?>
-                        </h3>
-                        <div class="card-tools">
-                            <span class="badge badge-primary">
-                                <i class="fas fa-folder mr-1"></i>
-                                Admin Folder
-                            </span>
-                            <span class="badge badge-success ml-2">
-                                <i class="fas fa-users mr-1"></i>
-                                <?php echo $total_students; ?> Students
-                            </span>
-                            <span class="info-tooltip ml-2" title="Students show their original college section">
-                                <i class="fas fa-info-circle"></i>
-                            </span>
-                        </div>
+                <?php if (!empty($assignedSection)): ?>
+                    <div class="alert alert-info">
+                        <i class="fas fa-file-export mr-2"></i>
+                        <strong>View and export access:</strong> Your folder is shown below. Open it to review students before exporting.
                     </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive student-table">
-                            <table class="table table-hover" id="studentTable">
-                                <thead>
-                                    <tr>
-                                        <th>No.</th>
-                                        <th>Student Name</th>
-                                        <th>Original College Section</th>
-                                        <th>Admin Folder</th>
-                                        <th>QR Code</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php 
-                                    $row_counter = 1;
-                                    foreach ($result as $row): 
-                                    ?>
-                                        <?php
-                                        $studentID = $row["tbl_student_id"];
-                                        $studentName = $row["student_name"];
-                                        $originalSection = $row["original_section"] ?? $row["course_section"];
-                                        $folderSection = $row["course_section"];
-                                        $qrCode = $row["generated_code"];
-                                        ?>
-                                        <tr>
-                                            <td><?= $row_counter++ ?></td>
-                                            <td><?= htmlspecialchars($studentName) ?></td>
-                                            <td>
-                                                <span class="original-section-badge">
-                                                    <i class="fas fa-university mr-1"></i>
-                                                    <?= htmlspecialchars($originalSection) ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <span class="folder-section-badge">
-                                                    <i class="fas fa-folder mr-1"></i>
-                                                    <?= htmlspecialchars($folderSection) ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <button class="btn btn-info btn-sm" data-toggle="modal" data-target="#qrCodeModal<?= $studentID ?>">
-                                                    <i class="fas fa-qrcode"></i> View QR
-                                                </button>
-                                            </td>
-                                            <td>
-                                                <div class="action-buttons">
-                                                    <button class="btn btn-warning btn-sm" onclick="updateStudent(<?= $studentID ?>)">
-                                                        <i class="fas fa-edit"></i> Edit
-                                                    </button>
-                                                    <button class="btn btn-danger btn-sm" onclick="deleteStudent(<?= $studentID ?>)">
-                                                        <i class="fas fa-trash"></i> Delete
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-
-                                        <!-- QR Modal -->
-                                        <div class="modal fade" id="qrCodeModal<?= $studentID ?>" tabindex="-1">
-                                            <div class="modal-dialog">
-                                                <div class="modal-content">
-                                                    <div class="modal-header">
-                                                        <h5 class="modal-title"><?= $studentName ?>'s QR Code</h5>
-                                                        <button type="button" class="close" data-dismiss="modal">
-                                                            <span>&times;</span>
-                                                        </button>
-                                                    </div>
-                                                    <div class="modal-body text-center">
-                                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=<?= urlencode($qrCode) ?>" 
-                                                             alt="QR Code" class="qr-modal-img">
-                                                        <div class="mt-3 text-left">
-                                                            <p class="mb-1">
-                                                                <strong>Original Section:</strong> 
-                                                                <span class="original-section-badge"><?= htmlspecialchars($originalSection) ?></span>
-                                                            </p>
-                                                            <p class="mb-1">
-                                                                <strong>Admin Folder:</strong> 
-                                                                <span class="folder-section-badge"><?= htmlspecialchars($folderSection) ?></span>
-                                                            </p>
-                                                        </div>
-                                                        <p><small>Code: <code><?= $qrCode ?></code></small></p>
-                                                    </div>
-                                                    <div class="modal-footer">
-                                                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                    <div class="folder-grid">
+                        <a class="folder-box" href="folder-students.php?scope=facilitator&folder=<?php echo urlencode($assignedSection); ?>">
+                            <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
+                            <span class="folder-box-title"><?php echo htmlspecialchars($assignedSection); ?></span>
+                            <span class="folder-box-meta">Open this folder to view the student list.</span>
+                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo $total_students; ?> students</span>
+                        </a>
                     </div>
-                </div>
+                <?php else: ?>
+                    <div class="alert alert-warning mb-0">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        You are not assigned to any folder yet.
+                    </div>
+                <?php endif; ?>
 
                 <!-- ==================== -->
                 <!-- SUPER ADMIN VIEW - ADMIN FOLDERS WITH NESTED SECTION FOLDERS -->
@@ -1400,9 +1239,33 @@ if ($user_role === 'super_admin') {
                     <i class="fas fa-eye fa-2x mr-3"></i>
                     <div>
                         <strong>Read-only security view:</strong>
-                        Super Admin can review student folders by coordinator, but cannot add, edit, delete, import, or assign students here.
+                        Super Admin can review all facilitator and system folders. Open a folder to view the student list.
                     </div>
                 </div>
+
+                <div class="folder-grid">
+                    <?php foreach ($superAdminFolderCards as $folderCard): ?>
+                        <a class="folder-box" href="folder-students.php?scope=super_facilitator&facilitator_id=<?php echo (int) $folderCard['facilitator_id']; ?>&folder=<?php echo urlencode($folderCard['folder']); ?>">
+                            <span class="folder-box-icon"><i class="fas fa-folder"></i></span>
+                            <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['folder']); ?></span>
+                            <span class="folder-box-meta">
+                                <?php echo htmlspecialchars($folderCard['program'] ?: 'NSTP'); ?> / <?php echo htmlspecialchars($folderCard['facilitator_name'] ?: $folderCard['facilitator_username']); ?>
+                            </span>
+                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $folderCard['student_count']; ?> students</span>
+                        </a>
+                    <?php endforeach; ?>
+
+                    <?php foreach ($superAdminSystemFolderCards as $folderCard): ?>
+                        <a class="folder-box pending" href="folder-students.php?scope=system&folder=<?php echo urlencode($folderCard['folder']); ?>">
+                            <span class="folder-box-icon"><i class="fas fa-cog"></i></span>
+                            <span class="folder-box-title"><?php echo htmlspecialchars($folderCard['folder']); ?></span>
+                            <span class="folder-box-meta">System / public registration folder</span>
+                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $folderCard['student_count']; ?> students</span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+
+                <?php if (false): ?>
 
                 <!-- My Students Folder (Current Super Admin) -->
                 <?php if (!empty($my_students_by_section)): ?>
@@ -1762,6 +1625,8 @@ if ($user_role === 'super_admin') {
                 <?php endif; ?>
 
                 <?php endif; ?>
+
+                <?php endif; ?>
             </div>
         </section>
     </div>
@@ -1771,7 +1636,7 @@ if ($user_role === 'super_admin') {
     <?php include 'footer.php'; ?>
 </div>
 
-<?php if ($user_role === 'facilitator'): ?>
+<?php if (false && $user_role === 'facilitator'): ?>
 <!-- Add Student Modal -->
 <div class="modal fade" id="addStudentModal" tabindex="-1">
     <div class="modal-dialog">
@@ -2128,6 +1993,9 @@ if ($user_role === 'super_admin') {
     </div>
 </div>
 
+<?php endif; ?>
+
+<?php if ($user_role === 'facilitator'): ?>
 <!-- Export QR Code Modal (ZIP Only) -->
 <div class="modal fade" id="exportQRModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -2166,11 +2034,9 @@ if ($user_role === 'super_admin') {
                         <select class="form-control" id="export_admin_id" name="export_admin_id" required>
                             <option value="">-- Select Admin --</option>
                             <option value="<?php echo $user_id; ?>">My Students (<?php echo htmlspecialchars($user_name); ?>)</option>
-                            <?php foreach ($admins_with_sections as $admin): 
-                                if ($admin['user_id'] == $user_id) continue;
-                            ?>
+                            <?php foreach ($superAdminExportFacilitators as $admin): ?>
                             <option value="<?php echo $admin['user_id']; ?>">
-                                <?php echo htmlspecialchars($admin['full_name']); ?> (<?php echo $admin['student_count']; ?> students)
+                                <?php echo htmlspecialchars(($admin['program'] ? $admin['program'] . ' - ' : '') . ($admin['full_name'] ?: $admin['username'])); ?> (<?php echo $admin['student_count']; ?> students)
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -2298,6 +2164,80 @@ if ($user_role === 'super_admin') {
     </div>
 </div>
 
+<?php endif; ?>
+
+<?php if ($user_role === 'coordinator'): ?>
+<!-- Coordinator Import Excel Modal -->
+<div class="modal fade" id="importExcelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-file-excel mr-2"></i>
+                    Import Students to Facilitator Folder
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="importAlert" style="display: none;"></div>
+
+                <form id="importExcelForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="import_facilitator_id">
+                            <i class="fas fa-user-tie mr-1"></i>
+                            Facilitator <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-control" id="import_facilitator_id" name="facilitator_id" required>
+                            <option value="">-- Select Facilitator --</option>
+                            <?php foreach ($coordinatorFacilitators as $facilitator): ?>
+                                <?php
+                                    $facilitatorId = (int) $facilitator['user_id'];
+                                    $folders = array_column($coordinatorFacilitatorFolders[$facilitatorId] ?? [], 'course_section');
+                                ?>
+                                <option value="<?php echo $facilitatorId; ?>" data-folders="<?php echo htmlspecialchars(json_encode($folders), ENT_QUOTES, 'UTF-8'); ?>">
+                                    <?php echo htmlspecialchars(trim($facilitator['full_name'] ?? '') ?: $facilitator['username']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="import_section">
+                            <i class="fas fa-folder mr-1"></i>
+                            Target Folder <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-control" id="import_section" name="import_section" required disabled>
+                            <option value="">-- Select facilitator first --</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            Column A: Student Full Name. Column B: Original College Section. First row is skipped.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="excel_file">Select Excel File:</label>
+                        <input type="file" class="form-control-file" id="excel_file" name="excel_file" accept=".xlsx,.xls,.csv" required>
+                    </div>
+
+                    <div class="progress mb-3" style="display: none; height: 30px;" id="importProgress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                             role="progressbar" style="width: 0%; font-weight: bold;">0%</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="fas fa-times mr-1"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-success" onclick="importExcel()" id="importExcelBtn">
+                    <i class="fas fa-file-import mr-2"></i> Import Students
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 <?php endif; ?>
 
 <!-- Scripts -->
@@ -2480,6 +2420,57 @@ $(document).ready(function() {
     });
     <?php endif; ?>
 
+    $('.facilitator-select').on('change', function() {
+        const form = $(this).closest('form');
+        const folderSelect = form.find('.folder-select');
+        const selected = $(this).find('option:selected');
+        let folders = [];
+
+        try {
+            folders = JSON.parse(selected.attr('data-folders') || '[]');
+        } catch (error) {
+            folders = [];
+        }
+
+        folderSelect.empty();
+        if (folders.length === 0) {
+            folderSelect.append('<option value="">No existing folders</option>');
+            folderSelect.prop('disabled', true);
+            return;
+        }
+
+        folderSelect.append('<option value="">Select existing folder</option>');
+        folders.forEach(function(folder) {
+            folderSelect.append(`<option value="${escapeHtml(folder)}">${escapeHtml(folder)}</option>`);
+        });
+        folderSelect.prop('disabled', false);
+    });
+
+    $('#import_facilitator_id').on('change', function() {
+        const folderSelect = $('#import_section');
+        const selected = $(this).find('option:selected');
+        let folders = [];
+
+        try {
+            folders = JSON.parse(selected.attr('data-folders') || '[]');
+        } catch (error) {
+            folders = [];
+        }
+
+        folderSelect.empty();
+        if (folders.length === 0) {
+            folderSelect.append('<option value="">No existing folders</option>');
+            folderSelect.prop('disabled', true);
+            return;
+        }
+
+        folderSelect.append('<option value="">-- Select Folder --</option>');
+        folders.forEach(function(folder) {
+            folderSelect.append(`<option value="${escapeHtml(folder)}">${escapeHtml(folder)}</option>`);
+        });
+        folderSelect.prop('disabled', false);
+    });
+
     $('.assign-student-form').on('submit', function(e) {
         e.preventDefault();
 
@@ -2528,6 +2519,11 @@ $(document).ready(function() {
         if (importAlert) {
             importAlert.style.display = 'none';
             importAlert.innerHTML = '';
+        }
+        const importFolderSelect = document.getElementById('import_section');
+        if (importFolderSelect && document.getElementById('import_facilitator_id')) {
+            importFolderSelect.innerHTML = '<option value="">-- Select facilitator first --</option>';
+            importFolderSelect.disabled = true;
         }
     });
     
@@ -2600,6 +2596,54 @@ function deleteStudent(id) {
         if (result.isConfirmed) {
             window.location.href = "./endpoint/delete-student.php?student=" + id;
         }
+    });
+}
+
+function deleteCoordinatorFolder(assignmentId, folderName, facilitatorName, studentCount) {
+    Swal.fire({
+        title: 'Delete Folder?',
+        html: `
+            <p>This will permanently delete <strong>${escapeHtml(folderName)}</strong> from <strong>${escapeHtml(facilitatorName)}</strong>.</p>
+            <div class="alert alert-danger small mb-0">
+                This also deletes ${studentCount} student record${studentCount === 1 ? '' : 's'} and their attendance records in this folder.
+            </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, delete folder',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('assignment_id', assignmentId);
+
+        Swal.fire({
+            title: 'Deleting Folder',
+            text: 'Please wait...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        fetch('./endpoint/delete-folder.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                Swal.fire('Deleted', data.message, 'success').then(() => location.reload());
+            } else {
+                Swal.fire('Unable to Delete', data.message || 'Please try again.', 'error');
+            }
+        })
+        .catch(() => {
+            Swal.fire('Error', 'Failed to delete the folder. Please try again.', 'error');
+        });
     });
 }
 
@@ -2733,6 +2777,21 @@ function importExcel() {
         return;
     }
     formData.append('import_section', importSection.value);
+    <?php endif; ?>
+
+    <?php if ($user_role === 'coordinator'): ?>
+    const importFacilitator = document.getElementById('import_facilitator_id');
+    const importSection = document.getElementById('import_section');
+    if (!importFacilitator || !importFacilitator.value) {
+        Swal.fire('Facilitator Required', 'Please select a facilitator for this import.', 'error');
+        return;
+    }
+    if (!importSection || !importSection.value) {
+        Swal.fire('Folder Required', 'Please select a target facilitator folder.', 'error');
+        return;
+    }
+    formData.set('facilitator_id', importFacilitator.value);
+    formData.set('import_section', importSection.value);
     <?php endif; ?>
 
     const submitBtn = document.getElementById('importExcelBtn');

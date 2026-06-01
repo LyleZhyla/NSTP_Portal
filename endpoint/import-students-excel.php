@@ -20,8 +20,8 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'] ?? 'facilitator';
 
-if ($user_role === 'super_admin') {
-    $response['message'] = 'Super Admin has read-only access to student folders.';
+if ($user_role !== 'coordinator') {
+    $response['message'] = 'Only coordinators can import students.';
     echo json_encode($response);
     exit();
 }
@@ -47,44 +47,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
     }
     
     try {
-        // Get target admin folder section from form data
+        // Get target facilitator folder from form data
+        $targetFacilitatorId = (int) ($_POST['facilitator_id'] ?? 0);
         $targetSection = isset($_POST['import_section']) ? trim($_POST['import_section']) : '';
-        
-        // For regular admins, validate the target section
-        if ($user_role !== 'super_admin') {
-            // Get admin's assigned sections
-            $sections_stmt = $conn->prepare("
-                SELECT course_section 
-                FROM tbl_admin_sections 
-                WHERE user_id = ?
-            ");
-            $sections_stmt->execute([$user_id]);
-            $assignedSections = $sections_stmt->fetchAll(PDO::FETCH_COLUMN);
-            
-            if (empty($assignedSections)) {
-                $response['message'] = 'You are not assigned to any admin folders. Please contact super admin.';
-                echo json_encode($response);
-                exit;
-            }
-            
-            // If no target section specified, use first assigned section
-            if (empty($targetSection)) {
-                $targetSection = $assignedSections[0];
-            }
-            
-            // Verify target section is in admin's assigned sections
-            if (!in_array($targetSection, $assignedSections)) {
-                $response['message'] = 'You are not assigned to the selected admin folder.';
-                echo json_encode($response);
-                exit;
-            }
-        } else {
-            // Super admin must specify target section
-            if (empty($targetSection)) {
-                $response['message'] = 'Please specify a target admin folder section.';
-                echo json_encode($response);
-                exit;
-            }
+
+        if ($targetFacilitatorId <= 0 || empty($targetSection)) {
+            $response['message'] = 'Please select a facilitator and target folder.';
+            echo json_encode($response);
+            exit;
+        }
+
+        require_once '../include/user-permissions.php';
+        $currentUser = getCurrentUserRecord($conn);
+        $coordinatorProgram = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
+        if (!$coordinatorProgram) {
+            $response['message'] = 'Coordinator program is missing.';
+            echo json_encode($response);
+            exit;
+        }
+
+        $facilitatorStmt = $conn->prepare("
+            SELECT user_id
+            FROM tbl_users
+            WHERE user_id = ? AND role = 'facilitator' AND program = ?
+        ");
+        $facilitatorStmt->execute([$targetFacilitatorId, $coordinatorProgram]);
+        if (!$facilitatorStmt->fetchColumn()) {
+            $response['message'] = 'Selected facilitator is not under your program.';
+            echo json_encode($response);
+            exit;
+        }
+
+        $folderStmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM tbl_admin_sections
+            WHERE user_id = ? AND course_section = ?
+        ");
+        $folderStmt->execute([$targetFacilitatorId, $targetSection]);
+        if ((int) $folderStmt->fetchColumn() === 0) {
+            $response['message'] = 'Selected folder is not assigned to this facilitator.';
+            echo json_encode($response);
+            exit;
         }
         
         // Load the Excel file
@@ -121,13 +124,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
             }
         }
         
-        // Get existing students for this admin to check duplicates
+        // Get existing students for this facilitator folder owner to check duplicates
         $existingStmt = $conn->prepare("
             SELECT student_name, original_section, course_section 
             FROM tbl_student 
             WHERE created_by = ?
         ");
-        $existingStmt->execute([$user_id]);
+        $existingStmt->execute([$targetFacilitatorId]);
         $existingStudents = $existingStmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Create lookup arrays for faster duplicate checking
@@ -151,14 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
             $studentName = trim($worksheet->getCell('A' . $row)->getValue() ?? '');
             $originalSection = trim($worksheet->getCell('B' . $row)->getValue() ?? '');
             
-            // For super admin, also read the admin folder column if available
             $adminFolder = $targetSection; // Default to target section
-            if ($user_role === 'super_admin' && $highestColumnIndex >= 3) {
-                $excelAdminFolder = trim($worksheet->getCell('C' . $row)->getValue() ?? '');
-                if (!empty($excelAdminFolder)) {
-                    $adminFolder = $excelAdminFolder;
-                }
-            }
             
             // Skip empty rows
             if (empty($studentName)) {
@@ -207,14 +203,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         (student_name, original_section, course_section, generated_code, created_by) 
                         VALUES (?, ?, ?, ?, ?)
                     ");
-                    $result = $stmt->execute([$studentName, $originalSection, $adminFolder, $generatedCode, $user_id]);
+                    $result = $stmt->execute([$studentName, $originalSection, $adminFolder, $generatedCode, $targetFacilitatorId]);
                 } else {
                     $stmt = $conn->prepare("
                         INSERT INTO tbl_student 
                         (student_name, course_section, generated_code, created_by) 
                         VALUES (?, ?, ?, ?)
                     ");
-                    $result = $stmt->execute([$studentName, $adminFolder, $generatedCode, $user_id]);
+                    $result = $stmt->execute([$studentName, $adminFolder, $generatedCode, $targetFacilitatorId]);
                 }
                 
                 if ($result) {

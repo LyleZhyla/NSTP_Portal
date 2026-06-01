@@ -24,6 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $userRole = $_SESSION['role'] ?? 'facilitator';
         
         try {
+            if ($userRole === 'facilitator') {
+                throw new Exception('Facilitators can only export student data.');
+            }
+
             if ($userRole === 'super_admin') {
                 throw new Exception('Super Admin has read-only access to student folders.');
             }

@@ -104,9 +104,6 @@ foreach ($attendance_records as $record) {
     $attendance_lookup[$record['tbl_student_id']] = $record;
 }
 
-// Define cutoff time for late (e.g., 8:00 AM)
-$cutoff_time = '08:00:00';
-
 // Start Excel content
 echo '<table border="1">';
 
@@ -156,9 +153,7 @@ if (!empty($students_by_section)) {
             if (isset($attendance_lookup[$student['tbl_student_id']])) {
                 $section_present++;
                 $record = $attendance_lookup[$student['tbl_student_id']];
-                if (isset($record['status']) && $record['status'] == 'Late') {
-                    $section_late++;
-                } elseif (strtotime($record['attendance_time']) > strtotime($cutoff_time)) {
+                if (isset($record['status']) && stripos($record['status'], 'Late') === 0) {
                     $section_late++;
                 } else {
                     $section_ontime++;
@@ -189,7 +184,7 @@ if (!empty($students_by_section)) {
                 $time_in = $attendance_lookup[$student_id]['attendance_time'];
                 $db_status = isset($attendance_lookup[$student_id]['status']) ? $attendance_lookup[$student_id]['status'] : '';
                 
-                if ($db_status == 'Late' || strtotime($time_in) > strtotime($cutoff_time)) {
+                if (stripos($db_status, 'Late') === 0) {
                     echo '<td style="background-color: #ffcccb; color: #d32f2f; font-weight: bold;">LATE</td>';
                 } else {
                     echo '<td style="background-color: #c8e6c9; color: #2e7d32; font-weight: bold;">ON TIME</td>';

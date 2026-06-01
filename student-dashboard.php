@@ -21,7 +21,14 @@ $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$stmt = $conn->prepare("SELECT * FROM tbl_student WHERE user_id = ? LIMIT 1");
+$stmt = $conn->prepare("
+    SELECT s.*, r.college, r.course, r.major, r.year_section, r.formal_picture
+    FROM tbl_student s
+    LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
+    WHERE s.user_id = ?
+    ORDER BY r.created_at DESC
+    LIMIT 1
+");
 $stmt->execute([$userId]);
 $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
@@ -50,6 +57,41 @@ if ($student) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="include/theme.css">
+    <style>
+        .qr-card {
+            border: 1px solid rgba(47, 111, 126, 0.18);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fff;
+        }
+        .qr-card-header {
+            background: #2f6f7e;
+            color: #fff;
+            padding: 18px 22px;
+        }
+        .qr-profile {
+            width: 132px;
+            height: 132px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #dbe8ed;
+            background: #f8fafc;
+        }
+        .qr-detail-label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #6b7280;
+            text-transform: uppercase;
+        }
+        .qr-detail-value {
+            color: #1f2937;
+            font-weight: 600;
+        }
+        .download-actions .btn {
+            min-width: 126px;
+        }
+    </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
 <div class="wrapper">
@@ -114,15 +156,55 @@ if ($student) {
                     <div class="card-body">
                         <?php if ($student): ?>
                             <?php $qrImage = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' . urlencode($student['generated_code']); ?>
-                            <div class="row align-items-center">
-                                <div class="col-md-4 text-center mb-3 mb-md-0">
-                                    <img src="<?php echo htmlspecialchars($qrImage); ?>" alt="Student QR Code" class="img-thumbnail" style="max-width: 240px;">
+                            <div class="qr-card">
+                                <div class="qr-card-header d-flex justify-content-between align-items-center flex-wrap">
+                                    <div>
+                                        <h4 class="mb-1">TAU NSTP Student QR</h4>
+                                        <div class="small">Use this card when scanning attendance.</div>
+                                    </div>
+                                    <div class="download-actions mt-3 mt-sm-0">
+                                        <a href="endpoint/download-student-qr.php?format=png" class="btn btn-light btn-sm">
+                                            <i class="fas fa-file-image mr-1"></i> PNG
+                                        </a>
+                                        <a href="endpoint/download-student-qr.php?format=jpg" class="btn btn-outline-light btn-sm">
+                                            <i class="fas fa-download mr-1"></i> JPG
+                                        </a>
+                                    </div>
                                 </div>
-                                <div class="col-md-8">
-                                    <p><strong>Name:</strong> <?php echo htmlspecialchars($student['student_name']); ?></p>
-                                    <p><strong>Component:</strong> <?php echo htmlspecialchars($student['course_section']); ?></p>
-                                    <p><strong>QR Code:</strong> <code><?php echo htmlspecialchars($student['generated_code']); ?></code></p>
-                                    <p><strong>Latest Attendance:</strong> <?php echo $latestAttendance ? date('F d, Y h:i A', strtotime($latestAttendance['time_in'])) : 'No attendance yet'; ?></p>
+                                <div class="p-4">
+                                    <div class="row align-items-center">
+                                        <div class="col-lg-3 col-md-4 text-center mb-4 mb-md-0">
+                                            <img src="<?php echo htmlspecialchars($student['formal_picture'] ?: 'include/logo.png'); ?>" alt="Student Picture" class="qr-profile mb-3">
+                                            <img src="<?php echo htmlspecialchars($qrImage); ?>" alt="Student QR Code" class="img-thumbnail" style="max-width: 180px;">
+                                        </div>
+                                        <div class="col-lg-9 col-md-8">
+                                            <div class="row">
+                                                <?php
+                                                $qrDetails = [
+                                                    'Name' => $student['student_name'],
+                                                    'College' => $student['college'] ?? 'N/A',
+                                                    'Course' => $student['course'] ?? 'N/A',
+                                                ];
+                                                if (!empty($student['major']) && strtoupper($student['major']) !== 'N/A') {
+                                                    $qrDetails['Major'] = $student['major'];
+                                                }
+                                                $qrDetails['Section'] = $student['year_section'] ?: ($student['original_section'] ?: 'N/A');
+                                                $qrDetails['Component/Folder'] = $student['course_section'] ?: 'Public Registration';
+                                                $qrDetails['Latest Attendance'] = $latestAttendance ? date('F d, Y h:i A', strtotime($latestAttendance['time_in'])) : 'No attendance yet';
+                                                ?>
+                                                <?php foreach ($qrDetails as $label => $value): ?>
+                                                    <div class="col-sm-6 mb-3">
+                                                        <span class="qr-detail-label"><?php echo htmlspecialchars($label); ?></span>
+                                                        <span class="qr-detail-value"><?php echo htmlspecialchars($value); ?></span>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                            <div class="alert alert-light border mb-0">
+                                                <span class="qr-detail-label">QR Code</span>
+                                                <code><?php echo htmlspecialchars($student['generated_code']); ?></code>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         <?php else: ?>

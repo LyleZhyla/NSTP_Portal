@@ -199,13 +199,6 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
         return ['created' => false, 'user_id' => (int) $existingUserId, 'reason' => 'already_exists'];
     }
 
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_public_student_registrations WHERE student_number = ?");
-    $stmt->execute([$studentNumber]);
-    $submissionCount = (int) $stmt->fetchColumn();
-    if ($submissionCount < 2) {
-        return ['created' => false, 'reason' => 'submission_below_threshold', 'submission_count' => $submissionCount];
-    }
-
     $stmt = $conn->prepare("
         SELECT *
         FROM tbl_public_student_registrations
@@ -216,7 +209,7 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
     $stmt->execute([$studentNumber]);
     $registration = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$registration) {
-        return ['created' => false, 'reason' => 'registration_not_found', 'submission_count' => $submissionCount];
+        return ['created' => false, 'reason' => 'registration_not_found'];
     }
 
     $fullNameParts = [
@@ -262,7 +255,7 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
 
         $conn->commit();
         $emailSent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);
-        return ['created' => true, 'user_id' => $userId, 'username' => $studentNumber, 'password' => $password, 'submission_count' => $submissionCount, 'email_sent' => $emailSent];
+        return ['created' => true, 'user_id' => $userId, 'username' => $studentNumber, 'password' => $password, 'email_sent' => $emailSent];
     } catch (Throwable $error) {
         if ($conn->inTransaction()) {
             $conn->rollBack();

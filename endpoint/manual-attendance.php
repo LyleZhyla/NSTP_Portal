@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once '../conn/conn.php';
-require_once '../include/user-permissions.php';
+require_once '../include/attendance-settings.php';
 
 header('Content-Type: application/json');
 
@@ -27,7 +27,7 @@ if (empty($student_id)) {
 try {
     // Validate student exists AND is created by this admin OR enrolled in admin's sections
     $stmt = $conn->prepare("
-        SELECT COUNT(*) 
+        SELECT s.course_section
         FROM tbl_student s
         LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
         WHERE s.tbl_student_id = ? 
@@ -37,8 +37,9 @@ try {
         )
     ");
     $stmt->execute([$student_id, $_SESSION['user_id'], $_SESSION['user_id']]);
+    $studentCourseSection = $stmt->fetchColumn();
     
-    if ($stmt->fetchColumn() == 0) {
+    if (!$studentCourseSection) {
         echo json_encode(['success' => false, 'message' => 'Student not found or not enrolled in your section']);
         exit();
     }
@@ -60,10 +61,7 @@ try {
         exit();
     }
     
-    // Determine status (8:00 AM cutoff)
-    $attendance_time = new DateTime($time_in);
-    $cutoff_time = new DateTime(date('Y-m-d', strtotime($time_in)) . ' 08:00:00');
-    $status = $attendance_time > $cutoff_time ? 'Late' : 'On Time';
+    $status = getAttendanceStatus($conn, $studentCourseSection, $time_in);
     
     // Insert record
     $columns = "tbl_student_id, time_in, status";

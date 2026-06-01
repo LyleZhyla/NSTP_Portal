@@ -34,6 +34,16 @@ if (isset($_GET['student'])) {
         }
         
         $student = $checkStmt->fetch();
+
+        if ($userRole === 'facilitator') {
+            echo "
+                <script>
+                    alert('Facilitators can only export student data!');
+                    window.location.href = 'http://localhost/qr-code-attendance-system/masterlist.php';
+                </script>
+            ";
+            exit();
+        }
         
         // Super admin can delete any student. Other staff can only delete students they created.
         if ($userRole !== 'super_admin' && $student['created_by'] != $userId) {

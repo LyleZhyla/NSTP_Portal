@@ -18,10 +18,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $studentId = (int) ($_POST['student_id'] ?? 0);
 $facilitatorId = (int) ($_POST['facilitator_id'] ?? 0);
+$courseSection = trim((string) ($_POST['course_section'] ?? ''));
 $program = normalizeProgram($currentUser['program'] ?? null);
 
-if ($studentId <= 0 || $facilitatorId <= 0 || !$program) {
-    echo json_encode(['success' => false, 'message' => 'Student and facilitator are required']);
+if ($studentId <= 0 || $facilitatorId <= 0 || $courseSection === '' || !$program) {
+    echo json_encode(['success' => false, 'message' => 'Student, facilitator, and folder are required']);
     exit();
 }
 
@@ -61,8 +62,24 @@ try {
         exit();
     }
 
-    $stmt = $conn->prepare("UPDATE tbl_student SET created_by = ? WHERE tbl_student_id = ?");
-    $stmt->execute([$facilitatorId, $studentId]);
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_admin_sections
+        WHERE user_id = ? AND course_section = ?
+    ");
+    $stmt->execute([$facilitatorId, $courseSection]);
+    if ((int) $stmt->fetchColumn() === 0) {
+        echo json_encode(['success' => false, 'message' => 'Please choose one of the facilitator existing folders']);
+        exit();
+    }
+
+    if (inferProgramFromText($courseSection) !== $program) {
+        echo json_encode(['success' => false, 'message' => 'Selected folder does not match your component']);
+        exit();
+    }
+
+    $stmt = $conn->prepare("UPDATE tbl_student SET created_by = ?, course_section = ? WHERE tbl_student_id = ?");
+    $stmt->execute([$facilitatorId, $courseSection, $studentId]);
 
     echo json_encode(['success' => true, 'message' => 'Student assigned to facilitator successfully']);
 } catch (Throwable $error) {

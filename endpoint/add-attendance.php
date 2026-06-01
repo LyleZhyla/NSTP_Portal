@@ -1,15 +1,20 @@
 <?php
 session_start();
 header('Content-Type: application/json');
+date_default_timezone_set('Asia/Manila');
+
+include('../conn/conn.php');
+require_once '../include/attendance-settings.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'User not authenticated']);
     exit;
 }
 
-date_default_timezone_set('Asia/Manila');
-include('../conn/conn.php');
-require_once '../include/user-permissions.php';
+if (!canAccessStaffTools($_SESSION['role'] ?? '')) {
+    echo json_encode(['success' => false, 'message' => 'Only staff accounts can scan attendance']);
+    exit;
+}
 
 $admin_id = $_SESSION['user_id'];
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';
@@ -55,8 +60,7 @@ try {
     
     // Record attendance
     $time_in = date('Y-m-d H:i:s');
-    $cutoff = date('Y-m-d') . ' 08:00:00';
-    $status = (strtotime($time_in) > strtotime($cutoff)) ? 'Late' : 'On Time';
+    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $time_in);
     
     $insertStmt = $conn->prepare("
         INSERT INTO tbl_attendance (tbl_student_id, time_in, status) 

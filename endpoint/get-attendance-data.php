@@ -28,7 +28,7 @@ try {
         $onTimeStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 
             WHERE DATE(time_in) = CURDATE() 
-            AND TIME(time_in) <= '08:00:00'
+            AND status LIKE 'On Time%'
         ");
         $onTimeStmt->execute();
         $onTime = $onTimeStmt->fetchColumn();
@@ -37,7 +37,7 @@ try {
         $lateStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 
             WHERE DATE(time_in) = CURDATE() 
-            AND TIME(time_in) > '08:00:00'
+            AND status LIKE 'Late%'
         ");
         $lateStmt->execute();
         $late = $lateStmt->fetchColumn();
@@ -73,7 +73,7 @@ try {
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE DATE(a.time_in) = CURDATE() 
-            AND TIME(a.time_in) <= '08:00:00'
+            AND a.status LIKE 'On Time%'
             AND (s.created_by = ? OR ads.user_id = ?)
         ");
         $onTimeStmt->execute([$admin_id, $admin_id]);
@@ -86,7 +86,7 @@ try {
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE DATE(a.time_in) = CURDATE() 
-            AND TIME(a.time_in) > '08:00:00'
+            AND a.status LIKE 'Late%'
             AND (s.created_by = ? OR ads.user_id = ?)
         ");
         $lateStmt->execute([$admin_id, $admin_id]);
@@ -120,7 +120,7 @@ try {
             'time_in' => $record['time_in'],
             'time_formatted' => date('h:i A', $timeIn),
             'date_formatted' => date('M d, Y', $timeIn),
-            'status' => $record['status'] ?? (date('H:i', $timeIn) > '08:00' ? 'Late' : 'On Time')
+            'status' => $record['status'] ?? 'On Time'
         ];
     }
     

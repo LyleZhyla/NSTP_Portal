@@ -8,6 +8,12 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 include('../conn/conn.php');
+require_once '../include/user-permissions.php';
+
+if (!canAccessStaffTools($_SESSION['role'] ?? '')) {
+    echo json_encode(['valid' => false, 'message' => 'Only staff accounts can scan attendance']);
+    exit;
+}
 
 $admin_id = $_SESSION['user_id'];
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';

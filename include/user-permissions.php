@@ -1,10 +1,13 @@
 <?php
 
+if (!function_exists('normalizeProgram')) {
 function normalizeProgram($program) {
     $program = strtoupper(trim((string) $program));
     return in_array($program, ['CWTS', 'LTS', 'ROTC'], true) ? $program : null;
 }
+}
 
+if (!function_exists('inferProgramFromText')) {
 function inferProgramFromText($text) {
     $text = strtoupper((string) $text);
 
@@ -16,11 +19,19 @@ function inferProgramFromText($text) {
         return 'CWTS';
     }
 
-    if (strpos($text, 'ROTC') !== false || strpos($text, 'ALPHA') !== false) {
+    $rotcCompanies = ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO', 'LIMA', 'MIKE', 'NOVEMBER', 'OSCAR', 'PAPA', 'QUEBEC', 'ROMEO', 'SIERRA', 'TANGO', 'UNIFORM', 'VICTOR', 'WHISKEY', 'XRAY', 'YANKEE', 'ZULU'];
+    foreach ($rotcCompanies as $company) {
+        if (strpos($text, $company . ' COMPANY') !== false) {
+            return 'ROTC';
+        }
+    }
+
+    if (strpos($text, 'ROTC') !== false || strpos($text, 'PLATOON') !== false) {
         return 'ROTC';
     }
 
     return null;
+}
 }
 
 function getCurrentUserRecord(PDO $conn) {

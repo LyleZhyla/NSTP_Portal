@@ -294,7 +294,8 @@ date_default_timezone_set('Asia/Manila');
                                                     <?php if ($admin['role'] === 'facilitator'): ?>
                                                     <button class="btn btn-sm btn-success assign-section" 
                                                             data-id="<?php echo $admin['user_id']; ?>"
-                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>">
+                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>"
+                                                            data-program="<?php echo htmlspecialchars($admin['program'] ?? ''); ?>">
                                                         <i class="fas fa-tasks"></i>
                                                     </button>
                                                     <?php endif; ?>
@@ -646,6 +647,8 @@ date_default_timezone_set('Asia/Manila');
                                         </button>
                                     </div>
                                 </div>
+                                <small class="form-text text-muted">Use the suggestions as defaults. You can still edit the section name before saving.</small>
+                                <div id="sectionPresetButtons" class="mt-2"></div>
                             </div>
                         </div>
                     </div>
@@ -757,6 +760,40 @@ $(document).ready(function() {
     });
 
     // Load available sections for datalist
+    function sectionPresetsForProgram(program) {
+        const normalized = String(program || '').toUpperCase();
+        if (normalized === 'ROTC') {
+            const companies = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
+            const platoons = ['1st', '2nd', '3rd', '4th'];
+            const sections = [];
+            companies.forEach(company => platoons.forEach(platoon => sections.push(`${company} Company ${platoon} Platoon`)));
+            return sections;
+        }
+
+        if (normalized === 'CWTS' || normalized === 'LTS') {
+            const sections = [];
+            ['1', '2'].forEach(year => ['A', 'B', 'C', 'D', 'E', 'F'].forEach(letter => sections.push(`${normalized} ${year}${letter}`)));
+            return sections;
+        }
+
+        return [];
+    }
+
+    function renderSectionPresets(program) {
+        const presets = sectionPresetsForProgram(program);
+        const container = $('#sectionPresetButtons');
+        container.empty();
+
+        if (presets.length === 0) {
+            return;
+        }
+
+        container.append('<div class="small text-muted mb-1">Quick presets</div>');
+        presets.slice(0, 12).forEach(function(section) {
+            container.append(`<button type="button" class="btn btn-xs btn-outline-info mr-1 mb-1 section-preset" data-section="${section}">${section}</button>`);
+        });
+    }
+
     function loadAvailableSections() {
         $.ajax({
             url: 'endpoint/get-all-sections.php',
@@ -781,15 +818,21 @@ $(document).ready(function() {
     $(document).on('click', '.assign-section', function() {
         const userId = $(this).data('id');
         const userName = $(this).data('name');
+        const program = $(this).data('program');
         
         $('#assign_user_id').val(userId);
         $('#admin_name').val(userName);
+        renderSectionPresets(program);
         
         // Load available sections and current assignments
         loadAvailableSections();
         loadAdminSections(userId);
         
         $('#assignSectionModal').modal('show');
+    });
+
+    $(document).on('click', '.section-preset', function() {
+        $('#course_section').val($(this).data('section')).focus();
     });
     
     // Refresh sections button

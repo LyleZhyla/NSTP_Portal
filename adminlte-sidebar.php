@@ -238,6 +238,12 @@ if (isset($_SESSION['user_id'])) {
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a href="attendance-settings.php" class="nav-link <?= ($currentPage == 'attendance-settings.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-user-clock"></i>
+                        <p>Attendance Settings</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a href="system-maintenance.php" class="nav-link <?= ($currentPage == 'system-maintenance.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-database"></i>
                         <p>System Maintenance</p>

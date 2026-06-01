@@ -49,6 +49,10 @@ try {
 
     $user_role = $_SESSION['role'] ?? 'facilitator';
     $user_id = $_SESSION['user_id'];
+
+    if ($user_role === 'facilitator') {
+        throw new Exception('Facilitators can only export student data.');
+    }
     
     if ($user_role === 'super_admin') {
         throw new Exception('Super Admin has read-only access to student folders.');

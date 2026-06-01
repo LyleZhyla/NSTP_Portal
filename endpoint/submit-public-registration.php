@@ -7,6 +7,7 @@ require_once '../conn/conn.php';
 require_once '../include/public-registration-forms.php';
 require_once '../include/college-courses.php';
 require_once '../include/student-account-automation.php';
+require_once '../include/attendance-settings.php';
 
 $response = ['success' => false, 'message' => ''];
 
@@ -356,13 +357,22 @@ function publicRegistrationFullName(array $registration) {
 }
 
 function publicRegistrationCourseSection(array $registration) {
+    $component = normalizeProgram($registration['component'] ?? null);
+    if ($component) {
+        return $component;
+    }
+
+    return 'Public Registration';
+}
+
+function publicRegistrationOriginalSection(array $registration) {
     $yearSection = cleanText($registration['year_section'] ?? '');
 
     if ($yearSection !== '' && $yearSection !== 'N/A') {
         return $yearSection;
     }
 
-    return 'Pending Section';
+    return 'Public Registration';
 }
 
 function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
@@ -379,7 +389,7 @@ function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
 
     $studentName = publicRegistrationFullName($registration);
     $courseSection = publicRegistrationCourseSection($registration);
-    $originalSection = cleanText($registration['year_section'] ?? '');
+    $originalSection = publicRegistrationOriginalSection($registration);
     if ($originalSection === '' || $originalSection === 'N/A') {
         $originalSection = $courseSection;
     }
@@ -436,8 +446,7 @@ function recordPublicRegistrationAttendance(PDO $conn, array $registration) {
     }
 
     $timeIn = date('Y-m-d H:i:s');
-    $cutoff = date('Y-m-d') . ' 08:00:00';
-    $status = (strtotime($timeIn) > strtotime($cutoff)) ? 'Late' : 'On Time';
+    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $timeIn);
 
     $stmt = $conn->prepare("
         INSERT INTO tbl_attendance (tbl_student_id, time_in, status, notes)
