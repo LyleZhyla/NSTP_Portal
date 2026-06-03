@@ -3,6 +3,7 @@ session_start();
 
 require_once 'conn/conn.php';
 require_once 'include/user-permissions.php';
+require_once 'include/attendance-settings.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
@@ -15,7 +16,6 @@ if (($_SESSION['role'] ?? '') !== 'student') {
 }
 
 $userId = $_SESSION['user_id'];
-$componentSelectionEnabled = isComponentSelectionEnabled($conn);
 
 $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$userId]);
@@ -37,55 +37,76 @@ $stmt = $conn->prepare("
 $stmt->execute([$userId]);
 $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
-$attendanceCount = 0;
 $latestAttendance = null;
-if ($student) {
-    $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_attendance WHERE tbl_student_id = ?");
-    $stmt->execute([$student['tbl_student_id']]);
-    $attendanceCount = (int) $stmt->fetchColumn();
+$todayAttendance = null;
+$attendanceDayActive = false;
+$attendanceRecords = [];
+$attendanceSummary = [
+    'present' => 0,
+    'late' => 0,
+    'absent_today' => 0,
+];
 
+function dashboardAttendanceDisplay($status, $timeIn = null) {
+    $rawStatus = trim((string) $status);
+    $statusText = 'Present';
+    $badgeClass = 'success';
+    $session = '';
+
+    if (stripos($rawStatus, 'Late') === 0) {
+        $statusText = 'Late';
+        $badgeClass = 'warning';
+    } elseif (stripos($rawStatus, 'Absent') === 0) {
+        $statusText = 'Absent';
+        $badgeClass = 'danger';
+    }
+
+    if (strpos($rawStatus, '-') !== false) {
+        $parts = array_map('trim', explode('-', $rawStatus, 2));
+        $session = $parts[1] ?? '';
+    } elseif ($timeIn) {
+        $session = ((int) date('G', strtotime($timeIn)) < 12) ? 'Morning' : 'Afternoon';
+    }
+
+    return [
+        'status' => $statusText,
+        'badge' => $badgeClass,
+        'session' => $session,
+    ];
+}
+
+if ($student) {
     $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? ORDER BY time_in DESC LIMIT 1");
     $stmt->execute([$student['tbl_student_id']]);
     $latestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-}
 
-$registrationSections = [];
-if ($student) {
-    $registrationSections = [
-        'Personal Information' => [
-            'Full Name' => $student['student_name'] ?? 'N/A',
-            'Student Number' => $student['student_number'] ?? ($student['registration_student_number'] ?? 'N/A'),
-            'Gender' => $student['gender'] ?? 'N/A',
-            'Date of Birth' => !empty($student['date_of_birth']) && $student['date_of_birth'] !== '0000-00-00' ? date('F d, Y', strtotime($student['date_of_birth'])) : 'N/A',
-            'Place of Birth' => $student['place_of_birth'] ?? 'N/A',
-            'Religion' => $student['religion'] ?? 'N/A',
-            'Blood Type' => $student['blood_type'] ?? 'N/A',
-        ],
-        'Contact Information' => [
-            'Email' => $student['email'] ?? ($user['email'] ?? 'N/A'),
-            'Contact Number' => $student['contact_number'] ?? 'N/A',
-            'Address' => implode(', ', array_filter([
-                $student['house_no'] ?? '',
-                $student['street'] ?? '',
-                $student['barangay'] ?? '',
-                $student['city_municipality'] ?? '',
-                $student['province'] ?? '',
-            ], fn($value) => trim((string) $value) !== '' && strtoupper(trim((string) $value)) !== 'N/A')) ?: 'N/A',
-        ],
-        'Emergency Contact' => [
-            'Name' => $student['emergency_name'] ?? 'N/A',
-            'Relationship' => $student['emergency_relationship'] ?? 'N/A',
-            'Contact Number' => $student['emergency_contact_number'] ?? 'N/A',
-            'Address' => $student['emergency_address'] ?? 'N/A',
-        ],
-        'Academic Information' => [
-            'College' => $student['college'] ?? 'N/A',
-            'Course' => $student['course'] ?? 'N/A',
-            'Major' => $student['major'] ?? 'N/A',
-            'Year and Section' => $student['year_section'] ?? ($student['original_section'] ?? 'N/A'),
-            'Component' => $student['course_section'] ?? ($student['component'] ?? 'N/A'),
-        ],
-    ];
+    $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? AND DATE(time_in) = CURDATE() ORDER BY time_in DESC LIMIT 1");
+    $stmt->execute([$student['tbl_student_id']]);
+    $todayAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $attendanceDayActive = hasAttendanceForStudentScopeOnDate($conn, $student);
+
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM tbl_attendance
+        WHERE tbl_student_id = ?
+        ORDER BY time_in DESC
+        LIMIT 30
+    ");
+    $stmt->execute([$student['tbl_student_id']]);
+    $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt = $conn->prepare("
+        SELECT
+            SUM(CASE WHEN status LIKE 'Late%' THEN 1 ELSE 0 END) AS late_count,
+            SUM(CASE WHEN status IS NULL OR status = '' OR status LIKE 'On Time%' THEN 1 ELSE 0 END) AS present_count
+        FROM tbl_attendance
+        WHERE tbl_student_id = ?
+    ");
+    $stmt->execute([$student['tbl_student_id']]);
+    $summaryCounts = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $attendanceSummary['late'] = (int) ($summaryCounts['late_count'] ?? 0);
+    $attendanceSummary['present'] = (int) ($summaryCounts['present_count'] ?? 0);
+    $attendanceSummary['absent_today'] = (!$todayAttendance && $attendanceDayActive) ? 1 : 0;
 }
 ?>
 <!DOCTYPE html>
@@ -199,127 +220,152 @@ if ($student) {
             <div class="container-fluid">
                 <div class="row">
                     <div class="col-lg-4 col-12">
-                        <div class="small-box bg-info">
-                            <div class="inner">
-                                <h3><?php echo htmlspecialchars($user['program'] ?? 'None'); ?></h3>
-                                <p>Selected Component</p>
-                            </div>
-                            <div class="icon"><i class="fas fa-layer-group"></i></div>
-                            <a href="component.php" class="small-box-footer">Manage Component <i class="fas fa-arrow-circle-right"></i></a>
-                        </div>
-                    </div>
-                    <div class="col-lg-4 col-12">
                         <div class="small-box bg-success">
                             <div class="inner">
-                                <h3><?php echo $attendanceCount; ?></h3>
-                                <p>Number of Attendance</p>
+                                <h3><?php echo $attendanceSummary['present']; ?></h3>
+                                <p>Present</p>
                             </div>
-                            <div class="icon"><i class="fas fa-calendar-check"></i></div>
+                            <div class="icon"><i class="fas fa-check-circle"></i></div>
                         </div>
                     </div>
                     <div class="col-lg-4 col-12">
-                        <div class="small-box <?php echo $componentSelectionEnabled ? 'bg-warning' : 'bg-secondary'; ?>">
+                        <div class="small-box bg-warning">
                             <div class="inner">
-                                <h3><?php echo $componentSelectionEnabled ? 'Open' : 'Closed'; ?></h3>
-                                <p>Component Selection</p>
+                                <h3><?php echo $attendanceSummary['late']; ?></h3>
+                                <p>Late</p>
                             </div>
-                            <div class="icon"><i class="fas <?php echo $componentSelectionEnabled ? 'fa-unlock' : 'fa-lock'; ?>"></i></div>
+                            <div class="icon"><i class="fas fa-exclamation-circle"></i></div>
                         </div>
                     </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>My QR Code</h3>
-                    </div>
-                    <div class="card-body">
-                        <?php if ($student): ?>
-                            <?php $qrImage = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' . urlencode($student['generated_code']); ?>
-                            <div class="qr-card">
-                                <div class="qr-card-header d-flex justify-content-between align-items-center flex-wrap">
-                                    <div>
-                                        <h4 class="mb-1">TAU NSTP Student QR</h4>
-                                        <div class="small">Use this card when scanning attendance.</div>
-                                    </div>
-                                    <div class="download-actions mt-3 mt-sm-0">
-                                        <a href="endpoint/download-student-qr.php?format=png" class="btn btn-light btn-sm">
-                                            <i class="fas fa-file-image mr-1"></i> PNG
-                                        </a>
-                                        <a href="endpoint/download-student-qr.php?format=jpg" class="btn btn-outline-light btn-sm">
-                                            <i class="fas fa-download mr-1"></i> JPG
-                                        </a>
-                                    </div>
-                                </div>
-                                <div class="p-4">
-                                    <div class="row align-items-center">
-                                        <div class="col-lg-3 col-md-4 text-center mb-4 mb-md-0">
-                                            <img src="<?php echo htmlspecialchars($student['formal_picture'] ?: 'include/logo.png'); ?>" alt="Student Picture" class="qr-profile mb-3">
-                                            <img src="<?php echo htmlspecialchars($qrImage); ?>" alt="Student QR Code" class="img-thumbnail" style="max-width: 180px;">
-                                        </div>
-                                        <div class="col-lg-9 col-md-8">
-                                            <div class="row">
-                                                <?php
-                                                $qrDetails = [
-                                                    'Name' => $student['student_name'],
-                                                    'College' => $student['college'] ?? 'N/A',
-                                                    'Course' => $student['course'] ?? 'N/A',
-                                                ];
-                                                if (!empty($student['major']) && strtoupper($student['major']) !== 'N/A') {
-                                                    $qrDetails['Major'] = $student['major'];
-                                                }
-                                                $qrDetails['Section'] = $student['year_section'] ?: ($student['original_section'] ?: 'N/A');
-                                                $qrDetails['Component/Folder'] = $student['course_section'] ?: 'Public Registration';
-                                                $qrDetails['Latest Attendance'] = $latestAttendance ? date('F d, Y h:i A', strtotime($latestAttendance['time_in'])) : 'No attendance yet';
-                                                ?>
-                                                <?php foreach ($qrDetails as $label => $value): ?>
-                                                    <div class="col-sm-6 mb-3">
-                                                        <span class="qr-detail-label"><?php echo htmlspecialchars($label); ?></span>
-                                                        <span class="qr-detail-value"><?php echo htmlspecialchars($value); ?></span>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                            </div>
-                                            <div class="alert alert-light border mb-0">
-                                                <span class="qr-detail-label">QR Code</span>
-                                                <code><?php echo htmlspecialchars($student['generated_code']); ?></code>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                    <div class="col-lg-4 col-12">
+                        <div class="small-box bg-danger">
+                            <div class="inner">
+                                <h3><?php echo $attendanceSummary['absent_today']; ?></h3>
+                                <p>Absent Today</p>
                             </div>
-                        <?php else: ?>
-                            <div class="alert alert-info mb-0">
-                                <i class="fas fa-info-circle mr-2"></i>
-                                Choose your NSTP component first to generate your QR code.
-                                <a href="component.php" class="alert-link">Go to Component</a>
-                            </div>
-                        <?php endif; ?>
+                            <div class="icon"><i class="fas fa-times-circle"></i></div>
+                        </div>
                     </div>
                 </div>
 
                 <?php if ($student): ?>
                 <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-id-card mr-2"></i>My Registration Details</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <?php foreach ($registrationSections as $sectionTitle => $details): ?>
-                                <div class="col-lg-6 mb-3">
-                                    <div class="detail-card">
-                                        <h6 class="mb-3"><?php echo htmlspecialchars($sectionTitle); ?></h6>
-                                        <?php foreach ($details as $label => $value): ?>
-                                            <div class="detail-row">
-                                                <div class="detail-label"><?php echo htmlspecialchars($label); ?></div>
-                                                <div class="detail-value"><?php echo htmlspecialchars($value ?: 'N/A'); ?></div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
+                    <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
+                        <h3 class="card-title mb-0"><i class="fas fa-id-card mr-2"></i>NSTP ID</h3>
+                        <div class="download-actions mt-2 mt-sm-0">
+                            <a href="endpoint/download-student-qr.php?format=png" class="btn btn-sm btn-primary">
+                                <i class="fas fa-file-image mr-1"></i> PNG
+                            </a>
+                            <a href="endpoint/download-student-qr.php?format=jpg" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-download mr-1"></i> JPG
+                            </a>
                         </div>
                     </div>
                 </div>
                 <?php endif; ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-calendar-check mr-2"></i>My Attendance Details</h3>
+                    </div>
+                    <div class="card-body">
+                        <?php if ($student): ?>
+                            <?php
+                                $todayDisplay = $todayAttendance
+                                    ? dashboardAttendanceDisplay($todayAttendance['status'] ?? '', $todayAttendance['time_in'] ?? null)
+                                    : ($attendanceDayActive ? [
+                                        'status' => 'Absent',
+                                        'badge' => 'danger',
+                                        'session' => ((int) date('G') < 12) ? 'Morning' : 'Afternoon',
+                                    ] : [
+                                        'status' => 'No Attendance',
+                                        'badge' => 'secondary',
+                                        'session' => '',
+                                    ]);
+                            ?>
+                            <div class="detail-card mb-4">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap">
+                                    <div>
+                                        <h6 class="mb-1">Today's Attendance</h6>
+                                        <div class="text-muted small"><?php echo date('F d, Y'); ?></div>
+                                    </div>
+                                    <span class="badge badge-<?php echo $todayDisplay['badge']; ?> p-2 mt-2 mt-sm-0">
+                                        <?php echo htmlspecialchars($todayDisplay['status']); ?>
+                                    </span>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-4 mb-2 mb-md-0">
+                                        <span class="qr-detail-label">Time</span>
+                                        <span class="qr-detail-value">
+                                            <?php echo $todayAttendance ? date('h:i A', strtotime($todayAttendance['time_in'])) : ($attendanceDayActive ? 'No scan' : 'No attendance today'); ?>
+                                        </span>
+                                    </div>
+                                    <div class="col-md-4 mb-2 mb-md-0">
+                                        <span class="qr-detail-label">Session</span>
+                                        <span class="qr-detail-value"><?php echo htmlspecialchars($todayDisplay['session'] ?: 'N/A'); ?></span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <span class="qr-detail-label">Latest Attendance</span>
+                                        <span class="qr-detail-value">
+                                            <?php echo $latestAttendance ? date('M d, Y h:i A', strtotime($latestAttendance['time_in'])) : 'No attendance yet'; ?>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Time</th>
+                                            <th>Session</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (!$todayAttendance && $attendanceDayActive): ?>
+                                            <tr>
+                                                <td><?php echo date('M d, Y'); ?></td>
+                                                <td>No scan</td>
+                                                <td><?php echo htmlspecialchars($todayDisplay['session']); ?></td>
+                                                <td><span class="badge badge-danger">Absent</span></td>
+                                            </tr>
+                                        <?php endif; ?>
+
+                                        <?php foreach ($attendanceRecords as $attendanceRecord): ?>
+                                            <?php $attendanceDisplay = dashboardAttendanceDisplay($attendanceRecord['status'] ?? '', $attendanceRecord['time_in'] ?? null); ?>
+                                            <tr>
+                                                <td><?php echo date('M d, Y', strtotime($attendanceRecord['time_in'])); ?></td>
+                                                <td><?php echo date('h:i A', strtotime($attendanceRecord['time_in'])); ?></td>
+                                                <td><?php echo htmlspecialchars($attendanceDisplay['session'] ?: 'N/A'); ?></td>
+                                                <td>
+                                                    <span class="badge badge-<?php echo $attendanceDisplay['badge']; ?>">
+                                                        <?php echo htmlspecialchars($attendanceDisplay['status']); ?>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+
+                                        <?php if (count($attendanceRecords) === 0 && !(!$todayAttendance && $attendanceDayActive)): ?>
+                                            <tr>
+                                                <td colspan="4" class="text-center text-muted py-4">
+                                                    No attendance records yet
+                                                </td>
+                                            </tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                Choose your NSTP component first so your attendance record can be created.
+                                <a href="component.php" class="alert-link">Go to Component</a>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </section>
     </div>

@@ -1,6 +1,16 @@
 <?php
-// Include database connection
+session_start();
 require_once '../conn/conn.php';
+require_once '../include/user-permissions.php';
+
+if (!isset($_SESSION['user_id'])) {
+    die('Unauthorized access');
+}
+
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    die('Unauthorized access');
+}
 
 // Get parameters
 $startDate = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d', strtotime('-7 days'));
@@ -30,13 +40,30 @@ $query = "SELECT
     aa.archived_date as 'Archived Date'
 FROM tbl_attendance_archive aa
 LEFT JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
+LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
 WHERE DATE(aa.time_in) BETWEEN :start_date AND :end_date
+";
+$params = [
+    ':start_date' => $startDate,
+    ':end_date' => $endDate,
+];
+
+$role = $currentUser['role'] ?? 'facilitator';
+if ($role === 'coordinator') {
+    $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
+    $query .= " AND ((creator.role = 'facilitator' AND creator.program = :program) OR s.course_section = :program_section)";
+    $params[':program'] = $program;
+    $params[':program_section'] = $program;
+} elseif ($role === 'facilitator') {
+    $query .= " AND s.created_by = :user_id";
+    $params[':user_id'] = (int) $currentUser['user_id'];
+}
+
+$query .= "
 ORDER BY aa.time_in DESC";
 
 $stmt = $conn->prepare($query);
-$stmt->bindParam(':start_date', $startDate);
-$stmt->bindParam(':end_date', $endDate);
-$stmt->execute();
+$stmt->execute($params);
 $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Start Excel content

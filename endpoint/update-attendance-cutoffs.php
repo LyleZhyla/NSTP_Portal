@@ -27,9 +27,9 @@ try {
     }
 
     saveAttendanceCutoffs($conn, $cutoffs);
-    logSystemEvent($conn, 'attendance_cutoffs_updated', 'Updated morning and afternoon attendance cutoff times.');
+    logSystemEvent($conn, 'attendance_cutoffs_updated', 'Updated morning and afternoon late start times.');
 
-    echo json_encode(['success' => true, 'message' => 'Attendance cutoff times were updated successfully.']);
+    echo json_encode(['success' => true, 'message' => 'Late start times were updated successfully.']);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => $error->getMessage()]);
 }

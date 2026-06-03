@@ -1,34 +1,34 @@
 <?php
-// Include database connection
-require_once '../conn/conn.php';
-
-// Set headers for Excel download
-header('Content-Type: application/vnd.ms-excel');
-header('Content-Disposition: attachment; filename="attendance_report_' . date('Y-m-d_H-i-s') . '.xls"');
-header('Cache-Control: max-age=0');
-
-// Start session to get logged-in user
 session_start();
+
+require_once '../conn/conn.php';
+require_once '../include/user-permissions.php';
+
+if (!isset($_SESSION['user_id'])) {
+    die('Unauthorized access');
+}
 
 // Get the selected date (if any) - you can pass this via GET parameter
 $selected_date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+if (!strtotime($selected_date)) {
+    die('Invalid date format');
+}
+$selected_date = date('Y-m-d', strtotime($selected_date));
 
-// Get the user ID from session (assuming user is logged in)
-$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
-
-// If user_id is 0, try to get from URL parameter (for testing)
-if ($user_id == 0 && isset($_GET['user_id'])) {
-    $user_id = $_GET['user_id'];
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    die('Unauthorized access');
 }
 
-// Get user info
-$user_query = "SELECT username, role FROM tbl_users WHERE user_id = :user_id";
-$user_stmt = $conn->prepare($user_query);
-$user_stmt->execute([':user_id' => $user_id]);
-$user_info = $user_stmt->fetch(PDO::FETCH_ASSOC);
+$user_id = (int) $currentUser['user_id'];
+$user_role = $currentUser['role'] ?? 'facilitator';
 
-// If user is super_admin (user_id = 1), show all students grouped by section
-if ($user_id == 1) {
+// Set headers for Excel download
+header('Content-Type: application/vnd.ms-excel');
+header('Content-Disposition: attachment; filename="attendance_report_' . $selected_date . '_' . date('H-i-s') . '.xls"');
+header('Cache-Control: max-age=0');
+
+if ($user_role === 'super_admin') {
     // Super admin - get all students grouped by section
     $student_query = "SELECT 
         s.tbl_student_id,
@@ -54,6 +54,36 @@ if ($user_id == 1) {
     }
     
     $admin_display = "SUPER ADMIN";
+} elseif ($user_role === 'coordinator') {
+    $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
+    $student_query = "SELECT 
+        s.tbl_student_id,
+        s.student_name,
+        s.course_section,
+        u.username as created_by_name
+    FROM tbl_student s
+    LEFT JOIN tbl_users u ON s.created_by = u.user_id
+    WHERE (u.role = 'facilitator' AND u.program = :program)
+       OR s.course_section = :program_section
+    ORDER BY s.course_section ASC, s.student_name ASC";
+    
+    $student_stmt = $conn->prepare($student_query);
+    $student_stmt->execute([
+        ':program' => $program,
+        ':program_section' => $program,
+    ]);
+    $all_students = $student_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $students_by_section = [];
+    foreach ($all_students as $student) {
+        $section = $student['course_section'];
+        if (!isset($students_by_section[$section])) {
+            $students_by_section[$section] = [];
+        }
+        $students_by_section[$section][] = $student;
+    }
+    
+    $admin_display = strtoupper(($currentUser['program'] ?? '') . ' COORDINATOR');
 } else {
     // Regular admin - get sections assigned to this admin
     $sections_query = "SELECT course_section FROM tbl_admin_sections WHERE user_id = :user_id";
@@ -81,7 +111,7 @@ if ($user_id == 1) {
         }
     }
     
-    $admin_display = $user_info ? strtoupper($user_info['username']) : 'UNKNOWN ADMIN';
+    $admin_display = strtoupper($_SESSION['username'] ?? 'FACILITATOR');
 }
 
 // Query to get attendance records for the selected date

@@ -182,6 +182,15 @@ if (isset($_SESSION['user_id'])) {
                 </li>
                 <?php endif; ?>
 
+                <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator', 'facilitator'], true)): ?>
+                <li class="nav-item">
+                    <a href="downloadables.php" class="nav-link <?= ($currentPage == 'downloadables.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-download"></i>
+                        <p>Downloadables</p>
+                    </a>
+                </li>
+                <?php endif; ?>
+
                 <!-- Archive Manager -->
                 <li class="nav-item">
                     <a href="archive-manager.php" class="nav-link <?= ($currentPage == 'archive-manager.php') ? 'active' : '' ?>">

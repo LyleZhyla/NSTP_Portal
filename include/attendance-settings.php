@@ -57,7 +57,7 @@ function saveAttendanceCutoffs(PDO $conn, array $cutoffs) {
         foreach (['morning', 'afternoon'] as $period) {
             $value = $cutoffs[$component][$period] ?? null;
             if (!validAttendanceTime($value)) {
-                throw new InvalidArgumentException('Please enter valid cutoff times.');
+                throw new InvalidArgumentException('Please enter valid late start times.');
             }
 
             setSystemSetting($conn, 'attendance_' . strtolower($component) . '_' . $period . '_cutoff', $value);
@@ -79,7 +79,31 @@ function getAttendanceStatus(PDO $conn, $courseSection, $timeIn = null) {
     $cutoff = date('Y-m-d', $timestamp) . ' ' . ($cutoffs[$component][$period] ?? '08:00') . ':00';
     $periodLabel = $period === 'morning' ? 'Morning' : 'Afternoon';
 
-    return strtotime(date('Y-m-d H:i:s', $timestamp)) > strtotime($cutoff)
+    return strtotime(date('Y-m-d H:i:s', $timestamp)) >= strtotime($cutoff)
         ? 'Late - ' . $periodLabel
         : 'On Time - ' . $periodLabel;
+}
+
+function hasAttendanceForStudentScopeOnDate(PDO $conn, array $student, $date = null) {
+    $courseSection = trim((string) ($student['course_section'] ?? ''));
+    if ($courseSection === '') {
+        return false;
+    }
+
+    $attendanceDate = $date ? date('Y-m-d', strtotime($date)) : date('Y-m-d');
+    $createdBy = isset($student['created_by']) && $student['created_by'] !== ''
+        ? (int) $student['created_by']
+        : null;
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_attendance a
+        INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
+        WHERE DATE(a.time_in) = ?
+        AND s.course_section = ?
+        AND s.created_by <=> ?
+    ");
+    $stmt->execute([$attendanceDate, $courseSection, $createdBy]);
+
+    return (int) $stmt->fetchColumn() > 0;
 }

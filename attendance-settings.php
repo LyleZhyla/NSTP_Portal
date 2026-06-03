@@ -4,6 +4,7 @@ include('./include/theme-loader.php');
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
 require_once './include/attendance-settings.php';
+require_once './include/automatic-sectioning.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true)) {
@@ -14,6 +15,7 @@ if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coor
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
+$autoSectionMaxStudents = getAutoSectionMaxStudents($conn);
 
 date_default_timezone_set('Asia/Manila');
 ?>
@@ -171,11 +173,44 @@ date_default_timezone_set('Asia/Manila');
                     <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
-                                <h3 class="card-title"><i class="fas fa-clock mr-2"></i>Attendance Cutoff Times</h3>
+                                <h3 class="card-title"><i class="fas fa-folder-tree mr-2"></i>Automatic Folder Sectioning</h3>
+                            </div>
+                            <form id="autoSectionForm">
+                                <div class="card-body">
+                                    <div class="row align-items-end">
+                                        <div class="col-md-5">
+                                            <label for="autoSectionMaxStudents">Maximum students per folder</label>
+                                            <select class="form-control" id="autoSectionMaxStudents" name="max_students">
+                                                <?php foreach (autoSectionMaxOptions() as $option): ?>
+                                                    <option value="<?php echo (int) $option; ?>" <?php echo $autoSectionMaxStudents === $option ? 'selected' : ''; ?>>
+                                                        <?php echo (int) $option; ?> students
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-7 mt-3 mt-md-0">
+                                            <button type="submit" class="btn btn-primary" id="saveAutoSectionBtn">
+                                                <i class="fas fa-save mr-1"></i> Save Maximum
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary ml-2" id="rebuildAutoSectionBtn">
+                                                <i class="fas fa-sync-alt mr-1"></i> Rebuild Existing Folders
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-muted small mb-0 mt-3">
+                                        New student records are grouped by course and section. When a folder reaches the maximum, the next students continue in the next folder.
+                                    </p>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="card settings-card">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-clock mr-2"></i>Late Start Times</h3>
                             </div>
                             <form id="attendanceCutoffForm">
                                 <div class="card-body">
-                                    <p class="text-muted">Set the latest on-time scan for each morning and afternoon session.</p>
+                                    <p class="text-muted">Set what time late attendance starts for each morning and afternoon session.</p>
                                     <?php foreach (attendanceComponents() as $component): ?>
                                         <?php $key = strtolower($component); ?>
                                         <div class="cutoff-row">
@@ -184,11 +219,11 @@ date_default_timezone_set('Asia/Manila');
                                                 <span class="text-muted small">Applies to matching student folders.</span>
                                             </div>
                                             <div>
-                                                <label class="small mb-1" for="<?php echo $key; ?>_morning">Morning</label>
+                                                <label class="small mb-1" for="<?php echo $key; ?>_morning">Morning Late Starts</label>
                                                 <input type="time" class="form-control" id="<?php echo $key; ?>_morning" name="<?php echo $key; ?>_morning" value="<?php echo htmlspecialchars($attendanceCutoffs[$component]['morning']); ?>" required>
                                             </div>
                                             <div>
-                                                <label class="small mb-1" for="<?php echo $key; ?>_afternoon">Afternoon</label>
+                                                <label class="small mb-1" for="<?php echo $key; ?>_afternoon">Afternoon Late Starts</label>
                                                 <input type="time" class="form-control" id="<?php echo $key; ?>_afternoon" name="<?php echo $key; ?>_afternoon" value="<?php echo htmlspecialchars($attendanceCutoffs[$component]['afternoon']); ?>" required>
                                             </div>
                                         </div>
@@ -196,7 +231,7 @@ date_default_timezone_set('Asia/Manila');
                                 </div>
                                 <div class="card-footer text-right">
                                     <button type="submit" class="btn btn-primary" id="saveCutoffsBtn">
-                                        <i class="fas fa-save mr-1"></i> Save Cutoffs
+                                        <i class="fas fa-save mr-1"></i> Save Late Times
                                     </button>
                                 </div>
                             </form>
@@ -301,6 +336,72 @@ $(function() {
             complete: function() {
                 button.prop('disabled', false).html(originalHtml);
             }
+        });
+    });
+
+    $('#autoSectionForm').on('submit', function(event) {
+        event.preventDefault();
+        const button = $('#saveAutoSectionBtn');
+        const originalHtml = button.html();
+        button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving');
+
+        $.ajax({
+            url: 'endpoint/update-auto-section-settings.php',
+            method: 'POST',
+            data: $(this).serialize(),
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    Swal.fire('Saved', response.message, 'success');
+                } else {
+                    Swal.fire('Unable to save', response.message || 'Please try again.', 'error');
+                }
+            },
+            error: function() {
+                Swal.fire('Request failed', 'The server did not return a valid response.', 'error');
+            },
+            complete: function() {
+                button.prop('disabled', false).html(originalHtml);
+            }
+        });
+    });
+
+    $('#rebuildAutoSectionBtn').on('click', function() {
+        const button = $(this);
+        const originalHtml = button.html();
+
+        Swal.fire({
+            icon: 'question',
+            title: 'Rebuild automatic folders?',
+            text: 'Existing system/public student folders will be recalculated using the selected maximum.',
+            showCancelButton: true,
+            confirmButtonText: 'Rebuild',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Rebuilding');
+
+            $.ajax({
+                url: 'endpoint/rebuild-auto-section-folders.php',
+                method: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        Swal.fire('Done', response.message, 'success');
+                    } else {
+                        Swal.fire('Unable to rebuild', response.message || 'Please try again.', 'error');
+                    }
+                },
+                error: function() {
+                    Swal.fire('Request failed', 'The server did not return a valid response.', 'error');
+                },
+                complete: function() {
+                    button.prop('disabled', false).html(originalHtml);
+                }
+            });
         });
     });
 });

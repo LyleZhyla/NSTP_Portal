@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once './conn/conn.php';
 require_once './include/user-permissions.php';
+require_once './include/automatic-sectioning.php';
 
 $currentUser = getCurrentUserRecord($conn);
 $role = $currentUser['role'] ?? '';
@@ -112,13 +113,16 @@ try {
             FROM tbl_student s
             LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
             WHERE (creator.role = 'facilitator' AND creator.program = ?)
-               OR ((s.created_by IS NULL OR creator.role <> 'facilitator') AND s.course_section = ?)
+               OR (
+                    (s.created_by IS NULL OR creator.role <> 'facilitator')
+                    AND (s.course_section = ? OR s.course_section LIKE ?)
+               )
             ORDER BY
                 COALESCE(NULLIF(creator.full_name, ''), creator.username, 'Pending/System') ASC,
                 s.course_section ASC,
                 s.student_name ASC
         ");
-        $stmt->execute([$program, $program]);
+        $stmt->execute([$program, $program, autoSectionFolderPrefix($program) . ' %']);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $pageTitle = $program;
         $folderMeta = 'Component folder';
@@ -132,7 +136,7 @@ try {
             SELECT s.*
             FROM tbl_student s
             LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-            WHERE s.course_section = ?
+            WHERE (s.course_section = ? OR s.course_section LIKE ?)
               AND (
                   s.created_by IS NULL
                   OR creator.role <> 'facilitator'
@@ -140,7 +144,7 @@ try {
               )
             ORDER BY s.student_name ASC
         ");
-        $stmt->execute([$program, $program]);
+        $stmt->execute([$program, autoSectionFolderPrefix($program) . ' %', $program]);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $pageTitle = $program . ' Pending Assignment';
         $folderMeta = 'Students waiting for facilitator folder assignment';
@@ -454,6 +458,15 @@ $detailColumns = [
             padding: 14px 18px;
             background: #fbfdfe;
         }
+        .column-picker-toggle {
+            color: #2f6f7e;
+            font-weight: 800;
+            text-decoration: none;
+        }
+        .column-picker-toggle:hover {
+            color: #244f5b;
+            text-decoration: none;
+        }
         .column-picker-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -560,26 +573,36 @@ $detailColumns = [
                     <div class="card-body p-0">
                         <?php if (!empty($students)): ?>
                             <div class="column-picker">
-                                <div class="d-flex align-items-center justify-content-between flex-wrap mb-2" style="gap: 8px;">
-                                    <strong><i class="fas fa-columns mr-1"></i> Visible Details</strong>
+                                <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap: 8px;">
+                                    <button type="button"
+                                            class="btn btn-link btn-sm p-0 column-picker-toggle"
+                                            data-toggle="collapse"
+                                            data-target="#visibleDetailsPanel"
+                                            aria-expanded="false"
+                                            aria-controls="visibleDetailsPanel">
+                                        <i class="fas fa-chevron-right mr-1" id="visibleDetailsIcon"></i>
+                                        <i class="fas fa-columns mr-1"></i> Visible Details
+                                    </button>
                                     <div>
                                         <button type="button" class="btn btn-xs btn-outline-primary" id="showAllColumns">Show All</button>
                                         <button type="button" class="btn btn-xs btn-outline-secondary" id="hideOptionalColumns">Basic Only</button>
                                     </div>
                                 </div>
-                                <div class="column-picker-grid">
-                                    <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
-                                        <div class="form-check mb-0">
-                                            <input class="form-check-input detail-column-toggle"
-                                                   type="checkbox"
-                                                   value="<?php echo htmlspecialchars($columnKey); ?>"
-                                                   id="toggle_<?php echo htmlspecialchars($columnKey); ?>"
-                                                   checked>
-                                            <label class="form-check-label" for="toggle_<?php echo htmlspecialchars($columnKey); ?>">
-                                                <?php echo htmlspecialchars($columnLabel); ?>
-                                            </label>
-                                        </div>
-                                    <?php endforeach; ?>
+                                <div class="collapse mt-3" id="visibleDetailsPanel">
+                                    <div class="column-picker-grid">
+                                        <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input detail-column-toggle"
+                                                       type="checkbox"
+                                                       value="<?php echo htmlspecialchars($columnKey); ?>"
+                                                       id="toggle_<?php echo htmlspecialchars($columnKey); ?>"
+                                                       checked>
+                                                <label class="form-check-label" for="toggle_<?php echo htmlspecialchars($columnKey); ?>">
+                                                    <?php echo htmlspecialchars($columnLabel); ?>
+                                                </label>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                             </div>
                             <div class="table-responsive">
@@ -629,7 +652,10 @@ $detailColumns = [
                                                             <?php endif; ?>
                                                         <?php elseif ($columnKey === 'generated_code'): ?>
                                                             <?php if ($displayValue !== 'N/A'): ?>
-                                                                <img class="qr-thumb" src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=<?php echo urlencode($displayValue); ?>" alt="QR">
+                                                                <button type="button" class="btn btn-link p-0 d-inline-flex align-items-center"
+                                                                        onclick="showFolderStudentQrModal(<?= htmlspecialchars(json_encode($displayValue), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode($student['student_name'] ?? 'Student'), ENT_QUOTES, 'UTF-8') ?>)">
+                                                                    <img class="qr-thumb" src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=<?php echo urlencode($displayValue); ?>" alt="QR">
+                                                                </button>
                                                                 <code class="ml-2"><?php echo htmlspecialchars($displayValue); ?></code>
                                                             <?php else: ?>
                                                                 <span class="text-muted">N/A</span>
@@ -664,6 +690,31 @@ $detailColumns = [
     <?php include 'footer.php'; ?>
 </div>
 
+<div class="modal fade" id="folderStudentQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-qrcode mr-2"></i>
+                    <span id="folderStudentQrModalTitle">Student QR</span>
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="folderStudentQrModalImg" class="img-thumbnail mb-3" src="" alt="Student QR Code" style="max-width: 300px;">
+                <div>
+                    <code id="folderStudentQrModalCode"></code>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
@@ -692,7 +743,33 @@ $(function() {
             setColumnVisible(this.value, visible);
         });
     });
+
+    $('#visibleDetailsPanel')
+        .on('show.bs.collapse', function() {
+            $('#visibleDetailsIcon').removeClass('fa-chevron-right').addClass('fa-chevron-down');
+        })
+        .on('hide.bs.collapse', function() {
+            $('#visibleDetailsIcon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+        });
 });
+
+function getFolderStudentQrImageUrl(qrCode, size) {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(qrCode)}`;
+}
+
+function showFolderStudentQrModal(qrCode, studentName = 'Student') {
+    const safeCode = String(qrCode || '').trim();
+    const safeName = String(studentName || 'Student').trim();
+
+    if (!safeCode) {
+        return;
+    }
+
+    document.getElementById('folderStudentQrModalTitle').textContent = `${safeName} QR`;
+    document.getElementById('folderStudentQrModalCode').textContent = safeCode;
+    document.getElementById('folderStudentQrModalImg').src = getFolderStudentQrImageUrl(safeCode, 260);
+    $('#folderStudentQrModal').modal('show');
+}
 </script>
 </body>
 </html>

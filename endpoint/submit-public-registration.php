@@ -9,6 +9,7 @@ require_once '../include/college-courses.php';
 require_once '../include/student-account-automation.php';
 require_once '../include/attendance-settings.php';
 require_once '../include/religions.php';
+require_once '../include/automatic-sectioning.php';
 
 $response = ['success' => false, 'message' => ''];
 
@@ -373,21 +374,20 @@ function publicRegistrationFullName(array $registration) {
 
 function publicRegistrationCourseSection(array $registration) {
     $component = normalizeProgram($registration['component'] ?? null);
-    if ($component) {
-        return $component;
-    }
-
-    return 'Public Registration';
+    return autoSectionFolderForStudent(
+        $GLOBALS['conn'],
+        $component ?: 'PUBLIC',
+        $registration['course'] ?? '',
+        $registration['year_section'] ?? '',
+        publicRegistrationOriginalSection($registration)
+    );
 }
 
 function publicRegistrationOriginalSection(array $registration) {
+    $course = cleanText($registration['course'] ?? '');
     $yearSection = cleanText($registration['year_section'] ?? '');
 
-    if ($yearSection !== '' && $yearSection !== 'N/A') {
-        return $yearSection;
-    }
-
-    return 'Public Registration';
+    return autoSectionOriginalSection($course, $yearSection, 'Public Registration');
 }
 
 function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
@@ -965,6 +965,7 @@ try {
         'extension_name' => $extensionName,
         'first_name' => $firstName,
         'middle_name' => $middleName,
+        'course' => $course,
         'year_section' => $yearSection,
         'component' => $component,
         'form_title' => $publicForm['form_title'],

@@ -36,16 +36,16 @@ try {
     $stmt->execute([$studentId]);
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$student || normalizeProgram($student['course_section']) !== $program) {
+    if (!$student) {
         echo json_encode(['success' => false, 'message' => 'Student is not available for this coordinator']);
         exit();
     }
 
-    $alreadyAssignedToProgramFacilitator = !empty($student['created_by'])
-        && ($student['creator_role'] ?? '') === 'facilitator'
-        && normalizeProgram($student['creator_program'] ?? null) === $program;
+    $studentProgram = normalizeProgram($student['course_section'])
+        ?: inferProgramFromText($student['course_section'])
+        ?: normalizeProgram($student['creator_program'] ?? null);
 
-    if ($alreadyAssignedToProgramFacilitator) {
+    if ($studentProgram !== $program) {
         echo json_encode(['success' => false, 'message' => 'Student is not available for this coordinator']);
         exit();
     }
@@ -98,7 +98,7 @@ try {
 
     echo json_encode([
         'success' => true,
-        'message' => 'Student assigned to facilitator folder successfully',
+        'message' => 'Student moved to facilitator folder successfully',
         'student' => [
             'id' => (int) $updatedStudent['tbl_student_id'],
             'name' => $updatedStudent['student_name'],

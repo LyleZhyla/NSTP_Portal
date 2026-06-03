@@ -3,6 +3,7 @@ session_start();
 
 require_once 'conn/conn.php';
 require_once 'include/user-permissions.php';
+require_once 'include/automatic-sectioning.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
@@ -42,6 +43,28 @@ if (isset($_POST['update_component'])) {
                 throw new Exception('Only student accounts can choose a component here.');
             }
 
+            $stmt = $conn->prepare("
+                SELECT course, year_section
+                FROM tbl_public_student_registrations
+                WHERE user_id = ?
+                ORDER BY registration_id DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$user_id]);
+            $registration = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $originalSection = autoSectionOriginalSection(
+                $registration['course'] ?? '',
+                $registration['year_section'] ?? '',
+                ''
+            );
+            $autoFolder = autoSectionFolderForStudent(
+                $conn,
+                $selectedComponent,
+                $registration['course'] ?? '',
+                $registration['year_section'] ?? '',
+                $originalSection
+            );
+
             $stmt = $conn->prepare("SELECT tbl_student_id FROM tbl_student WHERE user_id = ? LIMIT 1");
             $stmt->execute([$user_id]);
             $existingStudent = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -50,10 +73,10 @@ if (isset($_POST['update_component'])) {
             if ($existingStudent) {
                 $stmt = $conn->prepare("
                     UPDATE tbl_student
-                    SET student_name = ?, course_section = ?
+                    SET student_name = ?, original_section = ?, course_section = ?
                     WHERE user_id = ?
                 ");
-                $stmt->execute([$studentName, $selectedComponent, $user_id]);
+                $stmt->execute([$studentName, $originalSection, $autoFolder, $user_id]);
             } else {
                 do {
                     $generatedCode = 'STU_' . uniqid('', true) . '_' . random_int(1000, 9999);
@@ -63,9 +86,9 @@ if (isset($_POST['update_component'])) {
 
                 $stmt = $conn->prepare("
                     INSERT INTO tbl_student (user_id, student_name, original_section, course_section, generated_code, created_by)
-                    VALUES (?, ?, NULL, ?, ?, NULL)
+                    VALUES (?, ?, ?, ?, ?, NULL)
                 ");
-                $stmt->execute([$user_id, $studentName, $selectedComponent, $generatedCode]);
+                $stmt->execute([$user_id, $studentName, $originalSection, $autoFolder, $generatedCode]);
             }
 
             $stmt = $conn->prepare("UPDATE tbl_users SET program = ? WHERE user_id = ?");

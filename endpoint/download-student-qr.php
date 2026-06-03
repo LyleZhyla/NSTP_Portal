@@ -64,7 +64,8 @@ function fitText($image, $font, $size, $x, $y, $text, $color, $maxWidth) {
 }
 
 $stmt = $conn->prepare("
-    SELECT s.*, r.college, r.course, r.major, r.year_section, r.formal_picture
+    SELECT s.*, r.course, r.year_section, r.formal_picture,
+           r.emergency_name, r.emergency_relationship, r.emergency_contact_number
     FROM tbl_student s
     LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
     WHERE s.user_id = ?
@@ -112,7 +113,7 @@ if (!is_file($boldFont)) {
     $boldFont = $font;
 }
 
-imagettftext($canvas, 22, 0, 38, 56, $white, $boldFont, 'TAU NSTP Student QR');
+imagettftext($canvas, 22, 0, 38, 56, $white, $boldFont, 'TAU NSTP ID');
 imagettftext($canvas, 12, 0, 40, 78, $white, $font, 'Scan this code for attendance.');
 
 imagecopyresampled($canvas, $qrImage, 430, 154, 0, 0, 330, 330, imagesx($qrImage), imagesy($qrImage));
@@ -135,16 +136,13 @@ imagettftext($canvas, 11, 0, $x, $y, $muted, $boldFont, 'Name');
 $y = fitText($canvas, $boldFont, 17, $x, $y + 28, $student['student_name'], $ink, $maxTextWidth) + 26;
 
 $details = [
-    'College' => $student['college'] ?: 'N/A',
     'Course' => $student['course'] ?: 'N/A',
+    'Year' => $student['year_section'] ?: ($student['original_section'] ?: 'N/A'),
+    'Section' => $student['course_section'] ?: 'Unassigned',
+    'Emergency Contact' => $student['emergency_name'] ?: 'N/A',
+    'Relationship' => $student['emergency_relationship'] ?: 'N/A',
+    'Contact Number' => $student['emergency_contact_number'] ?: 'N/A',
 ];
-
-if (!empty($student['major']) && strtoupper($student['major']) !== 'N/A') {
-    $details['Major'] = $student['major'];
-}
-
-$details['Section'] = $student['year_section'] ?: ($student['original_section'] ?: 'N/A');
-$details['Component'] = $student['course_section'] ?: 'Public Registration';
 
 foreach ($details as $label => $value) {
     imagettftext($canvas, 10, 0, $x, $y, $muted, $boldFont, $label);
@@ -156,11 +154,11 @@ imagettftext($canvas, 11, 0, 70, 504, $muted, $font, 'QR Code: ' . $student['gen
 $safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $student['student_name']);
 if ($format === 'jpg' || $format === 'jpeg') {
     header('Content-Type: image/jpeg');
-    header('Content-Disposition: attachment; filename="' . $safeName . '_QR.jpg"');
+    header('Content-Disposition: attachment; filename="' . $safeName . '_NSTP_ID.jpg"');
     imagejpeg($canvas, null, 92);
 } else {
     header('Content-Type: image/png');
-    header('Content-Disposition: attachment; filename="' . $safeName . '_QR.png"');
+    header('Content-Disposition: attachment; filename="' . $safeName . '_NSTP_ID.png"');
     imagepng($canvas);
 }
 

@@ -2,6 +2,7 @@
 session_start();
 
 require_once 'conn/conn.php';
+require_once 'include/attendance-settings.php';
 
 
 // Check if user is logged in
@@ -156,6 +157,45 @@ $studentRecord = null;
 $studentRegistrationSections = [];
 $studentAttendanceCount = 0;
 $studentLatestAttendance = null;
+$studentTodayAttendance = null;
+$studentAttendanceDayActive = false;
+$studentAttendanceRecords = [];
+$studentAttendanceSummary = [
+    'present' => 0,
+    'late' => 0,
+    'absent_today' => 0,
+];
+
+function studentAttendanceDisplay($status, $timeIn = null) {
+    $rawStatus = trim((string) $status);
+    $statusText = 'Present';
+    $badgeClass = 'success';
+    $session = '';
+
+    if (stripos($rawStatus, 'Late') === 0) {
+        $statusText = 'Late';
+        $badgeClass = 'warning';
+    } elseif (stripos($rawStatus, 'Absent') === 0) {
+        $statusText = 'Absent';
+        $badgeClass = 'danger';
+    } elseif ($rawStatus === '') {
+        $statusText = 'Present';
+        $badgeClass = 'success';
+    }
+
+    if (strpos($rawStatus, '-') !== false) {
+        $parts = array_map('trim', explode('-', $rawStatus, 2));
+        $session = $parts[1] ?? '';
+    } elseif ($timeIn) {
+        $session = ((int) date('G', strtotime($timeIn)) < 12) ? 'Morning' : 'Afternoon';
+    }
+
+    return [
+        'status' => $statusText,
+        'badge' => $badgeClass,
+        'session' => $session,
+    ];
+}
 
 if ($isStudent) {
     $stmt = $conn->prepare("
@@ -183,6 +223,34 @@ if ($isStudent) {
         $stmt->execute([$studentRecord['tbl_student_id']]);
         $studentLatestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
+        $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? AND DATE(time_in) = CURDATE() ORDER BY time_in DESC LIMIT 1");
+        $stmt->execute([$studentRecord['tbl_student_id']]);
+        $studentTodayAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $studentAttendanceDayActive = hasAttendanceForStudentScopeOnDate($conn, $studentRecord);
+
+        $stmt = $conn->prepare("
+            SELECT *
+            FROM tbl_attendance
+            WHERE tbl_student_id = ?
+            ORDER BY time_in DESC
+            LIMIT 30
+        ");
+        $stmt->execute([$studentRecord['tbl_student_id']]);
+        $studentAttendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmt = $conn->prepare("
+            SELECT
+                SUM(CASE WHEN status LIKE 'Late%' THEN 1 ELSE 0 END) AS late_count,
+                SUM(CASE WHEN status IS NULL OR status = '' OR status LIKE 'On Time%' THEN 1 ELSE 0 END) AS present_count
+            FROM tbl_attendance
+            WHERE tbl_student_id = ?
+        ");
+        $stmt->execute([$studentRecord['tbl_student_id']]);
+        $summaryCounts = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $studentAttendanceSummary['late'] = (int) ($summaryCounts['late_count'] ?? 0);
+        $studentAttendanceSummary['present'] = (int) ($summaryCounts['present_count'] ?? 0);
+        $studentAttendanceSummary['absent_today'] = (!$studentTodayAttendance && $studentAttendanceDayActive) ? 1 : 0;
+
         $studentAddress = implode(', ', array_filter([
             $studentRecord['house_no'] ?? '',
             $studentRecord['street'] ?? '',
@@ -190,6 +258,10 @@ if ($isStudent) {
             $studentRecord['city_municipality'] ?? '',
             $studentRecord['province'] ?? '',
         ], fn($value) => trim((string) $value) !== '' && strtoupper(trim((string) $value)) !== 'N/A')) ?: 'N/A';
+        $studentComponent = normalizeProgram($studentRecord['component'] ?? '')
+            ?: normalizeProgram($studentRecord['course_section'] ?? '')
+            ?: ($studentRecord['component'] ?? 'N/A');
+        $studentAssignedSection = trim((string) ($studentRecord['course_section'] ?? ''));
 
         $studentRegistrationSections = [
             'Personal Information' => [
@@ -217,7 +289,8 @@ if ($isStudent) {
                 'Course' => $studentRecord['course'] ?? 'N/A',
                 'Major' => $studentRecord['major'] ?? 'N/A',
                 'Year and Section' => $studentRecord['year_section'] ?? ($studentRecord['original_section'] ?? 'N/A'),
-                'Component' => $studentRecord['course_section'] ?? ($studentRecord['component'] ?? 'N/A'),
+                'Component' => $studentComponent,
+                'Section' => $studentAssignedSection !== '' ? $studentAssignedSection : 'Unassigned',
             ],
         ];
     }
@@ -1056,6 +1129,95 @@ if (!empty($user['full_name'])) {
                             <?php endif; ?>
 
                             <?php if ($isStudent && $studentRecord): ?>
+                            <?php
+                                $todayDisplay = $studentTodayAttendance
+                                    ? studentAttendanceDisplay($studentTodayAttendance['status'] ?? '', $studentTodayAttendance['time_in'] ?? null)
+                                    : ($studentAttendanceDayActive ? [
+                                        'status' => 'Absent',
+                                        'badge' => 'danger',
+                                        'session' => ((int) date('G') < 12) ? 'Morning' : 'Afternoon',
+                                    ] : [
+                                        'status' => 'No Attendance',
+                                        'badge' => 'secondary',
+                                        'session' => '',
+                                    ]);
+                            ?>
+                            <div class="profile-card">
+                                <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                                    <h5 class="mb-0"><i class="fas fa-calendar-check mr-2"></i>My Attendance</h5>
+                                    <span class="badge badge-<?php echo $todayDisplay['badge']; ?>">
+                                        Today: <?php echo htmlspecialchars($todayDisplay['status']); ?>
+                                    </span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row text-center mb-3">
+                                        <div class="col-md-4 mb-2 mb-md-0">
+                                            <div class="info-item mb-0">
+                                                <div class="info-label"><i class="fas fa-check-circle"></i> Present</div>
+                                                <div class="info-value"><?php echo $studentAttendanceSummary['present']; ?></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4 mb-2 mb-md-0">
+                                            <div class="info-item mb-0">
+                                                <div class="info-label"><i class="fas fa-exclamation-circle"></i> Late</div>
+                                                <div class="info-value"><?php echo $studentAttendanceSummary['late']; ?></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="info-item mb-0">
+                                                <div class="info-label"><i class="fas fa-times-circle"></i> Absent Today</div>
+                                                <div class="info-value"><?php echo $studentAttendanceSummary['absent_today']; ?></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th>Time</th>
+                                                    <th>Session</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php if (!$studentTodayAttendance && $studentAttendanceDayActive): ?>
+                                                    <tr>
+                                                        <td><?php echo date('M d, Y'); ?></td>
+                                                        <td>No scan</td>
+                                                        <td><?php echo htmlspecialchars($todayDisplay['session']); ?></td>
+                                                        <td><span class="badge badge-danger">Absent</span></td>
+                                                    </tr>
+                                                <?php endif; ?>
+
+                                                <?php foreach ($studentAttendanceRecords as $attendanceRecord): ?>
+                                                    <?php $attendanceDisplay = studentAttendanceDisplay($attendanceRecord['status'] ?? '', $attendanceRecord['time_in'] ?? null); ?>
+                                                    <tr>
+                                                        <td><?php echo date('M d, Y', strtotime($attendanceRecord['time_in'])); ?></td>
+                                                        <td><?php echo date('h:i A', strtotime($attendanceRecord['time_in'])); ?></td>
+                                                        <td><?php echo htmlspecialchars($attendanceDisplay['session'] ?: 'N/A'); ?></td>
+                                                        <td>
+                                                            <span class="badge badge-<?php echo $attendanceDisplay['badge']; ?>">
+                                                                <?php echo htmlspecialchars($attendanceDisplay['status']); ?>
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+
+                                                <?php if (count($studentAttendanceRecords) === 0 && !(!$studentTodayAttendance && $studentAttendanceDayActive)): ?>
+                                                    <tr>
+                                                        <td colspan="4" class="text-center text-muted py-4">No attendance records yet</td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <?php if ($isStudent && $studentRecord): ?>
                             <div class="profile-card">
                                 <div class="card-header bg-white">
                                     <h5 class="mb-0"><i class="fas fa-address-card mr-2"></i>Registration Details</h5>
@@ -1244,6 +1406,7 @@ if (!empty($user['full_name'])) {
                                                     $current_date = '';
                                                     foreach ($activities as $activity): 
                                                         $activity_date = date('Y-m-d', strtotime($activity['time_in']));
+                                                        $activityDisplay = studentAttendanceDisplay($activity['status'] ?? '', $activity['time_in'] ?? null);
                                                     ?>
                                                         <?php if ($activity_date != $current_date): ?>
                                                             <?php $current_date = $activity_date; ?>
@@ -1262,8 +1425,8 @@ if (!empty($user['full_name'])) {
                                                             <div class="activity-card">
                                                                 <div class="activity-header">
                                                                     <strong><?php echo htmlspecialchars($activity['student_name']); ?></strong>
-                                                                    <span class="badge badge-<?php echo ($activity['status'] ?? 'On Time') == 'On Time' ? 'success' : 'warning'; ?>">
-                                                                        <?php echo $activity['status'] ?? 'On Time'; ?>
+                                                                    <span class="badge badge-<?php echo $activityDisplay['badge']; ?>">
+                                                                        <?php echo htmlspecialchars($activityDisplay['status']); ?>
                                                                     </span>
                                                                 </div>
                                                                 <div class="activity-body">

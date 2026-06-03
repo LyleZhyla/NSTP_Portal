@@ -7,9 +7,11 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 include('../conn/conn.php');
+require_once '../include/user-permissions.php';
 
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'] ?? 'facilitator';
+$currentUser = getCurrentUserRecord($conn);
 
 // Get export parameters
 $section = isset($_GET['section']) ? $_GET['section'] : '';
@@ -18,12 +20,22 @@ $admin_id = isset($_GET['admin_id']) ? $_GET['admin_id'] : $user_id;
 // For super admin, they can export any admin's section
 if ($user_role === 'super_admin' && $admin_id != $user_id) {
     $target_user_id = $admin_id;
+} elseif ($user_role === 'coordinator') {
+    $target_user_id = $admin_id;
+    $target_stmt = $conn->prepare("SELECT user_id, role, program FROM tbl_users WHERE user_id = ?");
+    $target_stmt->execute([$target_user_id]);
+    $target_user = $target_stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$currentUser || !$target_user || !canManageUserRecord($currentUser, $target_user)) {
+        header("HTTP/1.1 403 Forbidden");
+        exit(json_encode(['error' => 'You do not have access to this facilitator']));
+    }
 } else {
     $target_user_id = $user_id;
 }
 
 // Validate access (similar to above)
-if ($user_role === 'facilitator' && !empty($section)) {
+if (in_array($user_role, ['coordinator', 'facilitator'], true) && !empty($section)) {
     $check_stmt = $conn->prepare("
         SELECT COUNT(*) FROM tbl_admin_sections 
         WHERE user_id = ? AND course_section = ?

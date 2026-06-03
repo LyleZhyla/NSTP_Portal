@@ -10,6 +10,7 @@ date_default_timezone_set('Asia/Manila');
 include ('./conn/conn.php');
 include('./include/logo-functions.php');
 require_once './include/user-permissions.php';
+require_once './include/attendance-settings.php';
 
 // Get current admin info
 $admin_id = $_SESSION['user_id'];
@@ -620,7 +621,7 @@ if ($admin_role === 'super_admin') {
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance 
                                     WHERE DATE(time_in) = CURDATE() 
-                                    AND TIME(time_in) <= '08:00:00'
+                                    AND (status IS NULL OR status = '' OR status LIKE 'On Time%')
                                 ");
                                 $stmt->execute();
                             } else {
@@ -630,7 +631,7 @@ if ($admin_role === 'super_admin') {
                                     INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
                                     LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
-                                    AND TIME(a.time_in) <= '08:00:00'
+                                    AND (a.status IS NULL OR a.status = '' OR a.status LIKE 'On Time%')
                                     AND (s.created_by = ? OR ads.user_id = ?)
                                 ");
                                 $stmt->execute([$admin_id, $admin_id]);
@@ -656,7 +657,7 @@ if ($admin_role === 'super_admin') {
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance 
                                     WHERE DATE(time_in) = CURDATE() 
-                                    AND TIME(time_in) > '08:00:00'
+                                    AND status LIKE 'Late%'
                                 ");
                                 $stmt->execute();
                             } else {
@@ -666,7 +667,7 @@ if ($admin_role === 'super_admin') {
                                     INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
                                     LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
-                                    AND TIME(a.time_in) > '08:00:00'
+                                    AND a.status LIKE 'Late%'
                                     AND (s.created_by = ? OR ads.user_id = ?)
                                 ");
                                 $stmt->execute([$admin_id, $admin_id]);
@@ -853,12 +854,10 @@ if ($admin_role === 'super_admin') {
                 
                 // Determine status if not set
                 if (empty($status) && !empty($timeIn)) {
-                    $timeObj = strtotime($timeIn);
-                    $cutoff = strtotime(date('Y-m-d', $timeObj) . ' 08:00:00');
-                    $status = ($timeObj > $cutoff) ? 'Late' : 'On Time';
+                    $status = getAttendanceStatus($conn, $studentCourse, $timeIn);
                 }
                 
-                $statusClass = ($status == 'Late') ? 'warning' : 'success';
+                $statusClass = (stripos($status, 'Late') === 0) ? 'warning' : 'success';
                 ?>
                 <tr id="attendance-row-<?= $attendanceID ?>">
                     <td><?= $counter++ ?></td>
@@ -1305,7 +1304,7 @@ if ($admin_role === 'super_admin') {
                     $('#successStudentInfo').text(response.student_name);
                     $('#successTime').text('Time: ' + response.time);
                     $('#successStatus').text(response.status).removeClass('badge-success badge-warning').addClass(
-                        response.status === 'On Time' ? 'badge-success' : 'badge-warning'
+                        response.status && response.status.indexOf('Late') === 0 ? 'badge-warning' : 'badge-success'
                     );
                     
                     showToast('success', 'Success!', response.message);
@@ -1360,7 +1359,7 @@ if ($admin_role === 'super_admin') {
                         let counter = 1;
                         
                         response.records.forEach(function(record) {
-                            const statusClass = record.status === 'Late' ? 'warning' : 'success';
+                            const statusClass = record.status && record.status.indexOf('Late') === 0 ? 'warning' : 'success';
                             
                             html += `<tr id="attendance-row-${record.id}">`;
                             html += `<td>${counter++}</td>`;

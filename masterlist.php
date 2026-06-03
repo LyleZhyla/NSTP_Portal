@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
+require_once './include/automatic-sectioning.php';
 
 // Get user info
 $user_id = $_SESSION['user_id'];
@@ -18,6 +19,116 @@ if (!canAccessStaffTools($user_role)) {
     header("Location: profile.php");
     exit();
 }
+
+function masterlistTableExists(PDO $conn, $tableName) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+        ");
+        $stmt->execute([$tableName]);
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function attachMasterlistRegistrationDetails(PDO $conn, array $students) {
+    if (empty($students) || !masterlistTableExists($conn, 'tbl_public_student_registrations')) {
+        return $students;
+    }
+
+    $studentNumbers = [];
+    foreach ($students as $student) {
+        $studentNumber = trim((string) ($student['student_number'] ?? ''));
+        if ($studentNumber !== '') {
+            $studentNumbers[$studentNumber] = true;
+        }
+    }
+
+    if (empty($studentNumbers)) {
+        return $students;
+    }
+
+    $studentNumbers = array_keys($studentNumbers);
+    $placeholders = implode(',', array_fill(0, count($studentNumbers), '?'));
+    $stmt = $conn->prepare("
+        SELECT r.*
+        FROM tbl_public_student_registrations r
+        INNER JOIN (
+            SELECT student_number, MAX(registration_id) AS latest_registration_id
+            FROM tbl_public_student_registrations
+            WHERE student_number IN ($placeholders)
+            GROUP BY student_number
+        ) latest ON latest.latest_registration_id = r.registration_id
+    ");
+    $stmt->execute($studentNumbers);
+
+    $registrations = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $registration) {
+        $registrations[(string) $registration['student_number']] = $registration;
+    }
+
+    foreach ($students as &$student) {
+        $studentNumber = (string) ($student['student_number'] ?? '');
+        $student['_registration'] = $registrations[$studentNumber] ?? [];
+    }
+    unset($student);
+
+    return $students;
+}
+
+function masterlistDetailValue(array $student, $key) {
+    $registration = $student['_registration'] ?? [];
+
+    if (array_key_exists($key, $registration)) {
+        return $registration[$key];
+    }
+
+    return $student[$key] ?? '';
+}
+
+function displayMasterlistDetailValue($value) {
+    $value = trim((string) ($value ?? ''));
+    return $value === '' ? 'N/A' : $value;
+}
+
+$detailColumns = [
+    'student_name' => 'Student Name',
+    'student_number' => 'Student Number',
+    'formal_picture' => 'Formal Picture',
+    'last_name' => 'Last Name',
+    'extension_name' => 'Extension Name',
+    'first_name' => 'First Name',
+    'middle_name' => 'Middle Name',
+    'place_of_birth' => 'Place of Birth',
+    'date_of_birth' => 'Date of Birth',
+    'gender' => 'Gender',
+    'religion' => 'Religion',
+    'blood_type' => 'Blood Type',
+    'contact_number' => 'Contact Number',
+    'email' => 'Email',
+    'province' => 'Province',
+    'city_municipality' => 'City/Municipality',
+    'barangay' => 'Barangay',
+    'street' => 'Street',
+    'house_no' => 'House No.',
+    'emergency_name' => 'Emergency Name',
+    'emergency_relationship' => 'Emergency Relationship',
+    'emergency_contact_number' => 'Emergency Contact',
+    'emergency_address' => 'Emergency Address',
+    'college' => 'College',
+    'course' => 'Program',
+    'major' => 'Major',
+    'year_section' => 'Year/Section',
+    'component' => 'Component',
+    'course_section' => 'Folder Name',
+    'generated_code' => 'QR Code',
+    'status' => 'Registration Status',
+    'created_at' => 'Registered At',
+];
 
 // Get admin's ALL assigned sections (folders)
 $sections_stmt = $conn->prepare("
@@ -71,7 +182,7 @@ if ($user_role === 'coordinator') {
         SELECT s.*
         FROM tbl_student s
         LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-        WHERE s.course_section = ?
+        WHERE (s.course_section = ? OR s.course_section LIKE ?)
           AND (
               s.created_by IS NULL
               OR creator.role <> 'facilitator'
@@ -79,8 +190,8 @@ if ($user_role === 'coordinator') {
           )
         ORDER BY student_name ASC
     ");
-    $stmt->execute([$coordinatorProgram, $coordinatorProgram]);
-    $coordinatorPendingStudents = $stmt->fetchAll();
+    $stmt->execute([$coordinatorProgram, autoSectionFolderPrefix($coordinatorProgram) . ' %', $coordinatorProgram]);
+    $coordinatorPendingStudents = attachMasterlistRegistrationDetails($conn, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
     $stmt = $conn->prepare("
         SELECT user_id, full_name, username, assigned_section
@@ -198,9 +309,12 @@ if ($user_role === 'coordinator') {
             FROM tbl_student s
             LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
             WHERE (creator.role = 'facilitator' AND creator.program = ?)
-               OR ((s.created_by IS NULL OR creator.role <> 'facilitator') AND s.course_section = ?)
+               OR (
+                    (s.created_by IS NULL OR creator.role <> 'facilitator')
+                    AND (s.course_section = ? OR s.course_section LIKE ?)
+               )
         ");
-        $stmt->execute([$componentName, $componentName]);
+        $stmt->execute([$componentName, $componentName, autoSectionFolderPrefix($componentName) . ' %']);
 
         $facilitatorStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users WHERE role = 'facilitator' AND program = ?");
         $facilitatorStmt->execute([$componentName]);
@@ -338,6 +452,54 @@ if ($user_role === 'super_admin') {
         .permission-badge {
             font-size: 0.75rem;
             padding: 3px 8px;
+        }
+
+        .column-picker {
+            border-bottom: 1px solid #edf2f5;
+            padding: 14px 18px;
+            background: #fbfdfe;
+        }
+
+        .column-picker-toggle {
+            color: #2f6f7e;
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .column-picker-toggle:hover {
+            color: #244f5b;
+            text-decoration: none;
+        }
+
+        .column-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 8px 14px;
+        }
+
+        .detail-photo {
+            width: 54px;
+            height: 54px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #d7e4ea;
+            background: #f4f8fa;
+        }
+
+        .qr-thumb {
+            width: 74px;
+            height: 74px;
+        }
+
+        .student-detail-table th,
+        .student-detail-table td {
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        .student-detail-table td.detail-long {
+            min-width: 220px;
+            white-space: normal;
         }
         
         .section-info {
@@ -1091,14 +1253,49 @@ if ($user_role === 'super_admin') {
                     </div>
                     <div class="card-body">
                         <?php if (!empty($coordinatorPendingStudents)): ?>
+                            <div class="column-picker">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap: 8px;">
+                                    <button type="button"
+                                            class="btn btn-link btn-sm p-0 column-picker-toggle"
+                                            data-toggle="collapse"
+                                            data-target="#coordinatorVisibleDetailsPanel"
+                                            aria-expanded="false"
+                                            aria-controls="coordinatorVisibleDetailsPanel">
+                                        <i class="fas fa-chevron-right mr-1" id="coordinatorVisibleDetailsIcon"></i>
+                                        <i class="fas fa-columns mr-1"></i> Visible Details
+                                    </button>
+                                    <div>
+                                        <button type="button" class="btn btn-xs btn-outline-primary" id="coordinatorShowAllColumns">Show All</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary" id="coordinatorHideOptionalColumns">Basic Only</button>
+                                    </div>
+                                </div>
+                                <div class="collapse mt-3" id="coordinatorVisibleDetailsPanel">
+                                    <div class="column-picker-grid">
+                                        <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input coordinator-detail-column-toggle"
+                                                       type="checkbox"
+                                                       value="<?php echo htmlspecialchars($columnKey); ?>"
+                                                       id="coordinator_toggle_<?php echo htmlspecialchars($columnKey); ?>"
+                                                       checked>
+                                                <label class="form-check-label" for="coordinator_toggle_<?php echo htmlspecialchars($columnKey); ?>">
+                                                    <?php echo htmlspecialchars($columnLabel); ?>
+                                                </label>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="table-responsive">
-                                <table class="table table-hover">
+                                <table class="table table-hover mb-0 student-detail-table">
                                     <thead>
                                         <tr>
-                                            <th>No.</th>
-                                            <th>Student Name</th>
-                                            <th>Component</th>
-                                            <th>QR Code</th>
+                                            <th style="width: 70px;">No.</th>
+                                            <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                                <th class="coordinator-detail-col coordinator-detail-col-<?php echo htmlspecialchars($columnKey); ?>" data-column="<?php echo htmlspecialchars($columnKey); ?>">
+                                                    <?php echo htmlspecialchars($columnLabel); ?>
+                                                </th>
+                                            <?php endforeach; ?>
                                             <th>Assign Facilitator</th>
                                         </tr>
                                     </thead>
@@ -1106,9 +1303,41 @@ if ($user_role === 'super_admin') {
                                         <?php foreach ($coordinatorPendingStudents as $index => $student): ?>
                                             <tr>
                                                 <td><?php echo $index + 1; ?></td>
-                                                <td><?php echo htmlspecialchars($student['student_name']); ?></td>
-                                                <td><span class="badge badge-success"><?php echo htmlspecialchars($student['course_section']); ?></span></td>
-                                                <td><code><?php echo htmlspecialchars($student['generated_code']); ?></code></td>
+                                                <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
+                                                    <?php
+                                                        $value = masterlistDetailValue($student, $columnKey);
+                                                        $displayValue = displayMasterlistDetailValue($value);
+                                                        $longColumns = ['street', 'emergency_address', 'course', 'college'];
+                                                        $cellClass = in_array($columnKey, $longColumns, true) ? ' detail-long' : '';
+                                                    ?>
+                                                    <td class="coordinator-detail-col coordinator-detail-col-<?php echo htmlspecialchars($columnKey); ?><?php echo $cellClass; ?>" data-column="<?php echo htmlspecialchars($columnKey); ?>">
+                                                        <?php if ($columnKey === 'formal_picture'): ?>
+                                                            <?php if ($displayValue !== 'N/A'): ?>
+                                                                <a href="<?php echo htmlspecialchars($displayValue); ?>" target="_blank">
+                                                                    <img class="detail-photo" src="<?php echo htmlspecialchars($displayValue); ?>" alt="Formal Picture">
+                                                                </a>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">N/A</span>
+                                                            <?php endif; ?>
+                                                        <?php elseif ($columnKey === 'generated_code'): ?>
+                                                            <?php if ($displayValue !== 'N/A'): ?>
+                                                                <button type="button" class="btn btn-link p-0 d-inline-flex align-items-center"
+                                                                        onclick="showStudentQrModal(<?= htmlspecialchars(json_encode($displayValue), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode($student['student_name'] ?? 'Student'), ENT_QUOTES, 'UTF-8') ?>)">
+                                                                    <img class="qr-thumb" src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=<?php echo urlencode($displayValue); ?>" alt="QR">
+                                                                </button>
+                                                                <code class="ml-2"><?php echo htmlspecialchars($displayValue); ?></code>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">N/A</span>
+                                                            <?php endif; ?>
+                                                        <?php elseif ($columnKey === 'course_section'): ?>
+                                                            <span class="badge badge-success"><?php echo htmlspecialchars($displayValue); ?></span>
+                                                        <?php elseif ($columnKey === 'student_number'): ?>
+                                                            <code><?php echo htmlspecialchars($displayValue); ?></code>
+                                                        <?php else: ?>
+                                                            <?php echo htmlspecialchars($displayValue); ?>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                <?php endforeach; ?>
                                                 <td>
                                                     <form class="assign-student-form" method="POST">
                                                         <input type="hidden" name="student_id" value="<?php echo (int) $student['tbl_student_id']; ?>">
@@ -1303,6 +1532,14 @@ if ($user_role === 'super_admin') {
                     </div>
                 </div>
 
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <button class="btn btn-success" data-toggle="modal" data-target="#importExcelModal">
+                            <i class="fas fa-file-excel mr-2"></i> Import Student Registrations
+                        </button>
+                    </div>
+                </div>
+
                 <div class="folder-grid">
                     <?php foreach ($superAdminComponentCards as $componentCard): ?>
                         <a class="folder-box" href="folder-students.php?scope=component&component=<?php echo urlencode($componentCard['component']); ?>">
@@ -1408,7 +1645,7 @@ if ($user_role === 'super_admin') {
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <button class="btn btn-info btn-sm" data-toggle="modal" data-target="#qrCodeModal<?= $studentID ?>">
+                                                        <button class="btn btn-info btn-sm" onclick="showStudentQrModal(<?= htmlspecialchars(json_encode($qrCode), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode($studentName), ENT_QUOTES, 'UTF-8') ?>)">
                                                             <i class="fas fa-qrcode"></i> View QR
                                                         </button>
                                                     </td>
@@ -1535,7 +1772,7 @@ if ($user_role === 'super_admin') {
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <button class="btn btn-info btn-sm" onclick="printQR('<?= htmlspecialchars($qrCode, ENT_QUOTES) ?>')">
+                                                        <button class="btn btn-info btn-sm" onclick="showStudentQrModal(<?= htmlspecialchars(json_encode($qrCode), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode($studentName), ENT_QUOTES, 'UTF-8') ?>)">
                                                             <i class="fas fa-qrcode"></i> View QR
                                                         </button>
                                                     </td>
@@ -1649,7 +1886,7 @@ if ($user_role === 'super_admin') {
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <button class="btn btn-info btn-sm" data-toggle="modal" data-target="#qrCodeModal<?= $studentID ?>">
+                                                        <button class="btn btn-info btn-sm" onclick="showStudentQrModal(<?= htmlspecialchars(json_encode($qrCode), ENT_QUOTES, 'UTF-8') ?>, <?= htmlspecialchars(json_encode($studentName), ENT_QUOTES, 'UTF-8') ?>)">
                                                             <i class="fas fa-qrcode"></i> View QR
                                                         </button>
                                                     </td>
@@ -1942,6 +2179,32 @@ if ($user_role === 'super_admin') {
                 <div id="importAlert" style="display: none;"></div>
                 
                 <form id="importExcelForm" enctype="multipart/form-data">
+                    <?php if ($user_role === 'super_admin'): ?>
+                    <div class="alert alert-warning d-flex align-items-center">
+                        <i class="fas fa-shield-alt fa-2x mr-3"></i>
+                        <div>
+                            <strong>Super Admin Import:</strong>
+                            <p class="mb-0">Choose the NSTP component first. The uploaded spreadsheet must contain every enabled student registration field.</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="import_component">
+                            <i class="fas fa-layer-group mr-1"></i>
+                            Target Component <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-control" id="import_component" name="component" required>
+                            <option value="">-- Select Component --</option>
+                            <option value="CWTS">CWTS</option>
+                            <option value="LTS">LTS</option>
+                            <option value="ROTC">ROTC</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            All accepted rows will be saved under the selected component.
+                        </small>
+                    </div>
+                    <?php endif; ?>
+
                     <?php if ($user_role === 'facilitator' && empty($assignedSections)): ?>
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-triangle mr-2"></i>
@@ -2001,9 +2264,8 @@ if ($user_role === 'super_admin') {
                         <small class="form-text text-muted">
                             Supported formats: .xlsx, .xls (Excel files)<br>
                             <?php if ($user_role === 'super_admin'): ?>
-                            <strong>Column A:</strong> Student Full Name (Required)<br>
-                            <strong>Column B:</strong> Original College Section (Required)<br>
-                            <strong>Column C:</strong> Admin Folder Section (Required)<br>
+                            Use headers matching the student registration fields, for example: Last Name, First Name, Middle Name, Student Number, College, Course, Major, Year/Section, and the other enabled registration details.<br>
+                            The import is strict: incomplete rows or invalid N/A values will reject the whole file.
                             <?php else: ?>
                             <strong>Column A:</strong> Student Full Name (Required)<br>
                             <strong>Column B:</strong> Original College Section (Required)<br>
@@ -2023,7 +2285,12 @@ if ($user_role === 'super_admin') {
                         <strong>Note:</strong> 
                         <ul class="mb-0 mt-2">
                             <li>QR codes will be automatically generated for each student</li>
+                            <?php if ($user_role === 'super_admin'): ?>
+                            <li>Super Admin import saves complete public registration records and assigns the selected component</li>
+                            <li>The whole upload is rejected if any required registration detail is missing</li>
+                            <?php else: ?>
                             <li>Duplicate students (same name and section) will be skipped</li>
+                            <?php endif; ?>
                             <li>The first row should contain headers (it will be skipped)</li>
                             <li>Students will show both their original college section and the admin folder they belong to</li>
                         </ul>
@@ -2044,6 +2311,80 @@ if ($user_role === 'super_admin') {
     </div>
 </div>
 
+<?php endif; ?>
+
+<?php if ($user_role === 'super_admin'): ?>
+<!-- Super Admin Import Excel Modal -->
+<div class="modal fade" id="importExcelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-file-excel mr-2"></i>
+                    Import Student Registrations
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="importAlert" style="display: none;"></div>
+
+                <form id="importExcelForm" enctype="multipart/form-data">
+                    <div class="alert alert-warning d-flex align-items-center">
+                        <i class="fas fa-shield-alt fa-2x mr-3"></i>
+                        <div>
+                            <strong>Super Admin Import:</strong>
+                            <p class="mb-0">The spreadsheet must contain every enabled student registration field. One incomplete row rejects the whole file.</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="import_component">
+                            <i class="fas fa-layer-group mr-1"></i>
+                            Target Component <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-control" id="import_component" name="component" required>
+                            <option value="">-- Select Component --</option>
+                            <option value="CWTS">CWTS</option>
+                            <option value="LTS">LTS</option>
+                            <option value="ROTC">ROTC</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            All imported students will be assigned to the selected NSTP component.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="excel_file">Select Excel File:</label>
+                        <input type="file" class="form-control-file" id="excel_file" name="excel_file" accept=".xlsx,.xls,.csv" required>
+                        <small class="form-text text-muted">
+                            Supported formats: .xlsx, .xls, .csv. Row 1 must contain headers matching the registration fields.
+                        </small>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Required headers follow the active student registration form, such as Last Name, First Name, Student Number, Email, College, Course, Major, Year/Section, and other enabled details. N/A is accepted only for fields that allow N/A in registration.
+                    </div>
+
+                    <div class="progress mb-3" style="display: none; height: 30px;" id="importProgress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                             role="progressbar" style="width: 0%; font-weight: bold;">0%</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="fas fa-times mr-1"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-success" onclick="importExcel()" id="importExcelBtn">
+                    <i class="fas fa-file-import mr-2"></i> Import Registrations
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 <?php endif; ?>
 
 <?php if ($user_role === 'facilitator'): ?>
@@ -2291,6 +2632,36 @@ if ($user_role === 'super_admin') {
 </div>
 <?php endif; ?>
 
+<!-- Reusable Student QR Modal -->
+<div class="modal fade" id="studentQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-qrcode mr-2"></i>
+                    <span id="studentQrModalTitle">Student QR</span>
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="studentQrModalImg" class="qr-modal-img img-thumbnail mb-3" src="" alt="Student QR Code">
+                <div>
+                    <code id="studentQrModalCode"></code>
+                </div>
+                <small class="text-muted d-block mt-2">QR image is generated from the student's generated code.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-info" id="studentQrPrintBtn">
+                    <i class="fas fa-print mr-1"></i> Print
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Scripts -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -2303,6 +2674,38 @@ if ($user_role === 'super_admin') {
 $(document).ready(function() {
     // Initialize tooltips
     $('[data-toggle="tooltip"]').tooltip();
+
+    const coordinatorBasicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'course_section', 'generated_code']);
+
+    function setCoordinatorColumnVisible(columnKey, visible) {
+        $('.coordinator-detail-col-' + columnKey).toggle(visible);
+    }
+
+    $('.coordinator-detail-column-toggle').on('change', function() {
+        setCoordinatorColumnVisible(this.value, this.checked);
+    });
+
+    $('#coordinatorShowAllColumns').on('click', function() {
+        $('.coordinator-detail-column-toggle').prop('checked', true).each(function() {
+            setCoordinatorColumnVisible(this.value, true);
+        });
+    });
+
+    $('#coordinatorHideOptionalColumns').on('click', function() {
+        $('.coordinator-detail-column-toggle').each(function() {
+            const visible = coordinatorBasicColumns.has(this.value);
+            this.checked = visible;
+            setCoordinatorColumnVisible(this.value, visible);
+        });
+    });
+
+    $('#coordinatorVisibleDetailsPanel')
+        .on('show.bs.collapse', function() {
+            $('#coordinatorVisibleDetailsIcon').removeClass('fa-chevron-right').addClass('fa-chevron-down');
+        })
+        .on('hide.bs.collapse', function() {
+            $('#coordinatorVisibleDetailsIcon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+        });
     
     // ====================================
     // FOLDER TOGGLE FUNCTIONALITY
@@ -2830,6 +3233,15 @@ function importExcel() {
     formData.append('import_section', importSection.value);
     <?php endif; ?>
 
+    <?php if ($user_role === 'super_admin'): ?>
+    const importComponent = document.getElementById('import_component');
+    if (!importComponent || !importComponent.value) {
+        Swal.fire('Component Required', 'Please select CWTS, LTS, or ROTC for this import.', 'error');
+        return;
+    }
+    formData.set('component', importComponent.value);
+    <?php endif; ?>
+
     <?php if ($user_role === 'coordinator'): ?>
     const importFacilitator = document.getElementById('import_facilitator_id');
     const importSection = document.getElementById('import_section');
@@ -2961,8 +3373,33 @@ function importExcel() {
     });
 }
 
+function getQrImageUrl(qrCode, size) {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(qrCode)}`;
+}
+
+function showStudentQrModal(qrCode, studentName = 'Student') {
+    const safeCode = String(qrCode || '').trim();
+    const safeName = String(studentName || 'Student').trim();
+
+    if (!safeCode) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Missing QR Code',
+            text: 'This student does not have a generated QR code yet.'
+        });
+        return;
+    }
+
+    document.getElementById('studentQrModalTitle').textContent = `${safeName} QR`;
+    document.getElementById('studentQrModalCode').textContent = safeCode;
+    document.getElementById('studentQrModalImg').src = getQrImageUrl(safeCode, 260);
+    document.getElementById('studentQrPrintBtn').onclick = () => printQR(safeCode);
+    $('#studentQrModal').modal('show');
+}
+
 function printQR(qrCode) {
     const printWindow = window.open('', '_blank');
+    const qrUrl = getQrImageUrl(qrCode, 300);
     printWindow.document.write(`
         <html>
             <head>
@@ -2973,7 +3410,7 @@ function printQR(qrCode) {
                 </style>
             </head>
             <body>
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${qrCode}">
+                <img src="${qrUrl}">
             </body>
         </html>
     `);

@@ -344,26 +344,97 @@ $columnsStmt->execute([$currentProgram, $userRole, $userId, $userId, $columnVisi
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
-$studentParams = [];
+$gradeFolderOptions = [];
+$selectedGradeFolder = '';
+$selectedGradeFacilitatorId = null;
+$selectedGradeFolderLabel = 'No folder selected';
+
 if ($userRole === 'coordinator') {
-    $condition = gradeProgramCondition($currentProgram, $studentParams);
-    $studentParams = $currentProgram ? gradeProgramParams($currentProgram) : [];
+    $stmt = $conn->prepare("
+        SELECT ads.user_id AS facilitator_id,
+               ads.course_section,
+               COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+               COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        LEFT JOIN tbl_student s
+            ON s.created_by = ads.user_id
+           AND s.course_section = ads.course_section
+        WHERE u.role = 'facilitator' AND u.program = ?
+        GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
+        ORDER BY facilitator_name ASC, ads.course_section ASC
+    ");
+    $stmt->execute([$currentProgram]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $key = (int) $row['facilitator_id'] . '::' . $row['course_section'];
+        $gradeFolderOptions[] = [
+            'key' => $key,
+            'facilitator_id' => (int) $row['facilitator_id'],
+            'folder' => $row['course_section'],
+            'label' => ($row['facilitator_name'] ?: 'Facilitator') . ' / ' . $row['course_section'],
+            'student_count' => (int) $row['student_count'],
+        ];
+    }
+
+    $requestedFolderKey = trim((string) ($_GET['grade_folder'] ?? ''));
+    foreach ($gradeFolderOptions as $option) {
+        if ($option['key'] === $requestedFolderKey || ($requestedFolderKey === '' && $selectedGradeFolder === '')) {
+            $selectedGradeFacilitatorId = $option['facilitator_id'];
+            $selectedGradeFolder = $option['folder'];
+            $selectedGradeFolderLabel = $option['label'];
+            break;
+        }
+    }
+} else {
+    $stmt = $conn->prepare("
+        SELECT ads.course_section, COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        LEFT JOIN tbl_student s
+            ON s.created_by = ads.user_id
+           AND s.course_section = ads.course_section
+        WHERE ads.user_id = ?
+        GROUP BY ads.course_section
+        ORDER BY ads.course_section ASC
+    ");
+    $stmt->execute([$userId]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $gradeFolderOptions[] = [
+            'key' => $row['course_section'],
+            'facilitator_id' => $userId,
+            'folder' => $row['course_section'],
+            'label' => $row['course_section'],
+            'student_count' => (int) $row['student_count'],
+        ];
+    }
+
+    $requestedFolderKey = trim((string) ($_GET['grade_folder'] ?? ''));
+    foreach ($gradeFolderOptions as $option) {
+        if ($option['key'] === $requestedFolderKey || ($requestedFolderKey === '' && $selectedGradeFolder === '')) {
+            $selectedGradeFacilitatorId = $userId;
+            $selectedGradeFolder = $option['folder'];
+            $selectedGradeFolderLabel = $option['label'];
+            break;
+        }
+    }
+}
+
+$studentParams = [];
+if ($selectedGradeFolder !== '' && $selectedGradeFacilitatorId) {
     $studentSql = "
         SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'Pending Facilitator Assignment') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
-        WHERE $condition
-        ORDER BY s.course_section ASC, facilitator_name ASC, s.student_name ASC
+        WHERE s.created_by = ? AND s.course_section = ?
+        ORDER BY s.student_name ASC
     ";
+    $studentParams = [$selectedGradeFacilitatorId, $selectedGradeFolder];
 } else {
     $studentSql = "
         SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
-        WHERE s.created_by = ?
-        ORDER BY s.course_section ASC, s.student_name ASC
+        WHERE 1 = 0
     ";
-    $studentParams = [$userId];
 }
 
 $studentsStmt = $conn->prepare($studentSql);
@@ -581,7 +652,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $messages[] = 'Grades saved successfully.';
     }
 
-    $query = $messages ? '?saved=1' : '?error=1';
+    $redirectParams = [$messages ? 'saved' : 'error' => 1];
+    if (!empty($_GET['grade_folder'])) {
+        $redirectParams['grade_folder'] = (string) $_GET['grade_folder'];
+    }
+    $query = '?' . http_build_query($redirectParams);
     $_SESSION['grade_messages'] = $messages;
     $_SESSION['grade_errors'] = $errors;
     header("Location: grades.php" . $query);
@@ -757,6 +832,21 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             background: #fff;
         }
 
+        .grade-folder-card {
+            border-left: 4px solid #2f6f7e;
+        }
+
+        .collapse-toggle {
+            color: #2f6f7e;
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .collapse-toggle:hover {
+            color: #244f5b;
+            text-decoration: none;
+        }
+
         @media (max-width: 768px) {
             .grade-table-wrap {
                 max-height: none;
@@ -770,7 +860,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
 <div class="wrapper">
-    <?php include 'navbar.php'; ?>
     <?php include 'adminlte-sidebar.php'; ?>
 
     <div class="content-wrapper">
@@ -829,6 +918,37 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 <?php endforeach; ?>
 
+                <div class="card grade-card grade-folder-card">
+                    <div class="card-body py-3">
+                        <form method="GET" class="row align-items-end">
+                            <div class="col-lg-7 col-md-8 mb-2 mb-md-0">
+                                <label class="mb-1 font-weight-bold" for="grade_folder">
+                                    <i class="fas fa-folder-open mr-1"></i>Class Record Folder
+                                </label>
+                                <select class="form-control" id="grade_folder" name="grade_folder" onchange="this.form.submit()" <?php echo empty($gradeFolderOptions) ? 'disabled' : ''; ?>>
+                                    <?php if (empty($gradeFolderOptions)): ?>
+                                        <option value="">No assigned folders</option>
+                                    <?php else: ?>
+                                        <?php foreach ($gradeFolderOptions as $option): ?>
+                                            <?php
+                                                $isSelected = $option['folder'] === $selectedGradeFolder
+                                                    && (int) $option['facilitator_id'] === (int) $selectedGradeFacilitatorId;
+                                            ?>
+                                            <option value="<?php echo htmlspecialchars($option['key']); ?>" <?php echo $isSelected ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($option['label']); ?> (<?php echo (int) $option['student_count']; ?>)
+                                            </option>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </select>
+                            </div>
+                            <div class="col-lg-5 col-md-4">
+                                <div class="text-muted small">Current class record is filtered by folder.</div>
+                                <strong><?php echo htmlspecialchars($selectedGradeFolderLabel); ?></strong>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <div class="row">
                     <div class="col-md-3 col-sm-6">
                         <div class="info-box grade-card">
@@ -871,9 +991,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <?php if ($canManageColumns): ?>
                     <div class="card grade-card">
                         <div class="card-header">
-                            <h3 class="card-title"><i class="fas fa-list mr-2"></i>Active Class Record Columns</h3>
+                            <button type="button"
+                                    class="btn btn-link btn-sm p-0 collapse-toggle"
+                                    data-toggle="collapse"
+                                    data-target="#activeColumnsPanel"
+                                    aria-expanded="false"
+                                    aria-controls="activeColumnsPanel">
+                                <i class="fas fa-chevron-right mr-1" id="activeColumnsIcon"></i>
+                                <i class="fas fa-list mr-2"></i>Active Class Record Columns
+                            </button>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body collapse" id="activeColumnsPanel">
                             <?php if (empty($gradeColumns)): ?>
                                 <span class="text-muted">No columns yet. Add a column to start a new class record.</span>
                             <?php else: ?>
@@ -946,7 +1074,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <thead>
                                         <tr>
                                             <th class="sticky-name">Student</th>
-                                            <th>Section</th>
+                                            <th>Folder</th>
                                             <th>Facilitator</th>
                                             <?php foreach ($gradeColumns as $column): ?>
                                                 <th>
@@ -1258,6 +1386,14 @@ $('#deleteSelectedColumnsForm').on('submit', function(event) {
         }).appendTo(payload);
     });
 });
+
+$('#activeColumnsPanel')
+    .on('show.bs.collapse', function() {
+        $('#activeColumnsIcon').removeClass('fa-chevron-right').addClass('fa-chevron-down');
+    })
+    .on('hide.bs.collapse', function() {
+        $('#activeColumnsIcon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+    });
 </script>
 </body>
 </html>
