@@ -25,9 +25,13 @@ try {
         }
     }
 
+    ensureSectionFoldersTable($conn);
+
     $conn->beginTransaction();
     $moved = rebuildAutoSectionFolders($conn, $component);
-    $conn->commit();
+    if ($conn->inTransaction()) {
+        $conn->commit();
+    }
 
     logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections; {$moved} student record(s) updated.");
 

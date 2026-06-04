@@ -15,7 +15,8 @@ if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coor
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
-$autoSectionMaxStudents = getAutoSectionMaxStudents($conn);
+$autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
+$autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
 
 date_default_timezone_set('Asia/Manila');
 ?>
@@ -169,11 +170,15 @@ date_default_timezone_set('Asia/Manila');
                         </div>
                     </div>
 
-                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
                     <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
-                                <h3 class="card-title"><i class="fas fa-folder-tree mr-2"></i>Automatic Folder Sectioning</h3>
+                                <h3 class="card-title">
+                                    <i class="fas fa-folder-tree mr-2"></i>Automatic Folder Sectioning
+                                    <?php if ($autoSectionComponent): ?>
+                                        <span class="badge badge-primary ml-2"><?php echo htmlspecialchars($autoSectionComponent); ?></span>
+                                    <?php endif; ?>
+                                </h3>
                             </div>
                             <form id="autoSectionForm">
                                 <div class="card-body">
@@ -199,11 +204,13 @@ date_default_timezone_set('Asia/Manila');
                                     </div>
                                     <p class="text-muted small mb-0 mt-3">
                                         New student records are grouped by course and section. When a folder reaches the maximum, the next students continue in the next folder.
+                                        <?php echo $autoSectionComponent ? 'This setting applies to your component only.' : 'This is the default setting for automatic folders.'; ?>
                                     </p>
                                 </div>
                             </form>
                         </div>
 
+                        <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-clock mr-2"></i>Late Start Times</h3>
@@ -236,8 +243,8 @@ date_default_timezone_set('Asia/Manila');
                                 </div>
                             </form>
                         </div>
+                        <?php endif; ?>
                     </div>
-                    <?php endif; ?>
                 </div>
             </div>
         </section>

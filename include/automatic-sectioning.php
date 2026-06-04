@@ -1,23 +1,31 @@
 <?php
 
 require_once __DIR__ . '/user-permissions.php';
+require_once __DIR__ . '/section-folders.php';
 
 function autoSectionMaxOptions() {
     return [20, 30, 35, 40, 45, 50, 60];
 }
 
-function getAutoSectionMaxStudents(PDO $conn) {
-    $value = (int) getSystemSetting($conn, 'auto_section_max_students', '40');
+function autoSectionMaxSettingKey($component = null) {
+    $component = normalizeProgram($component);
+    return $component ? 'auto_section_max_students_' . strtolower($component) : 'auto_section_max_students';
+}
+
+function getAutoSectionMaxStudents(PDO $conn, $component = null) {
+    $componentKey = autoSectionMaxSettingKey($component);
+    $fallback = getSystemSetting($conn, 'auto_section_max_students', '40');
+    $value = (int) getSystemSetting($conn, $componentKey, $fallback);
     return $value > 0 ? $value : 40;
 }
 
-function saveAutoSectionMaxStudents(PDO $conn, $maxStudents) {
+function saveAutoSectionMaxStudents(PDO $conn, $maxStudents, $component = null) {
     $maxStudents = (int) $maxStudents;
     if ($maxStudents < 1 || $maxStudents > 200) {
         throw new InvalidArgumentException('Maximum students must be between 1 and 200.');
     }
 
-    setSystemSetting($conn, 'auto_section_max_students', (string) $maxStudents);
+    setSystemSetting($conn, autoSectionMaxSettingKey($component), (string) $maxStudents);
 }
 
 function autoSectionCleanPart($value) {
@@ -50,17 +58,44 @@ function autoSectionComponent($component, $fallbackText = '') {
 
 function autoSectionFolderPrefix($component) {
     $component = autoSectionComponent($component);
-    return $component === 'PUBLIC' ? 'Public Registration Folder' : $component . ' Folder';
+    return $component === 'PUBLIC' ? 'PUBLIC' : $component;
 }
 
 function autoSectionFolderName($component, $number) {
-    return autoSectionFolderPrefix($component) . ' ' . max(1, (int) $number);
+    return autoSectionFolderPrefix($component) . ' ' . autoSectionAlphaLabel(max(1, (int) $number));
+}
+
+function autoSectionAlphaLabel($number) {
+    $number = max(1, (int) $number);
+    $label = '';
+
+    while ($number > 0) {
+        $number--;
+        $label = chr(65 + ($number % 26)) . $label;
+        $number = intdiv($number, 26);
+    }
+
+    return $label;
+}
+
+function autoSectionAlphaNumber($label) {
+    $label = strtoupper(trim((string) $label));
+    if (!preg_match('/^[A-Z]+$/', $label)) {
+        return null;
+    }
+
+    $number = 0;
+    for ($index = 0; $index < strlen($label); $index++) {
+        $number = ($number * 26) + (ord($label[$index]) - 64);
+    }
+
+    return $number;
 }
 
 function autoSectionFolderNumber($component, $folderName) {
     $prefix = preg_quote(autoSectionFolderPrefix($component), '/');
-    if (preg_match('/^' . $prefix . '\s+(\d+)$/i', trim((string) $folderName), $matches)) {
-        return (int) $matches[1];
+    if (preg_match('/^' . $prefix . '\s+([A-Z]+)$/i', trim((string) $folderName), $matches)) {
+        return autoSectionAlphaNumber($matches[1]);
     }
 
     return null;
@@ -102,7 +137,8 @@ function autoSectionFolderStats(PDO $conn, $component, $createdBy = null) {
 }
 
 function autoSectionFindFolderForGroup(PDO $conn, $component, $groupLabel, $createdBy = null) {
-    $maxStudents = getAutoSectionMaxStudents($conn);
+    $component = autoSectionComponent($component);
+    $maxStudents = getAutoSectionMaxStudents($conn, $component);
     $stats = autoSectionFolderStats($conn, $component, $createdBy);
     $groupLabel = autoSectionCleanPart($groupLabel);
 
@@ -126,6 +162,7 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $groupLabel, $crea
             ");
             $stmt->execute($params);
             if ((int) $stmt->fetchColumn() > 0) {
+                createSectionFolder($conn, $component, $info['folder']);
                 return $info['folder'];
             }
         }
@@ -133,12 +170,15 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $groupLabel, $crea
 
     foreach ($stats as $info) {
         if ($info['count'] < $maxStudents) {
+            createSectionFolder($conn, $component, $info['folder']);
             return $info['folder'];
         }
     }
 
     $nextNumber = empty($stats) ? 1 : (max(array_keys($stats)) + 1);
-    return autoSectionFolderName($component, $nextNumber);
+    $folderName = autoSectionFolderName($component, $nextNumber);
+    createSectionFolder($conn, $component, $folderName);
+    return $folderName;
 }
 
 function autoSectionFolderForStudent(PDO $conn, $component, $course, $yearSection, $fallbackOriginal = '', $createdBy = null) {
@@ -161,8 +201,10 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 s.course_section,
                 r.course AS reg_course,
                 r.year_section AS reg_year_section,
-                r.component AS reg_component
+                r.component AS reg_component,
+                u.program AS user_program
             FROM tbl_student s
+            LEFT JOIN tbl_users u ON s.user_id = u.user_id
             LEFT JOIN tbl_public_student_registrations r
               ON r.student_number = s.student_number
              AND r.registration_id = (
@@ -173,6 +215,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
             WHERE s.created_by IS NULL
               AND (
                 COALESCE(r.component, '') = ?
+                OR COALESCE(u.program, '') = ?
                 OR s.course_section = ?
                 OR s.course_section LIKE ?
               )
@@ -182,8 +225,10 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 s.student_name ASC,
                 s.tbl_student_id ASC
         ");
-        $stmt->execute([$currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
+        $stmt->execute([$currentComponent, $currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $folderNumber = 1;
+        $folderCount = 0;
 
         foreach ($students as $student) {
             $originalSection = autoSectionOriginalSection(
@@ -191,13 +236,15 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 $student['reg_year_section'] ?? '',
                 $student['original_section'] ?? ''
             );
-            $folder = autoSectionFolderForStudent(
-                $conn,
-                $currentComponent,
-                $student['reg_course'] ?? '',
-                $student['reg_year_section'] ?? '',
-                $originalSection
-            );
+            $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
+            if ($folderCount >= $maxStudents) {
+                $folderNumber++;
+                $folderCount = 0;
+            }
+
+            $folder = autoSectionFolderName($currentComponent, $folderNumber);
+            createSectionFolder($conn, $currentComponent, $folder);
+            $folderCount++;
 
             if ($student['course_section'] !== $folder || ($student['original_section'] ?? '') !== $originalSection) {
                 $updateStmt = $conn->prepare("

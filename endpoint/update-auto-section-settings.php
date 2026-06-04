@@ -17,10 +17,19 @@ try {
         throw new RuntimeException('Invalid request method');
     }
 
-    $maxStudents = (int) ($_POST['max_students'] ?? 40);
-    saveAutoSectionMaxStudents($conn, $maxStudents);
+    $component = ($currentUser['role'] ?? '') === 'coordinator'
+        ? normalizeProgram($currentUser['program'] ?? null)
+        : null;
 
-    logSystemEvent($conn, 'auto_section_settings_updated', "Set automatic folder max students to {$maxStudents}.");
+    if (($currentUser['role'] ?? '') === 'coordinator' && !$component) {
+        throw new RuntimeException('Coordinator program is missing.');
+    }
+
+    $maxStudents = (int) ($_POST['max_students'] ?? 40);
+    saveAutoSectionMaxStudents($conn, $maxStudents, $component);
+
+    $scope = $component ?: 'default';
+    logSystemEvent($conn, 'auto_section_settings_updated', "Set {$scope} automatic folder max students to {$maxStudents}.");
 
     echo json_encode([
         'success' => true,

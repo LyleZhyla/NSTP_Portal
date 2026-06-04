@@ -3,6 +3,7 @@ session_start();
 include('./include/theme-loader.php');
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
+require_once './include/section-folders.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
@@ -11,6 +12,39 @@ if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
 }
 $isSuperAdmin = $currentUser['role'] === 'super_admin';
 $currentProgram = normalizeProgram($currentUser['program'] ?? null);
+syncSectionFoldersFromExisting($conn);
+
+if ($isSuperAdmin) {
+    $folderStmt = $conn->prepare("
+        SELECT f.*,
+               assigned.full_name AS facilitator_name,
+               assigned.username AS facilitator_username,
+               assigned.user_id AS facilitator_id
+        FROM tbl_section_folders f
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
+        LEFT JOIN tbl_users assigned ON assigned.user_id = ads.user_id AND assigned.role = 'facilitator'
+        ORDER BY FIELD(f.program, 'CWTS', 'LTS', 'ROTC'), f.course_section ASC
+    ");
+    $folderStmt->execute();
+} else {
+    $folderStmt = $conn->prepare("
+        SELECT f.*,
+               assigned.full_name AS facilitator_name,
+               assigned.username AS facilitator_username,
+               assigned.user_id AS facilitator_id
+        FROM tbl_section_folders f
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
+        LEFT JOIN tbl_users assigned ON assigned.user_id = ads.user_id AND assigned.role = 'facilitator'
+        WHERE f.program = ?
+        ORDER BY f.course_section ASC
+    ");
+    $folderStmt->execute([$currentProgram]);
+}
+$sectionFolders = $folderStmt->fetchAll(PDO::FETCH_ASSOC);
+$folderPrograms = [];
+foreach ($sectionFolders as $folderRow) {
+    $folderPrograms[$folderRow['program']] = true;
+}
 
 date_default_timezone_set('Asia/Manila');
 ?>
@@ -162,6 +196,61 @@ date_default_timezone_set('Asia/Manila');
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header">
+                                <h3 class="card-title">
+                                    <i class="fas fa-folder-tree mr-2"></i>
+                                    <?php echo $isSuperAdmin ? 'Section Folders' : htmlspecialchars($currentProgram . ' Section Folders'); ?>
+                                </h3>
+                                <div class="card-tools">
+                                    <a class="btn btn-success" href="masterlist.php">
+                                        <i class="fas fa-folder-plus mr-2"></i>Create in Student Management
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <?php if (!empty($sectionFolders)): ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-bordered table-hover mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Program</th>
+                                                    <th>Folder</th>
+                                                    <th>Assigned Facilitator</th>
+                                                    <th>Created</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($sectionFolders as $folder): ?>
+                                                    <tr>
+                                                        <td><span class="badge badge-primary"><?php echo htmlspecialchars($folder['program']); ?></span></td>
+                                                        <td><i class="fas fa-folder text-warning mr-1"></i><?php echo htmlspecialchars($folder['course_section']); ?></td>
+                                                        <td>
+                                                            <?php if (!empty($folder['facilitator_id'])): ?>
+                                                                <span class="badge badge-success">
+                                                                    <?php echo htmlspecialchars($folder['facilitator_name'] ?: $folder['facilitator_username']); ?>
+                                                                </span>
+                                                            <?php else: ?>
+                                                                <span class="badge badge-secondary">No facilitator assigned</span>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                        <td><?php echo htmlspecialchars(date('M d, Y', strtotime($folder['created_at']))); ?></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="alert alert-info mb-0">
+                                        <i class="fas fa-info-circle mr-2"></i>
+                                        No folders yet. Create folders in Student Management first, then assign facilitators to them here.
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
                                 <h3 class="card-title"><?php echo $isSuperAdmin ? 'User Accounts' : htmlspecialchars($currentProgram . ' Facilitator Accounts'); ?></h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addAdminModal">
@@ -292,10 +381,13 @@ date_default_timezone_set('Asia/Manila');
                                                         <i class="fas fa-key"></i>
                                                     </button>
                                                     <?php if ($admin['role'] === 'facilitator'): ?>
+                                                    <?php $hasProgramFolder = !empty($folderPrograms[$admin['program'] ?? '']); ?>
                                                     <button class="btn btn-sm btn-success assign-section" 
                                                             data-id="<?php echo $admin['user_id']; ?>"
                                                             data-name="<?php echo htmlspecialchars($admin['full_name']); ?>"
-                                                            data-program="<?php echo htmlspecialchars($admin['program'] ?? ''); ?>">
+                                                            data-program="<?php echo htmlspecialchars($admin['program'] ?? ''); ?>"
+                                                            title="<?php echo $hasProgramFolder ? 'Assign folder' : 'Create a folder for this program first'; ?>"
+                                                            <?php echo $hasProgramFolder ? '' : 'disabled'; ?>>
                                                         <i class="fas fa-tasks"></i>
                                                     </button>
                                                     <?php endif; ?>
@@ -609,13 +701,13 @@ date_default_timezone_set('Asia/Manila');
     </div>
 </div>
 
-<!-- Assign Section Modal -->
+<!-- Assign Folder Modal -->
 <div class="modal fade" id="assignSectionModal" tabindex="-1" role="dialog">
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header bg-success">
                 <h5 class="modal-title text-white">
-                    <i class="fas fa-tasks mr-2"></i>Assign Section to Facilitator
+                    <i class="fas fa-tasks mr-2"></i>Assign Folder to Facilitator
                 </h5>
                 <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
@@ -636,7 +728,7 @@ date_default_timezone_set('Asia/Manila');
                     <div class="row">
                         <div class="col-md-12">
                             <div class="form-group">
-                                <label for="course_section">Course Section *</label>
+                                <label for="course_section">Folder *</label>
                                 <div class="input-group">
                                     <input type="text" class="form-control" id="course_section" name="course_section" 
                                            list="sectionSuggestions" required>
@@ -647,7 +739,7 @@ date_default_timezone_set('Asia/Manila');
                                         </button>
                                     </div>
                                 </div>
-                                <small class="form-text text-muted">Use the suggestions as defaults. You can still edit the section name before saving.</small>
+                                <small class="form-text text-muted">Choose a folder that was created first. If needed, create folders from Student Management.</small>
                                 <div id="sectionPresetButtons" class="mt-2"></div>
                             </div>
                         </div>
@@ -656,7 +748,7 @@ date_default_timezone_set('Asia/Manila');
                     <div class="row">
                         <div class="col-md-12">
                             <div class="form-group">
-                                <label>Currently Assigned Sections:</label>
+                                <label>Currently Assigned Folders:</label>
                                 <div id="currentSections" class="mt-2">
                                     <div class="alert alert-info">
                                         <i class="fas fa-info-circle mr-2"></i>
@@ -670,7 +762,7 @@ date_default_timezone_set('Asia/Manila');
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-success">
-                        <i class="fas fa-check mr-2"></i>Assign Section
+                        <i class="fas fa-check mr-2"></i>Assign Folder
                     </button>
                 </div>
             </form>
@@ -934,7 +1026,7 @@ $(document).ready(function() {
         });
     }
     
-    // Handle assign section form submission
+    // Handle assign folder form submission
     $('#assignSectionForm').on('submit', function(e) {
         e.preventDefault();
         
@@ -957,15 +1049,15 @@ $(document).ready(function() {
                 if (response.success) {
                     Swal.fire({
                         icon: 'success',
-                        title: 'Section Assigned!',
+                        title: 'Folder Assigned!',
                         html: `
                             <div class="text-center">
                                 <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
                                 <h5>${response.message}</h5>
-                                <p class="text-muted">Section: <strong>${sectionName}</strong></p>
+                                <p class="text-muted">Folder: <strong>${sectionName}</strong></p>
                                 <div class="alert alert-success small mt-3">
                                     <i class="fas fa-info-circle"></i>
-                                    Facilitator can now enroll students in this section.
+                                    ${response.moved_students || 0} pending student(s) moved to this facilitator.
                                 </div>
                             </div>
                         `,

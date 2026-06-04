@@ -9,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
 require_once './include/automatic-sectioning.php';
+require_once './include/section-folders.php';
 
 // Get user info
 $user_id = $_SESSION['user_id'];
@@ -168,7 +169,13 @@ $superAdminFolderCards = [];
 $superAdminSystemFolderCards = [];
 $superAdminComponentCards = [];
 $superAdminExportFacilitators = [];
+$studentManagementFolders = [];
+$folderAssignableFacilitators = [];
 $admins_with_sections = [];
+
+if (in_array($user_role, ['super_admin', 'coordinator'], true)) {
+    syncSectionFoldersFromExisting($conn);
+}
 
 if ($user_role === 'coordinator') {
     $coordinatorProgram = normalizeProgram($_SESSION['program'] ?? null);
@@ -201,6 +208,7 @@ if ($user_role === 'coordinator') {
     ");
     $stmt->execute([$coordinatorProgram]);
     $coordinatorFacilitators = $stmt->fetchAll();
+    $folderAssignableFacilitators = $coordinatorFacilitators;
 
     foreach ($coordinatorFacilitators as $facilitator) {
         $coordinatorFacilitatorFolders[(int) $facilitator['user_id']] = [];
@@ -303,6 +311,15 @@ if ($user_role === 'coordinator') {
     }
     $my_students_count = $total_students;
 } elseif ($user_role === 'super_admin') {
+    $stmt = $conn->prepare("
+        SELECT user_id, full_name, username, program
+        FROM tbl_users
+        WHERE role = 'facilitator'
+        ORDER BY FIELD(program, 'CWTS', 'LTS', 'ROTC'), full_name ASC, username ASC
+    ");
+    $stmt->execute();
+    $folderAssignableFacilitators = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     foreach (['CWTS', 'LTS', 'ROTC'] as $componentName) {
         $stmt = $conn->prepare("
             SELECT COUNT(DISTINCT s.tbl_student_id)
@@ -373,6 +390,49 @@ if ($user_role === 'coordinator') {
     $my_students_by_section = [];
     $system_students = [];
     $system_by_section = [];
+}
+
+if ($user_role === 'coordinator' && $coordinatorProgram) {
+    $stmt = $conn->prepare("
+        SELECT
+            f.folder_id,
+            f.program,
+            f.course_section,
+            f.created_at,
+            assigned.user_id AS facilitator_id,
+            assigned.full_name AS facilitator_name,
+            assigned.username AS facilitator_username,
+            COUNT(DISTINCT s.tbl_student_id) AS student_count
+        FROM tbl_section_folders f
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
+        LEFT JOIN tbl_users assigned ON assigned.user_id = ads.user_id AND assigned.role = 'facilitator'
+        LEFT JOIN tbl_student s ON s.course_section = f.course_section
+        WHERE f.program = ?
+        GROUP BY f.folder_id, f.program, f.course_section, f.created_at, assigned.user_id, assigned.full_name, assigned.username
+        ORDER BY f.course_section ASC
+    ");
+    $stmt->execute([$coordinatorProgram]);
+    $studentManagementFolders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} elseif ($user_role === 'super_admin') {
+    $stmt = $conn->prepare("
+        SELECT
+            f.folder_id,
+            f.program,
+            f.course_section,
+            f.created_at,
+            assigned.user_id AS facilitator_id,
+            assigned.full_name AS facilitator_name,
+            assigned.username AS facilitator_username,
+            COUNT(DISTINCT s.tbl_student_id) AS student_count
+        FROM tbl_section_folders f
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
+        LEFT JOIN tbl_users assigned ON assigned.user_id = ads.user_id AND assigned.role = 'facilitator'
+        LEFT JOIN tbl_student s ON s.course_section = f.course_section
+        GROUP BY f.folder_id, f.program, f.course_section, f.created_at, assigned.user_id, assigned.full_name, assigned.username
+        ORDER BY FIELD(f.program, 'CWTS', 'LTS', 'ROTC'), f.course_section ASC
+    ");
+    $stmt->execute();
+    $studentManagementFolders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 // Get total counts for stats
@@ -1233,12 +1293,134 @@ if ($user_role === 'super_admin') {
                 <!-- ==================== -->
                 <!-- COORDINATOR VIEW - STUDENT INTAKE AND ASSIGNMENT -->
                 <!-- ==================== -->
+                <?php if (in_array($user_role, ['super_admin', 'coordinator'], true)): ?>
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-folder-tree mr-2"></i>
+                            <?php echo $user_role === 'coordinator' ? htmlspecialchars($coordinatorProgram . ' Student Folders') : 'Student Folders'; ?>
+                        </h3>
+                        <div class="card-tools">
+                            <button type="button" class="btn btn-sm btn-outline-danger mr-2 bulk-delete-student-folders-btn" disabled>
+                                <i class="fas fa-trash mr-1"></i> Delete Selected
+                            </button>
+                            <button type="button" class="btn btn-sm btn-success" data-toggle="modal" data-target="#createStudentFolderModal">
+                                <i class="fas fa-folder-plus mr-1"></i> Create Folder
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($studentManagementFolders)): ?>
+                            <div class="d-flex flex-wrap align-items-center justify-content-between mb-2" style="gap: 8px;">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="selectAllStudentFoldersTop">
+                                    <label class="form-check-label" for="selectAllStudentFoldersTop">Select all folders</label>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-danger bulk-delete-student-folders-btn" disabled>
+                                    <i class="fas fa-trash mr-1"></i> Delete Checked Folders
+                                </button>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 42px;" class="text-center">
+                                                <input type="checkbox" id="selectAllStudentFolders" aria-label="Select all folders">
+                                            </th>
+                                            <th>Program</th>
+                                            <th>Folder</th>
+                                            <th>Students</th>
+                                            <th>Facilitator</th>
+                                            <th style="width: 310px;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($studentManagementFolders as $folder): ?>
+                                            <tr class="folder-summary-row"
+                                                data-folder-name="<?php echo htmlspecialchars(strtolower((string) $folder['course_section']), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-folder-program="<?php echo htmlspecialchars(strtolower((string) $folder['program']), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-folder-facilitator="<?php echo htmlspecialchars(strtolower((string) (($folder['facilitator_name'] ?: $folder['facilitator_username']) ?? '')), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <td class="text-center align-middle">
+                                                    <input type="checkbox"
+                                                           class="student-folder-check"
+                                                           value="<?php echo (int) $folder['folder_id']; ?>"
+                                                           data-folder-name="<?php echo htmlspecialchars($folder['course_section'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                           data-student-count="<?php echo (int) $folder['student_count']; ?>"
+                                                           aria-label="Select <?php echo htmlspecialchars($folder['course_section'], ENT_QUOTES, 'UTF-8'); ?>">
+                                                </td>
+                                                <td><span class="badge badge-primary"><?php echo htmlspecialchars($folder['program']); ?></span></td>
+                                                <td>
+                                                    <a href="folder-students.php?scope=student_folder&folder=<?php echo urlencode($folder['course_section']); ?>" class="font-weight-bold">
+                                                        <i class="fas fa-folder-open text-warning mr-1"></i>
+                                                        <?php echo htmlspecialchars($folder['course_section']); ?>
+                                                    </a>
+                                                </td>
+                                                <td>
+                                                    <span class="badge badge-info">
+                                                        <i class="fas fa-users mr-1"></i><?php echo (int) $folder['student_count']; ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <?php if (!empty($folder['facilitator_id'])): ?>
+                                                        <span class="badge badge-success">
+                                                            <?php echo htmlspecialchars($folder['facilitator_name'] ?: $folder['facilitator_username']); ?>
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="badge badge-secondary">No facilitator assigned</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <a class="btn btn-sm btn-outline-info mr-1" href="folder-students.php?scope=student_folder&folder=<?php echo urlencode($folder['course_section']); ?>">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-outline-danger mr-1 delete-student-folder"
+                                                            data-folder-id="<?php echo (int) $folder['folder_id']; ?>"
+                                                            data-folder-name="<?php echo htmlspecialchars($folder['course_section']); ?>"
+                                                            data-student-count="<?php echo (int) $folder['student_count']; ?>">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                    <?php if (empty($folder['facilitator_id'])): ?>
+                                                        <form class="assign-folder-to-facilitator-form d-inline-flex" style="gap: 8px;">
+                                                            <input type="hidden" name="course_section" value="<?php echo htmlspecialchars($folder['course_section']); ?>">
+                                                            <select class="form-control form-control-sm" name="user_id" required>
+                                                                <option value="">Select facilitator</option>
+                                                                <?php foreach ($folderAssignableFacilitators as $facilitator): ?>
+                                                                    <?php if (normalizeProgram($facilitator['program'] ?? null) !== normalizeProgram($folder['program'] ?? null)) continue; ?>
+                                                                    <option value="<?php echo (int) $facilitator['user_id']; ?>">
+                                                                        <?php echo htmlspecialchars(($facilitator['full_name'] ?: $facilitator['username']) . ' (' . $facilitator['program'] . ')'); ?>
+                                                                    </option>
+                                                                <?php endforeach; ?>
+                                                            </select>
+                                                            <button type="submit" class="btn btn-sm btn-primary">
+                                                                <i class="fas fa-user-plus"></i>
+                                                            </button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <span class="text-muted small">Already assigned</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                No folders yet. Create a folder first, then students can be organized inside it.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <?php if ($user_role === 'coordinator'): ?>
 
                 <div class="row mb-3">
                     <div class="col-12">
                         <button class="btn btn-success" data-toggle="modal" data-target="#importExcelModal"
-                                <?php echo empty($coordinatorFolderCards) ? 'disabled' : ''; ?>>
+                                <?php echo empty($studentManagementFolders) ? 'disabled' : ''; ?>>
                             <i class="fas fa-file-excel mr-2"></i> Import Students
                         </button>
                     </div>
@@ -1301,7 +1483,15 @@ if ($user_role === 'super_admin') {
                                     </thead>
                                     <tbody>
                                         <?php foreach ($coordinatorPendingStudents as $index => $student): ?>
-                                            <tr>
+                                            <?php
+                                                $searchStudentName = strtolower((string) masterlistDetailValue($student, 'student_name'));
+                                                $searchOriginalSection = strtolower((string) masterlistDetailValue($student, 'original_section'));
+                                                $searchFolderSection = strtolower((string) masterlistDetailValue($student, 'course_section'));
+                                            ?>
+                                            <tr class="student-row"
+                                                data-student-name="<?php echo htmlspecialchars($searchStudentName, ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-original-section="<?php echo htmlspecialchars($searchOriginalSection, ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-folder-section="<?php echo htmlspecialchars($searchFolderSection, ENT_QUOTES, 'UTF-8'); ?>">
                                                 <td><?php echo $index + 1; ?></td>
                                                 <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
                                                     <?php
@@ -1629,7 +1819,10 @@ if ($user_role === 'super_admin') {
                                                 $folderSection = $row["course_section"];
                                                 $qrCode = $row["generated_code"];
                                                 ?>
-                                                <tr>
+                                                <tr class="student-row"
+                                                    data-student-name="<?= htmlspecialchars(strtolower($studentName), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-original-section="<?= htmlspecialchars(strtolower($originalSection), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-folder-section="<?= htmlspecialchars(strtolower($folderSection), ENT_QUOTES, 'UTF-8') ?>">
                                                     <td><?= $my_counter++ ?></td>
                                                     <td><?= htmlspecialchars($studentName) ?></td>
                                                     <td>
@@ -1756,7 +1949,10 @@ if ($user_role === 'super_admin') {
                                                 $folderSection = $row["course_section"];
                                                 $qrCode = $row["generated_code"];
                                                 ?>
-                                                <tr>
+                                                <tr class="student-row"
+                                                    data-student-name="<?= htmlspecialchars(strtolower($studentName), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-original-section="<?= htmlspecialchars(strtolower($originalSection), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-folder-section="<?= htmlspecialchars(strtolower($folderSection), ENT_QUOTES, 'UTF-8') ?>">
                                                     <td><?= $admin_counter++ ?></td>
                                                     <td><?= htmlspecialchars($studentName) ?></td>
                                                     <td>
@@ -1870,7 +2066,10 @@ if ($user_role === 'super_admin') {
                                                 $folderSection = $row["course_section"];
                                                 $qrCode = $row["generated_code"];
                                                 ?>
-                                                <tr>
+                                                <tr class="student-row"
+                                                    data-student-name="<?= htmlspecialchars(strtolower($studentName), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-original-section="<?= htmlspecialchars(strtolower($originalSection), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-folder-section="<?= htmlspecialchars(strtolower($folderSection), ENT_QUOTES, 'UTF-8') ?>">
                                                     <td><?= $system_counter++ ?></td>
                                                     <td><?= htmlspecialchars($studentName) ?></td>
                                                     <td>
@@ -2566,7 +2765,7 @@ if ($user_role === 'super_admin') {
             <div class="modal-header">
                 <h5 class="modal-title">
                     <i class="fas fa-file-excel mr-2"></i>
-                    Import Students to Facilitator Folder
+                    Import Students to Folder
                 </h5>
                 <button type="button" class="close" data-dismiss="modal">
                     <span>&times;</span>
@@ -2577,34 +2776,22 @@ if ($user_role === 'super_admin') {
 
                 <form id="importExcelForm" enctype="multipart/form-data">
                     <div class="form-group">
-                        <label for="import_facilitator_id">
-                            <i class="fas fa-user-tie mr-1"></i>
-                            Facilitator <span class="text-danger">*</span>
-                        </label>
-                        <select class="form-control" id="import_facilitator_id" name="facilitator_id" required>
-                            <option value="">-- Select Facilitator --</option>
-                            <?php foreach ($coordinatorFacilitators as $facilitator): ?>
-                                <?php
-                                    $facilitatorId = (int) $facilitator['user_id'];
-                                    $folders = array_column($coordinatorFacilitatorFolders[$facilitatorId] ?? [], 'course_section');
-                                ?>
-                                <option value="<?php echo $facilitatorId; ?>" data-folders="<?php echo htmlspecialchars(json_encode($folders), ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo htmlspecialchars(trim($facilitator['full_name'] ?? '') ?: $facilitator['username']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
                         <label for="import_section">
                             <i class="fas fa-folder mr-1"></i>
                             Target Folder <span class="text-danger">*</span>
                         </label>
-                        <select class="form-control" id="import_section" name="import_section" required disabled>
-                            <option value="">-- Select facilitator first --</option>
+                        <select class="form-control" id="import_section" name="import_section" required>
+                            <option value="">-- Select Folder --</option>
+                            <?php foreach ($studentManagementFolders as $folder): ?>
+                                <?php if (normalizeProgram($folder['program'] ?? null) !== $coordinatorProgram) continue; ?>
+                                <option value="<?php echo htmlspecialchars($folder['course_section']); ?>">
+                                    <?php echo htmlspecialchars($folder['course_section']); ?>
+                                    <?php echo !empty($folder['facilitator_name']) || !empty($folder['facilitator_username']) ? ' - ' . htmlspecialchars($folder['facilitator_name'] ?: $folder['facilitator_username']) : ' - Pending facilitator'; ?>
+                                </option>
+                            <?php endforeach; ?>
                         </select>
                         <small class="form-text text-muted">
-                            Column A: Student Full Name. Column B: Original College Section. First row is skipped.
+                            Column A: Student Full Name. Column B: Original College Section. First row is skipped. Students stay inside the folder even if no facilitator is assigned yet.
                         </small>
                     </div>
 
@@ -2627,6 +2814,53 @@ if ($user_role === 'super_admin') {
                     <i class="fas fa-file-import mr-2"></i> Import Students
                 </button>
             </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (in_array($user_role, ['super_admin', 'coordinator'], true)): ?>
+<!-- Create Student Folder Modal -->
+<div class="modal fade" id="createStudentFolderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success">
+                <h5 class="modal-title text-white">
+                    <i class="fas fa-folder-plus mr-2"></i>Create Student Folder
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <form id="createStudentFolderForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="student_folder_program">Program</label>
+                        <?php if ($user_role === 'super_admin'): ?>
+                            <select class="form-control" id="student_folder_program" name="program" required>
+                                <option value="">-- Select Program --</option>
+                                <option value="CWTS">CWTS</option>
+                                <option value="LTS">LTS</option>
+                                <option value="ROTC">ROTC</option>
+                            </select>
+                        <?php else: ?>
+                            <input type="text" class="form-control" id="student_folder_program" name="program" value="<?php echo htmlspecialchars($coordinatorProgram); ?>" readonly>
+                        <?php endif; ?>
+                    </div>
+                    <div class="form-group">
+                        <label for="student_folder_name">Folder Name</label>
+                        <input type="text" class="form-control" id="student_folder_name" name="course_section" required>
+                        <small class="form-text text-muted">Students will be placed inside this folder before assigning a facilitator.</small>
+                        <div id="studentFolderPresetButtons" class="mt-2"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save mr-1"></i> Create Folder
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -2706,6 +2940,320 @@ $(document).ready(function() {
         .on('hide.bs.collapse', function() {
             $('#coordinatorVisibleDetailsIcon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
         });
+
+    function folderPresetsForProgram(program) {
+        const normalized = String(program || '').toUpperCase();
+        if (normalized === 'ROTC') {
+            const companies = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
+            const platoons = ['1st', '2nd', '3rd', '4th'];
+            const sections = [];
+            companies.forEach(company => platoons.forEach(platoon => sections.push(`${company} Company ${platoon} Platoon`)));
+            return sections;
+        }
+
+        if (normalized === 'CWTS' || normalized === 'LTS') {
+            const sections = [];
+            ['1', '2'].forEach(year => ['A', 'B', 'C', 'D', 'E', 'F'].forEach(letter => sections.push(`${normalized} ${year}${letter}`)));
+            return sections;
+        }
+
+        return [];
+    }
+
+    function renderStudentFolderPresets(program) {
+        const presets = folderPresetsForProgram(program);
+        const container = $('#studentFolderPresetButtons');
+        container.empty();
+
+        if (presets.length === 0) {
+            return;
+        }
+
+        container.append('<div class="small text-muted mb-1">Quick presets</div>');
+        presets.slice(0, 12).forEach(function(section) {
+            container.append(`<button type="button" class="btn btn-xs btn-outline-success mr-1 mb-1 student-folder-preset" data-section="${escapeHtml(section)}">${escapeHtml(section)}</button>`);
+        });
+    }
+
+    $('#createStudentFolderModal').on('show.bs.modal', function() {
+        renderStudentFolderPresets($('#student_folder_program').val());
+    });
+
+    $('#student_folder_program').on('change', function() {
+        renderStudentFolderPresets(this.value);
+    });
+
+    $(document).on('click', '.student-folder-preset', function() {
+        $('#student_folder_name').val($(this).data('section')).focus();
+    });
+
+    $('#createStudentFolderForm').on('submit', function(e) {
+        e.preventDefault();
+
+        const form = $(this);
+        const button = form.find('button[type="submit"]');
+        const originalText = button.html();
+        button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Creating');
+
+        $.ajax({
+            url: './endpoint/create-section-folder.php',
+            method: 'POST',
+            data: form.serialize(),
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Folder Created',
+                        text: response.message,
+                        timer: 1400,
+                        showConfirmButton: false
+                    }).then(() => location.reload());
+                } else {
+                    Swal.fire('Error', response.message || 'Unable to create folder.', 'error');
+                    button.prop('disabled', false).html(originalText);
+                }
+            },
+            error: function(xhr) {
+                const rawResponse = String(xhr.responseText || '');
+                if (rawResponse.includes('"success":true')) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Folder Created',
+                        text: 'Folder created successfully.',
+                        timer: 1400,
+                        showConfirmButton: false
+                    }).then(() => location.reload());
+                    return;
+                }
+
+                Swal.fire('Request Failed', 'Unable to create folder. Please try again.', 'error');
+                button.prop('disabled', false).html(originalText);
+            }
+        });
+    });
+
+    $('.assign-folder-to-facilitator-form').on('submit', function(e) {
+        e.preventDefault();
+
+        const form = $(this);
+        const button = form.find('button[type="submit"]');
+        const originalText = button.html();
+        button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
+        $.ajax({
+            url: './endpoint/assign-section.php',
+            method: 'POST',
+            data: form.serialize(),
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Facilitator Assigned',
+                        text: `${response.message} ${response.moved_students || 0} student(s) moved.`,
+                        timer: 1600,
+                        showConfirmButton: false
+                    }).then(() => location.reload());
+                } else {
+                    Swal.fire('Error', response.message || 'Unable to assign facilitator.', 'error');
+                    button.prop('disabled', false).html(originalText);
+                }
+            },
+            error: function() {
+                Swal.fire('Request Failed', 'Unable to assign facilitator. Please try again.', 'error');
+                button.prop('disabled', false).html(originalText);
+            }
+        });
+    });
+
+    $('.delete-student-folder').on('click', function() {
+        const button = $(this);
+        const folderId = button.data('folder-id');
+        const folderName = String(button.data('folder-name') || '');
+        const studentCount = Number(button.data('student-count') || 0);
+
+        Swal.fire({
+            icon: 'warning',
+            title: 'Delete folder?',
+            html: `
+                <p>This will delete <strong>${escapeHtml(folderName)}</strong>.</p>
+                <div class="alert alert-info small mb-0">
+                    ${studentCount} student${studentCount === 1 ? '' : 's'} inside this folder will not be deleted.
+                    They will be released back to the component pending list.
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'Delete Folder',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#d33'
+        }).then(function(result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            const originalButtonHtml = button.html();
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+            Swal.fire({
+                title: 'Deleting folder...',
+                html: `
+                    <div class="text-center">
+                        <div class="spinner-border text-danger mb-3" role="status" aria-hidden="true"></div>
+                        <p class="mb-0">Please wait while the folder is being deleted.</p>
+                    </div>
+                `,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false
+            });
+
+            $.ajax({
+                url: './endpoint/delete-section-folder.php',
+                method: 'POST',
+                data: { folder_id: folderId },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Folder Deleted',
+                            text: response.message,
+                            timer: 1800,
+                            showConfirmButton: false
+                        }).then(() => location.reload());
+                    } else {
+                        Swal.fire('Unable to Delete', response.message || 'Please try again.', 'error');
+                        button.prop('disabled', false).html(originalButtonHtml);
+                    }
+                },
+                error: function() {
+                    Swal.fire('Request Failed', 'Unable to delete folder. Please try again.', 'error');
+                    button.prop('disabled', false).html(originalButtonHtml);
+                }
+            });
+        });
+    });
+
+    function getSelectedStudentFolders() {
+        return $('.student-folder-check:checked').map(function() {
+            const checkbox = $(this);
+            return {
+                id: checkbox.val(),
+                name: String(checkbox.data('folder-name') || ''),
+                studentCount: Number(checkbox.data('student-count') || 0)
+            };
+        }).get();
+    }
+
+    function getStudentFolderChecks() {
+        return $('.student-folder-check');
+    }
+
+    function updateBulkDeleteFolderState() {
+        const folderChecks = getStudentFolderChecks();
+        const totalFolders = folderChecks.length;
+        const selectedFolders = getSelectedStudentFolders();
+        const selectedCount = selectedFolders.length;
+
+        $('.bulk-delete-student-folders-btn')
+            .prop('disabled', selectedCount === 0)
+            .html(`<i class="fas fa-trash mr-1"></i> ${selectedCount ? `Delete Selected (${selectedCount})` : 'Delete Selected'}`);
+
+        $('#selectAllStudentFolders, #selectAllStudentFoldersTop')
+            .prop('checked', totalFolders > 0 && selectedCount === totalFolders)
+            .prop('indeterminate', selectedCount > 0 && selectedCount < totalFolders);
+    }
+
+    $(document).on('change', '#selectAllStudentFolders, #selectAllStudentFoldersTop', function() {
+        getStudentFolderChecks().prop('checked', $(this).is(':checked'));
+        updateBulkDeleteFolderState();
+    });
+
+    $(document).on('change', '.student-folder-check', updateBulkDeleteFolderState);
+
+    $(document).on('click', '.bulk-delete-student-folders-btn', function() {
+        const selectedFolders = getSelectedStudentFolders();
+
+        if (!selectedFolders.length) {
+            return;
+        }
+
+        const totalStudents = selectedFolders.reduce((sum, folder) => sum + folder.studentCount, 0);
+        const previewNames = selectedFolders.slice(0, 6).map(folder => `<li>${escapeHtml(folder.name)}</li>`).join('');
+        const extraCount = selectedFolders.length > 6 ? selectedFolders.length - 6 : 0;
+
+        Swal.fire({
+            icon: 'warning',
+            title: 'Delete selected folders?',
+            html: `
+                <p>You selected <strong>${selectedFolders.length}</strong> folder${selectedFolders.length === 1 ? '' : 's'}.</p>
+                <ul class="text-left mb-2">${previewNames}${extraCount ? `<li>and ${extraCount} more...</li>` : ''}</ul>
+                <div class="alert alert-info small mb-0">
+                    ${totalStudents} student${totalStudents === 1 ? '' : 's'} inside these folders will not be deleted.
+                    They will be released back to the component pending list.
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'Delete Selected',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#d33'
+        }).then(function(result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            const bulkButtons = $('.bulk-delete-student-folders-btn');
+            bulkButtons
+                .prop('disabled', true)
+                .html('<i class="fas fa-spinner fa-spin mr-1"></i> Deleting...');
+            getStudentFolderChecks().prop('disabled', true);
+            $('#selectAllStudentFolders, #selectAllStudentFoldersTop').prop('disabled', true);
+
+            Swal.fire({
+                title: 'Deleting folders...',
+                html: `
+                    <div class="text-center">
+                        <div class="spinner-border text-danger mb-3" role="status" aria-hidden="true"></div>
+                        <p class="mb-0">Deleting ${selectedFolders.length} selected folder${selectedFolders.length === 1 ? '' : 's'}.</p>
+                    </div>
+                `,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false
+            });
+
+            $.ajax({
+                url: './endpoint/delete-section-folders.php',
+                method: 'POST',
+                data: { folder_ids: selectedFolders.map(folder => folder.id) },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Folders Deleted',
+                            text: response.message,
+                            timer: 1800,
+                            showConfirmButton: false
+                        }).then(() => location.reload());
+                    } else {
+                        Swal.fire('Unable to Delete', response.message || 'Please try again.', 'error');
+                        getStudentFolderChecks().prop('disabled', false);
+                        $('#selectAllStudentFolders, #selectAllStudentFoldersTop').prop('disabled', false);
+                        updateBulkDeleteFolderState();
+                    }
+                },
+                error: function() {
+                    Swal.fire('Request Failed', 'Unable to delete selected folders. Please try again.', 'error');
+                    getStudentFolderChecks().prop('disabled', false);
+                    $('#selectAllStudentFolders, #selectAllStudentFoldersTop').prop('disabled', false);
+                    updateBulkDeleteFolderState();
+                }
+            });
+        });
+    });
+
+    updateBulkDeleteFolderState();
     
     // ====================================
     // FOLDER TOGGLE FUNCTIONALITY
@@ -2727,26 +3275,35 @@ $(document).ready(function() {
     
     // Expand All button
     $('[data-filter="expanded"]').on('click', function() {
+        $('#searchStudent').val('');
+        $('.student-row, .folder-summary-row, .folder-box, .admin-folder, .section-folder, .nested-section-folder').show();
         $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideDown(300);
         $('.admin-folder-header, .section-folder-header, .nested-section-header').removeClass('collapsed');
         $('.expand-collapse-icon').removeClass('fa-chevron-circle-right').addClass('fa-chevron-circle-down');
         $(this).addClass('active').siblings().removeClass('active');
+        updateBulkDeleteFolderState();
     });
     
     // Collapse All button
     $('[data-filter="collapsed"]').on('click', function() {
+        $('#searchStudent').val('');
+        $('.student-row, .folder-summary-row, .folder-box, .admin-folder, .section-folder, .nested-section-folder').show();
         $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideUp(300);
         $('.admin-folder-header, .section-folder-header, .nested-section-header').addClass('collapsed');
         $('.expand-collapse-icon').removeClass('fa-chevron-circle-down').addClass('fa-chevron-circle-right');
         $(this).addClass('active').siblings().removeClass('active');
+        updateBulkDeleteFolderState();
     });
     
     // All Folders button
     $('[data-filter="all"]').on('click', function() {
+        $('#searchStudent').val('');
+        $('.student-row, .folder-summary-row, .folder-box, .admin-folder, .section-folder, .nested-section-folder').show();
         $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideUp(300);
         $('.admin-folder-header, .section-folder-header, .nested-section-header').addClass('collapsed');
         $('.expand-collapse-icon').removeClass('fa-chevron-circle-down').addClass('fa-chevron-circle-right');
         $(this).addClass('active').siblings().removeClass('active');
+        updateBulkDeleteFolderState();
     });
     
     // ====================================
@@ -2759,6 +3316,8 @@ $(document).ready(function() {
         if (searchTerm === '') {
             // Reset view - collapse everything
             $('.student-row').show();
+            $('.folder-summary-row').show();
+            $('.folder-box').show();
             $('.admin-folder, .section-folder').show();
             $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideUp(300);
             $('.admin-folder-header, .section-folder-header, .nested-section-header').addClass('collapsed');
@@ -2776,14 +3335,42 @@ $(document).ready(function() {
                 const totalCount = $folder.find('.student-row').length;
                 $folder.find('.admin-stats .stat-badge:last').html(`<i class="fas fa-users"></i> ${totalCount} students`);
             });
+            updateBulkDeleteFolderState();
         } else {
             // Hide all rows first
             $('.student-row').hide();
+            $('.folder-summary-row').hide();
+            $('.folder-box').hide();
             
-            // Show matching rows (search in name, original section, and folder section)
-            $(`.student-row[data-student-name*="${searchTerm}"], 
-               .student-row[data-original-section*="${searchTerm}"],
-               .student-row[data-folder-section*="${searchTerm}"]`).show();
+            // Show matching rows without relying on CSS attribute selectors.
+            $('.student-row').each(function() {
+                const row = $(this);
+                const searchableText = [
+                    row.data('student-name') || '',
+                    row.data('original-section') || '',
+                    row.data('folder-section') || ''
+                ].join(' ').toLowerCase();
+
+                row.toggle(searchableText.includes(searchTerm));
+            });
+
+            $('.folder-summary-row').each(function() {
+                const row = $(this);
+                const searchableText = [
+                    row.data('folder-name') || '',
+                    row.data('folder-program') || '',
+                    row.data('folder-facilitator') || '',
+                    row.text() || ''
+                ].join(' ').toLowerCase();
+
+                row.toggle(searchableText.includes(searchTerm));
+            });
+
+            $('.folder-box').each(function() {
+                const box = $(this);
+                const searchableText = box.text().toLowerCase();
+                box.toggle(searchableText.includes(searchTerm));
+            });
             
             // Process section folders
             $('.section-folder').each(function() {
@@ -2833,6 +3420,7 @@ $(document).ready(function() {
                     $folder.hide();
                 }
             });
+            updateBulkDeleteFolderState();
         }
     });
     
@@ -3168,7 +3756,7 @@ function generateQrCode() {
         qrImg.src = apiUrl;
         document.getElementById('studentName').style.pointerEvents = 'none';
         
-        <?php if ($user_role === 'facilitator' || $user_role === 'super_admin'): ?>
+<?php if ($user_role === 'facilitator' || $user_role === 'super_admin'): ?>
         if (originalSectionInput) originalSectionInput.style.pointerEvents = 'none';
         <?php endif; ?>
         
@@ -3243,17 +3831,11 @@ function importExcel() {
     <?php endif; ?>
 
     <?php if ($user_role === 'coordinator'): ?>
-    const importFacilitator = document.getElementById('import_facilitator_id');
     const importSection = document.getElementById('import_section');
-    if (!importFacilitator || !importFacilitator.value) {
-        Swal.fire('Facilitator Required', 'Please select a facilitator for this import.', 'error');
-        return;
-    }
     if (!importSection || !importSection.value) {
-        Swal.fire('Folder Required', 'Please select a target facilitator folder.', 'error');
+        Swal.fire('Folder Required', 'Please select a target folder.', 'error');
         return;
     }
-    formData.set('facilitator_id', importFacilitator.value);
     formData.set('import_section', importSection.value);
     <?php endif; ?>
 

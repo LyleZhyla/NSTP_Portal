@@ -71,6 +71,8 @@ try {
     $deleteFolderStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE admin_section_id = ?");
     $deleteFolderStmt->execute([$assignmentId]);
 
+    $conn->commit();
+
     if (function_exists('logSystemEvent')) {
         $facilitatorName = trim($folder['full_name'] ?? '') ?: ($folder['username'] ?? 'Facilitator');
         logSystemEvent(
@@ -79,8 +81,6 @@ try {
             'Deleted folder "' . $folder['course_section'] . '" for ' . $facilitatorName . ' with ' . count($studentIds) . ' student(s).'
         );
     }
-
-    $conn->commit();
 
     $response['success'] = true;
     $response['message'] = 'Folder deleted successfully.';

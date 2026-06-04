@@ -558,12 +558,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
     }
     
     try {
-        // Get target facilitator folder from form data
-        $targetFacilitatorId = (int) ($_POST['facilitator_id'] ?? 0);
+        // Get target folder from form data. A facilitator can be assigned later.
+        $targetFacilitatorId = null;
         $targetSection = isset($_POST['import_section']) ? trim($_POST['import_section']) : '';
 
-        if ($targetFacilitatorId <= 0 || empty($targetSection)) {
-            $response['message'] = 'Please select a facilitator and target folder.';
+        if (empty($targetSection)) {
+            $response['message'] = 'Please select a target folder.';
             echo json_encode($response);
             exit;
         }
@@ -577,28 +577,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
             exit;
         }
 
-        $facilitatorStmt = $conn->prepare("
-            SELECT user_id
-            FROM tbl_users
-            WHERE user_id = ? AND role = 'facilitator' AND program = ?
-        ");
-        $facilitatorStmt->execute([$targetFacilitatorId, $coordinatorProgram]);
-        if (!$facilitatorStmt->fetchColumn()) {
-            $response['message'] = 'Selected facilitator is not under your program.';
+        if (!sectionFolderExists($conn, $coordinatorProgram, $targetSection)) {
+            $response['message'] = 'Please create the folder first before importing students.';
             echo json_encode($response);
             exit;
         }
 
         $folderStmt = $conn->prepare("
-            SELECT COUNT(*)
-            FROM tbl_admin_sections
-            WHERE user_id = ? AND course_section = ?
+            SELECT ads.user_id
+            FROM tbl_admin_sections ads
+            INNER JOIN tbl_users u ON u.user_id = ads.user_id
+            WHERE ads.course_section = ?
+              AND u.role = 'facilitator'
+              AND u.program = ?
+            LIMIT 1
         ");
-        $folderStmt->execute([$targetFacilitatorId, $targetSection]);
-        if ((int) $folderStmt->fetchColumn() === 0) {
-            $response['message'] = 'Selected folder is not assigned to this facilitator.';
-            echo json_encode($response);
-            exit;
+        $folderStmt->execute([$targetSection, $coordinatorProgram]);
+        $assignedFacilitatorId = $folderStmt->fetchColumn();
+        if ($assignedFacilitatorId) {
+            $targetFacilitatorId = (int) $assignedFacilitatorId;
         }
         
         // Load the Excel file
@@ -635,13 +632,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
             }
         }
         
-        // Get existing students for this facilitator folder owner to check duplicates
+        // Get existing students for this folder to check duplicates
         $existingStmt = $conn->prepare("
             SELECT student_name, original_section, course_section 
             FROM tbl_student 
-            WHERE created_by = ?
+            WHERE course_section = ?
         ");
-        $existingStmt->execute([$targetFacilitatorId]);
+        $existingStmt->execute([$targetSection]);
         $existingStudents = $existingStmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Create lookup arrays for faster duplicate checking
@@ -752,7 +749,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
         // Prepare success message
         if ($importedCount > 0) {
             $response['success'] = true;
-            $message = "Successfully imported {$importedCount} out of {$response['total_rows']} students into admin folder '{$targetSection}'.";
+            $assignmentText = $targetFacilitatorId ? 'assigned facilitator folder' : 'pending folder';
+            $message = "Successfully imported {$importedCount} out of {$response['total_rows']} students into {$assignmentText} '{$targetSection}'.";
             if ($skippedCount > 0) {
                 $message .= " Skipped {$skippedCount} duplicate/invalid entries.";
             }

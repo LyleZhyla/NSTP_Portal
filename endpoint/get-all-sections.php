@@ -3,6 +3,7 @@ session_start();
 header('Content-Type: application/json');
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/section-folders.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
@@ -29,9 +30,18 @@ try {
     ");
     $stmt2->execute();
     $adminSections = $stmt2->fetchAll(PDO::FETCH_COLUMN);
+
+    syncSectionFoldersFromExisting($conn);
+    $folderStmt = $conn->prepare("
+        SELECT DISTINCT course_section
+        FROM tbl_section_folders
+        WHERE course_section IS NOT NULL AND course_section != ''
+    ");
+    $folderStmt->execute();
+    $createdFolders = $folderStmt->fetchAll(PDO::FETCH_COLUMN);
     
     // Merge and get unique values
-    $allSections = array_unique(array_merge($sections, $adminSections));
+    $allSections = array_unique(array_merge($sections, $adminSections, $createdFolders));
     if ($currentUser['role'] === 'coordinator') {
         $program = normalizeProgram($currentUser['program'] ?? null);
         $allSections = array_values(array_filter($allSections, function ($section) use ($program) {

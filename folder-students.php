@@ -9,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once './conn/conn.php';
 require_once './include/user-permissions.php';
 require_once './include/automatic-sectioning.php';
+require_once './include/section-folders.php';
 
 $currentUser = getCurrentUserRecord($conn);
 $role = $currentUser['role'] ?? '';
@@ -126,6 +127,40 @@ try {
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $pageTitle = $program;
         $folderMeta = 'Component folder';
+    } elseif ($scope === 'student_folder' && in_array($role, ['super_admin', 'coordinator'], true)) {
+        if ($folder === '') {
+            throw new RuntimeException('Invalid student folder.');
+        }
+
+        syncSectionFoldersFromExisting($conn);
+
+        $stmt = $conn->prepare("
+            SELECT program
+            FROM tbl_section_folders
+            WHERE course_section = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$folder]);
+        $folderProgram = normalizeProgram($stmt->fetchColumn());
+
+        if (!$folderProgram) {
+            throw new RuntimeException('Folder not found.');
+        }
+
+        if ($role === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) !== $folderProgram) {
+            throw new RuntimeException('You are not allowed to view this folder.');
+        }
+
+        $stmt = $conn->prepare("
+            SELECT s.*
+            FROM tbl_student s
+            WHERE s.course_section = ?
+            ORDER BY s.student_name ASC
+        ");
+        $stmt->execute([$folder]);
+        $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $pageTitle = $folder;
+        $folderMeta = $folderProgram . ' Student Folder';
     } elseif ($scope === 'pending' && $role === 'coordinator') {
         $program = $component ?: normalizeProgram($currentUser['program'] ?? null);
         if (!$program) {
