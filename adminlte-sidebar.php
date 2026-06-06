@@ -189,6 +189,12 @@ if (isset($_SESSION['user_id'])) {
                         <p>Downloadables</p>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="announcements.php" class="nav-link <?= ($currentPage == 'announcements.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-bullhorn"></i>
+                        <p>Announcements</p>
+                    </a>
+                </li>
                 <?php endif; ?>
 
                 <!-- Archive Manager -->

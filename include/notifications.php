@@ -1,0 +1,309 @@
+<?php
+
+require_once __DIR__ . '/user-permissions.php';
+require_once __DIR__ . '/mailer.php';
+
+function ensureNotificationTables(PDO $conn) {
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_notifications (
+            notification_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            type VARCHAR(40) NOT NULL,
+            title VARCHAR(180) NOT NULL,
+            message TEXT NOT NULL,
+            related_table VARCHAR(80) NULL,
+            related_id INT NULL,
+            emailed TINYINT(1) NOT NULL DEFAULT 0,
+            is_read TINYINT(1) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            read_at DATETIME NULL,
+            INDEX idx_user_read_created (user_id, is_read, created_at),
+            INDEX idx_related (related_table, related_id),
+            UNIQUE KEY unique_user_type_related (user_id, type, related_table, related_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_announcements (
+            announcement_id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(180) NOT NULL,
+            body TEXT NOT NULL,
+            scope_program VARCHAR(20) NULL,
+            created_by INT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_scope_created (scope_program, created_at),
+            INDEX idx_created_by (created_by)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+function cleanNotificationText($value, $maxLength = 5000) {
+    $value = trim((string) $value);
+    $value = preg_replace('/\s+/', ' ', $value);
+    return function_exists('mb_substr')
+        ? mb_substr($value, 0, $maxLength)
+        : substr($value, 0, $maxLength);
+}
+
+function notificationStudentEmail(PDO $conn, array $student) {
+    $userId = (int) ($student['user_id'] ?? 0);
+    if ($userId > 0) {
+        $stmt = $conn->prepare("SELECT email, full_name FROM tbl_users WHERE user_id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($user && !isPlaceholderEmail($user['email'] ?? '') && filter_var($user['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
+            return [
+                'email' => $user['email'],
+                'name' => $user['full_name'] ?: ($student['student_name'] ?? 'Student'),
+            ];
+        }
+    }
+
+    $studentNumber = trim((string) ($student['student_number'] ?? ''));
+    if ($studentNumber !== '') {
+        $stmt = $conn->prepare("
+            SELECT email, first_name, last_name
+            FROM tbl_public_student_registrations
+            WHERE student_number = ? AND email <> ''
+            ORDER BY created_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$studentNumber]);
+        $registration = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($registration && filter_var($registration['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
+            return [
+                'email' => $registration['email'],
+                'name' => trim(($registration['first_name'] ?? '') . ' ' . ($registration['last_name'] ?? '')) ?: ($student['student_name'] ?? 'Student'),
+            ];
+        }
+    }
+
+    return null;
+}
+
+function createUserNotification(PDO $conn, $userId, $type, $title, $message, $relatedTable = null, $relatedId = null) {
+    ensureNotificationTables($conn);
+
+    $stmt = $conn->prepare("
+        INSERT IGNORE INTO tbl_notifications (user_id, type, title, message, related_table, related_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([
+        (int) $userId,
+        cleanNotificationText($type, 40),
+        cleanNotificationText($title, 180),
+        trim((string) $message),
+        $relatedTable,
+        $relatedId ? (int) $relatedId : null,
+    ]);
+
+    return (int) $conn->lastInsertId();
+}
+
+function markNotificationEmailed(PDO $conn, $notificationId) {
+    if ((int) $notificationId <= 0) {
+        return false;
+    }
+
+    $stmt = $conn->prepare("UPDATE tbl_notifications SET emailed = 1 WHERE notification_id = ?");
+    return $stmt->execute([(int) $notificationId]);
+}
+
+function sendLateAttendanceNotification(PDO $conn, array $student, array $attendance) {
+    if (stripos((string) ($attendance['status'] ?? ''), 'Late') !== 0 || empty($student['user_id'])) {
+        return false;
+    }
+
+    ensureNotificationTables($conn);
+
+    $timeIn = $attendance['time_in'] ?? date('Y-m-d H:i:s');
+    $dateLabel = date('F d, Y', strtotime($timeIn));
+    $timeLabel = date('h:i A', strtotime($timeIn));
+    $status = (string) ($attendance['status'] ?? 'Late');
+    $title = 'Late Attendance Notice';
+    $message = "You were marked late on {$dateLabel} at {$timeLabel}. Status: {$status}.";
+    $notificationId = createUserNotification(
+        $conn,
+        (int) $student['user_id'],
+        'late_attendance',
+        $title,
+        $message,
+        'tbl_attendance',
+        (int) ($attendance['tbl_attendance_id'] ?? 0)
+    );
+
+    if ($notificationId <= 0) {
+        return false;
+    }
+
+    $recipient = notificationStudentEmail($conn, $student);
+    if (!$recipient) {
+        return false;
+    }
+
+    $safeName = htmlspecialchars($recipient['name'] ?: ($student['student_name'] ?? 'Student'), ENT_QUOTES, 'UTF-8');
+    $safeDate = htmlspecialchars($dateLabel, ENT_QUOTES, 'UTF-8');
+    $safeTime = htmlspecialchars($timeLabel, ENT_QUOTES, 'UTF-8');
+    $safeStatus = htmlspecialchars($status, ENT_QUOTES, 'UTF-8');
+    $bodyHtml = <<<HTML
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">Your attendance scan for {$safeDate} was recorded as late.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff8e6;border:1px solid #f4d685;border-radius:10px;">
+    <tr><td style="padding:16px 18px;"><strong>Date:</strong> {$safeDate}<br><strong>Time:</strong> {$safeTime}<br><strong>Status:</strong> {$safeStatus}</td></tr>
+</table>
+<p style="margin:0;font-size:15px;line-height:1.7;color:#42515c;">Please coordinate with your facilitator if you need clarification.</p>
+HTML;
+
+    $htmlBody = renderAppEmailTemplate($title, 'Your attendance scan today was marked late.', $bodyHtml);
+    $textBody = "Hello {$recipient['name']},\n\nYour attendance scan for {$dateLabel} at {$timeLabel} was recorded as {$status}.\n\nTAU NSTP Portal";
+
+    if (sendAppMail($recipient['email'], $recipient['name'], $title, $htmlBody, $textBody)) {
+        markNotificationEmailed($conn, $notificationId);
+        return true;
+    }
+
+    return false;
+}
+
+function announcementRecipients(PDO $conn, $scopeProgram = null, $createdBy = null) {
+    $params = [];
+    $where = ["u.role = 'student'", "s.user_id IS NOT NULL"];
+    $joins = "INNER JOIN tbl_student s ON s.user_id = u.user_id";
+
+    $scopeProgram = normalizeProgram($scopeProgram);
+    if ($scopeProgram) {
+        $where[] = "(u.program = ? OR s.course_section LIKE ?)";
+        $params[] = $scopeProgram;
+        $params[] = '%' . $scopeProgram . '%';
+    }
+
+    if ($createdBy) {
+        $where[] = "s.created_by = ?";
+        $params[] = (int) $createdBy;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT DISTINCT u.user_id, u.full_name, u.email, s.tbl_student_id, s.student_name, s.student_number
+        FROM tbl_users u
+        {$joins}
+        WHERE " . implode(' AND ', $where) . "
+        ORDER BY u.full_name
+    ");
+    $stmt->execute($params);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgram = null) {
+    ensureNotificationTables($conn);
+
+    $actorRole = $actor['role'] ?? '';
+    $scopeProgram = normalizeProgram($scopeProgram);
+    $createdByRestriction = null;
+
+    if ($actorRole === 'coordinator') {
+        $scopeProgram = normalizeProgram($actor['program'] ?? null);
+    } elseif ($actorRole === 'facilitator') {
+        $scopeProgram = normalizeProgram($actor['program'] ?? null);
+        $createdByRestriction = (int) ($actor['user_id'] ?? 0);
+    } elseif ($actorRole !== 'super_admin') {
+        throw new RuntimeException('Unauthorized announcement creator.');
+    }
+
+    $title = cleanNotificationText($title, 180);
+    $body = trim((string) $body);
+    if ($title === '' || $body === '') {
+        throw new InvalidArgumentException('Title and message are required.');
+    }
+
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_announcements (title, body, scope_program, created_by)
+        VALUES (?, ?, ?, ?)
+    ");
+    $stmt->execute([$title, $body, $scopeProgram, (int) $actor['user_id']]);
+    $announcementId = (int) $conn->lastInsertId();
+
+    $recipients = announcementRecipients($conn, $scopeProgram, $createdByRestriction);
+    foreach ($recipients as $recipient) {
+        $notificationId = createUserNotification(
+            $conn,
+            (int) $recipient['user_id'],
+            'announcement',
+            $title,
+            $body,
+            'tbl_announcements',
+            $announcementId
+        );
+
+        if ($notificationId <= 0 || isPlaceholderEmail($recipient['email'] ?? '') || !filter_var($recipient['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
+            continue;
+        }
+
+        $safeName = htmlspecialchars($recipient['full_name'] ?: $recipient['student_name'] ?: 'Student', ENT_QUOTES, 'UTF-8');
+        $safeTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+        $safeBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+        $bodyHtml = <<<HTML
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">A new NSTP announcement has been posted:</p>
+<div style="margin:22px 0;padding:18px 20px;background:#f4f8fa;border:1px solid #dbe8ed;border-radius:10px;">
+    <h2 style="margin:0 0 10px;font-size:18px;color:#1f2933;">{$safeTitle}</h2>
+    <div style="font-size:15px;line-height:1.7;color:#42515c;">{$safeBody}</div>
+</div>
+HTML;
+        $htmlBody = renderAppEmailTemplate('NSTP Announcement', 'A new announcement was posted in the TAU NSTP Portal.', $bodyHtml);
+        $textBody = "Hello {$recipient['full_name']},\n\n{$title}\n\n{$body}\n\nTAU NSTP Portal";
+
+        if (sendAppMail($recipient['email'], $recipient['full_name'], 'NSTP Announcement: ' . $title, $htmlBody, $textBody)) {
+            markNotificationEmailed($conn, $notificationId);
+        }
+    }
+
+    return [
+        'announcement_id' => $announcementId,
+        'recipient_count' => count($recipients),
+    ];
+}
+
+function getUnreadNotifications(PDO $conn, $userId, $limit = 10) {
+    ensureNotificationTables($conn);
+
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM tbl_notifications
+        WHERE user_id = ? AND is_read = 0
+        ORDER BY created_at DESC
+        LIMIT " . max(1, (int) $limit)
+    );
+    $stmt->execute([(int) $userId]);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function getRecentAnnouncements(PDO $conn, array $actor, $limit = 20) {
+    ensureNotificationTables($conn);
+
+    $where = [];
+    $params = [];
+    if (($actor['role'] ?? '') === 'coordinator') {
+        $where[] = "a.scope_program = ?";
+        $params[] = normalizeProgram($actor['program'] ?? null);
+    } elseif (($actor['role'] ?? '') === 'facilitator') {
+        $where[] = "a.created_by = ?";
+        $params[] = (int) ($actor['user_id'] ?? 0);
+    }
+
+    $sql = "
+        SELECT a.*, u.full_name AS creator_name, u.role AS creator_role
+        FROM tbl_announcements a
+        LEFT JOIN tbl_users u ON u.user_id = a.created_by
+    ";
+    if ($where) {
+        $sql .= " WHERE " . implode(' AND ', $where);
+    }
+    $sql .= " ORDER BY a.created_at DESC LIMIT " . max(1, (int) $limit);
+
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}

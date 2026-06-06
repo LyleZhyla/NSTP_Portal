@@ -4,6 +4,7 @@ session_start();
 require_once 'conn/conn.php';
 require_once 'include/user-permissions.php';
 require_once 'include/attendance-settings.php';
+require_once 'include/notifications.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
@@ -16,6 +17,7 @@ if (($_SESSION['role'] ?? '') !== 'student') {
 }
 
 $userId = $_SESSION['user_id'];
+$unreadNotifications = getUnreadNotifications($conn, $userId, 8);
 
 $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$userId]);
@@ -185,6 +187,17 @@ if ($student) {
         .detail-value {
             color: #1f2937;
         }
+        .notification-flash {
+            border-left: 5px solid #2f6f7e;
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(31, 41, 55, 0.08);
+        }
+        .notification-flash.late-attendance {
+            border-left-color: #f59e0b;
+        }
+        .notification-message {
+            white-space: pre-wrap;
+        }
         @media (max-width: 575.98px) {
             .detail-row {
                 grid-template-columns: 1fr;
@@ -218,6 +231,32 @@ if ($student) {
 
         <section class="content">
             <div class="container-fluid">
+                <?php if (count($unreadNotifications) > 0): ?>
+                    <div class="mb-3">
+                        <?php foreach ($unreadNotifications as $notification): ?>
+                            <?php
+                                $notificationClass = $notification['type'] === 'late_attendance' ? 'late-attendance' : 'announcement';
+                                $iconClass = $notification['type'] === 'late_attendance' ? 'fa-clock' : 'fa-bullhorn';
+                            ?>
+                            <div class="alert alert-light notification-flash <?php echo $notificationClass; ?>" id="notification-<?php echo (int) $notification['notification_id']; ?>">
+                                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                                    <div class="pr-3">
+                                        <h5 class="mb-1">
+                                            <i class="fas <?php echo $iconClass; ?> mr-2"></i>
+                                            <?php echo htmlspecialchars($notification['title']); ?>
+                                        </h5>
+                                        <div class="notification-message text-muted"><?php echo htmlspecialchars($notification['message']); ?></div>
+                                        <div class="small text-muted mt-2"><?php echo date('M d, Y h:i A', strtotime($notification['created_at'])); ?></div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary mark-notification-read mt-2 mt-sm-0" data-id="<?php echo (int) $notification['notification_id']; ?>">
+                                        <i class="fas fa-check mr-1"></i> Mark as read
+                                    </button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
                 <div class="row">
                     <div class="col-lg-4 col-12">
                         <div class="small-box bg-success">
@@ -376,5 +415,34 @@ if ($student) {
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script>
+$(function() {
+    $('.mark-notification-read').on('click', function() {
+        const button = $(this);
+        const notificationId = button.data('id');
+
+        button.prop('disabled', true);
+        $.ajax({
+            url: 'endpoint/mark-notification-read.php',
+            method: 'POST',
+            data: { notification_id: notificationId },
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    $('#notification-' + notificationId).slideUp(180, function() {
+                        $(this).remove();
+                    });
+                    return;
+                }
+
+                button.prop('disabled', false);
+            },
+            error: function() {
+                button.prop('disabled', false);
+            }
+        });
+    });
+});
+</script>
 </body>
 </html>

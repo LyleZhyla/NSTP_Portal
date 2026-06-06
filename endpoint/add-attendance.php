@@ -5,6 +5,7 @@ date_default_timezone_set('Asia/Manila');
 
 include('../conn/conn.php');
 require_once '../include/attendance-settings.php';
+require_once '../include/notifications.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'User not authenticated']);
@@ -86,6 +87,14 @@ try {
     ]);
     
     $attendance_id = $conn->lastInsertId();
+
+    if (stripos($status, 'Late') === 0) {
+        sendLateAttendanceNotification($conn, $student, [
+            'tbl_attendance_id' => $attendance_id,
+            'time_in' => $time_in,
+            'status' => $status,
+        ]);
+    }
     
     error_log("Attendance recorded for student ID: " . $student['tbl_student_id'] . " (Attendance ID: " . $attendance_id . ")");
     

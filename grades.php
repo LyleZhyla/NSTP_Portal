@@ -316,8 +316,8 @@ $currentProgram = normalizeProgram($_SESSION['program'] ?? ($currentUser['progra
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
-$attendanceWeightKey = 'attendance_weight_' . $settingScope;
-$canManageColumns = in_array($userRole, ['coordinator', 'facilitator'], true);
+$canComputeGrades = $userRole === 'facilitator';
+$canManageColumns = $canComputeGrades;
 
 $columnsStmt = $conn->prepare("
     SELECT *
@@ -326,7 +326,6 @@ $columnsStmt = $conn->prepare("
       AND (program_scope IS NULL OR program_scope = ?)
       AND (
         is_default = 1
-        OR ? = 'coordinator'
         OR created_by IS NULL
         OR created_by = ?
       )
@@ -340,9 +339,8 @@ $columnsStmt = $conn->prepare("
       )
     ORDER BY sort_order ASC, grade_column_id ASC
 ");
-$columnsStmt->execute([$currentProgram, $userRole, $userId, $userId, $columnVisibilityScope]);
-$gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
-$gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
+$gradeColumns = [];
+$gradeColumnIds = [];
 
 $gradeFolderOptions = [];
 $selectedGradeFolder = '';
@@ -417,6 +415,13 @@ if ($userRole === 'coordinator') {
         }
     }
 }
+
+$sheetOwnerId = ($userRole === 'coordinator' && $selectedGradeFacilitatorId)
+    ? (int) $selectedGradeFacilitatorId
+    : $userId;
+$columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+$gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+$gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
 if ($selectedGradeFolder !== '' && $selectedGradeFacilitatorId) {
@@ -612,13 +617,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'settings' && $canManageColumns) {
         $meetings = max(1, (int) ($_POST['total_meetings'] ?? 11));
-        $attendanceWeight = max(0, (float) ($_POST['attendance_weight'] ?? 20));
         setGradeSetting($conn, $totalMeetingsKey, (string) $meetings, $userId);
-        setGradeSetting($conn, $attendanceWeightKey, (string) $attendanceWeight, $userId);
         $messages[] = 'Grade settings updated.';
     }
 
-    if ($action === 'save_scores') {
+    if ($action === 'save_scores' && $canComputeGrades) {
         $scores = $_POST['scores'] ?? [];
         $columnLookup = [];
         foreach ($gradeColumns as $column) {
@@ -652,6 +655,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $messages[] = 'Grades saved successfully.';
     }
 
+    if ($action === 'save_scores' && !$canComputeGrades) {
+        $errors[] = 'Only facilitators can compute and save grades.';
+    }
+
     $redirectParams = [$messages ? 'saved' : 'error' => 1];
     if (!empty($_GET['grade_folder'])) {
         $redirectParams['grade_folder'] = (string) $_GET['grade_folder'];
@@ -673,7 +680,7 @@ if (!empty($_SESSION['grade_errors'])) {
     unset($_SESSION['grade_errors']);
 }
 
-$columnsStmt->execute([$currentProgram, $userRole, $userId, $userId, $columnVisibilityScope]);
+$columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
@@ -718,11 +725,11 @@ if (!empty($accessibleStudentIds)) {
 }
 
 $totalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
-$attendanceWeight = max(0, (float) getGradeSetting($conn, $attendanceWeightKey, '20'));
 $gradeGroups = buildGradeGroups($gradeColumns);
 $scoreWeight = array_sum(array_map(function ($group) {
     return (float) $group['weight'];
 }, $gradeGroups));
+$attendanceWeight = max(0, 100 - $scoreWeight);
 $totalConfiguredWeight = $scoreWeight + $attendanceWeight;
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -1060,13 +1067,21 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <?php endif; ?>
 
                 <form method="POST">
-                    <input type="hidden" name="action" value="save_scores">
+                    <?php if ($canComputeGrades): ?>
+                        <input type="hidden" name="action" value="save_scores">
+                    <?php endif; ?>
                     <div class="card grade-card">
                         <div class="card-header d-flex align-items-center justify-content-between">
                             <h3 class="card-title mb-0"><i class="fas fa-file-signature mr-2"></i>Class Record</h3>
-                            <button class="btn btn-success btn-sm ml-auto">
-                                <i class="fas fa-save mr-1"></i>Save Scores
-                            </button>
+                            <?php if ($canComputeGrades): ?>
+                                <button class="btn btn-success btn-sm ml-auto">
+                                    <i class="fas fa-save mr-1"></i>Save Scores
+                                </button>
+                            <?php else: ?>
+                                <span class="badge badge-secondary ml-auto">
+                                    <i class="fas fa-eye mr-1"></i>View Only
+                                </span>
+                            <?php endif; ?>
                         </div>
                         <div class="card-body p-0">
                             <div class="grade-table-wrap">
@@ -1140,7 +1155,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                             max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
                                                             data-max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
                                                             data-group="<?php echo htmlspecialchars($column['group_code']); ?>"
-                                                            step="0.01">
+                                                            step="0.01"
+                                                            <?php echo $canComputeGrades ? '' : 'readonly disabled'; ?>>
                                                     </td>
                                                 <?php endforeach; ?>
                                                 <td class="computed-cell"><?php echo (int) $attendanceCount; ?></td>
@@ -1156,7 +1172,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             </div>
                         </div>
                         <div class="card-footer text-muted">
-                            Formula is based on the active grading sheet: each category computes earned score over max score, applies its configured weight, then combines it with attendance. The weighted percentage is transmuted to the final 1.00 to 5.00 grade.
+                            Formula is based on the active grading sheet: each category computes earned score over max score, applies its configured weight, and attendance automatically fills the remaining percentage. If attendance is the only active basis, it counts as 100%.
                         </div>
                     </div>
                 </form>
@@ -1259,10 +1275,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <input type="number" name="total_meetings" class="form-control" min="1" value="<?php echo (int) $totalMeetings; ?>" required>
                     <small class="text-muted">Used for Attendance Equivalence. The template you provided uses 11 meetings.</small>
                 </div>
-                <div class="form-group">
-                    <label>Attendance Weight Percent</label>
-                    <input type="number" name="attendance_weight" class="form-control" min="0" step="0.01" value="<?php echo htmlspecialchars((string) $attendanceWeight); ?>" required>
-                    <small class="text-muted">Set to 0 if attendance should not be included in grade computation.</small>
+                <div class="alert alert-info mb-0">
+                    Attendance automatically uses the remaining percentage after active score columns. With no score columns, attendance is 100%.
                 </div>
             </div>
             <div class="modal-footer">

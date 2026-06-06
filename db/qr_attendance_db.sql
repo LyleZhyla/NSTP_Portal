@@ -241,6 +241,41 @@ CREATE TABLE `tbl_public_registration_forms` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `tbl_announcements`
+--
+
+CREATE TABLE `tbl_announcements` (
+  `announcement_id` int(11) NOT NULL,
+  `title` varchar(180) NOT NULL,
+  `body` text NOT NULL,
+  `scope_program` varchar(20) DEFAULT NULL,
+  `created_by` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `tbl_notifications`
+--
+
+CREATE TABLE `tbl_notifications` (
+  `notification_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `type` varchar(40) NOT NULL,
+  `title` varchar(180) NOT NULL,
+  `message` text NOT NULL,
+  `related_table` varchar(80) DEFAULT NULL,
+  `related_id` int(11) DEFAULT NULL,
+  `emailed` tinyint(1) NOT NULL DEFAULT 0,
+  `is_read` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `read_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- Dumping data for table `tbl_student`
 --
@@ -371,6 +406,23 @@ ALTER TABLE `tbl_public_registration_forms`
   ADD KEY `idx_created_at` (`created_at`);
 
 --
+-- Indexes for table `tbl_announcements`
+--
+ALTER TABLE `tbl_announcements`
+  ADD PRIMARY KEY (`announcement_id`),
+  ADD KEY `idx_scope_created` (`scope_program`,`created_at`),
+  ADD KEY `idx_created_by` (`created_by`);
+
+--
+-- Indexes for table `tbl_notifications`
+--
+ALTER TABLE `tbl_notifications`
+  ADD PRIMARY KEY (`notification_id`),
+  ADD UNIQUE KEY `unique_user_type_related` (`user_id`,`type`,`related_table`,`related_id`),
+  ADD KEY `idx_user_read_created` (`user_id`,`is_read`,`created_at`),
+  ADD KEY `idx_related` (`related_table`,`related_id`);
+
+--
 -- Indexes for table `tbl_system_settings`
 --
 ALTER TABLE `tbl_system_settings`
@@ -443,6 +495,18 @@ ALTER TABLE `tbl_public_student_registrations`
 --
 ALTER TABLE `tbl_public_registration_forms`
   MODIFY `form_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `tbl_announcements`
+--
+ALTER TABLE `tbl_announcements`
+  MODIFY `announcement_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `tbl_notifications`
+--
+ALTER TABLE `tbl_notifications`
+  MODIFY `notification_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `tbl_landing_staff`

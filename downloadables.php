@@ -254,6 +254,136 @@ if (!empty($facilitatorIds)) {
     }
 }
 
+$gradeExportFolders = [];
+if ($role === 'super_admin') {
+    $gradeFolderStmt = $conn->prepare("
+        SELECT ads.user_id AS facilitator_id,
+               ads.course_section,
+               COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+               u.program,
+               COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        LEFT JOIN tbl_student s
+            ON s.created_by = ads.user_id
+           AND s.course_section = ads.course_section
+        WHERE u.role = 'facilitator'
+        GROUP BY ads.user_id, ads.course_section, u.full_name, u.username, u.program
+        ORDER BY FIELD(u.program, 'CWTS', 'LTS', 'ROTC'), facilitator_name ASC, ads.course_section ASC
+    ");
+    $gradeFolderStmt->execute();
+} elseif ($role === 'coordinator') {
+    $gradeFolderStmt = $conn->prepare("
+        SELECT ads.user_id AS facilitator_id,
+               ads.course_section,
+               COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+               u.program,
+               COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        LEFT JOIN tbl_student s
+            ON s.created_by = ads.user_id
+           AND s.course_section = ads.course_section
+        WHERE u.role = 'facilitator' AND u.program = ?
+        GROUP BY ads.user_id, ads.course_section, u.full_name, u.username, u.program
+        ORDER BY facilitator_name ASC, ads.course_section ASC
+    ");
+    $gradeFolderStmt->execute([$program]);
+} else {
+    $gradeFolderStmt = $conn->prepare("
+        SELECT ads.user_id AS facilitator_id,
+               ads.course_section,
+               COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+               u.program,
+               COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        LEFT JOIN tbl_student s
+            ON s.created_by = ads.user_id
+           AND s.course_section = ads.course_section
+        WHERE ads.user_id = ?
+        GROUP BY ads.user_id, ads.course_section, u.full_name, u.username, u.program
+        ORDER BY ads.course_section ASC
+    ");
+    $gradeFolderStmt->execute([(int) $currentUser['user_id']]);
+}
+
+foreach ($gradeFolderStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $folderKey = $role === 'facilitator'
+        ? $row['course_section']
+        : ((int) $row['facilitator_id'] . '::' . $row['course_section']);
+    $gradeExportFolders[] = [
+        'key' => $folderKey,
+        'label' => trim(($row['program'] ? $row['program'] . ' - ' : '') . ($row['facilitator_name'] ?: 'Facilitator') . ' / ' . $row['course_section']),
+        'student_count' => (int) $row['student_count'],
+    ];
+}
+
+$canDownloadRotcProfiles = $role === 'super_admin' || normalizeProgram($currentUser['program'] ?? null) === 'ROTC';
+$rotcProfileFolders = [];
+if ($canDownloadRotcProfiles) {
+    if ($role === 'super_admin') {
+        $rotcFolderStmt = $conn->prepare("
+            SELECT ads.user_id AS facilitator_id,
+                   ads.course_section,
+                   COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+                   COUNT(s.tbl_student_id) AS student_count
+            FROM tbl_admin_sections ads
+            INNER JOIN tbl_users u ON u.user_id = ads.user_id
+            LEFT JOIN tbl_student s
+                ON s.created_by = ads.user_id
+               AND s.course_section = ads.course_section
+            WHERE u.role = 'facilitator' AND u.program = 'ROTC'
+            GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
+            ORDER BY facilitator_name ASC, ads.course_section ASC
+        ");
+        $rotcFolderStmt->execute();
+    } elseif ($role === 'coordinator') {
+        $rotcFolderStmt = $conn->prepare("
+            SELECT ads.user_id AS facilitator_id,
+                   ads.course_section,
+                   COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+                   COUNT(s.tbl_student_id) AS student_count
+            FROM tbl_admin_sections ads
+            INNER JOIN tbl_users u ON u.user_id = ads.user_id
+            LEFT JOIN tbl_student s
+                ON s.created_by = ads.user_id
+               AND s.course_section = ads.course_section
+            WHERE u.role = 'facilitator' AND u.program = 'ROTC'
+            GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
+            ORDER BY facilitator_name ASC, ads.course_section ASC
+        ");
+        $rotcFolderStmt->execute();
+    } else {
+        $rotcFolderStmt = $conn->prepare("
+            SELECT ads.user_id AS facilitator_id,
+                   ads.course_section,
+                   COALESCE(NULLIF(u.full_name, ''), u.username) AS facilitator_name,
+                   COUNT(s.tbl_student_id) AS student_count
+            FROM tbl_admin_sections ads
+            INNER JOIN tbl_users u ON u.user_id = ads.user_id
+            LEFT JOIN tbl_student s
+                ON s.created_by = ads.user_id
+               AND s.course_section = ads.course_section
+            WHERE ads.user_id = ?
+            GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
+            ORDER BY ads.course_section ASC
+        ");
+        $rotcFolderStmt->execute([(int) $currentUser['user_id']]);
+    }
+
+    foreach ($rotcFolderStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $folderKey = $role === 'facilitator'
+            ? $row['course_section']
+            : ((int) $row['facilitator_id'] . '::' . $row['course_section']);
+        $rotcProfileFolders[] = [
+            'key' => $folderKey,
+            'label' => trim(($row['facilitator_name'] ?: 'Facilitator') . ' / ' . $row['course_section']),
+            'student_count' => (int) $row['student_count'],
+        ];
+    }
+}
+
 $downloadStats = [
     'students' => 0,
     'attendance' => 0,
@@ -581,13 +711,211 @@ if ($role === 'super_admin') {
                                     <label for="attendanceDate">Attendance Date</label>
                                     <input type="date" class="form-control" id="attendanceDate" name="date" value="<?php echo htmlspecialchars($today); ?>">
                                 </div>
-                                <p class="muted-note">Exports the daily student attendance report in Excel format.</p>
+                                <div class="form-group">
+                                    <label for="attendanceStatusFilter">Records to Download</label>
+                                    <select class="form-control" id="attendanceStatusFilter" name="status_filter">
+                                        <option value="all">All Students</option>
+                                        <option value="present">Present Only</option>
+                                        <option value="on_time">On Time Only</option>
+                                        <option value="late">Late Only</option>
+                                        <option value="absent">Absent Only</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Data to Include</label>
+                                    <div class="row">
+                                        <?php
+                                        $attendanceColumns = [
+                                            'number' => '#',
+                                            'student_number' => 'Student No.',
+                                            'student_name' => 'Name',
+                                            'course_section' => 'Section',
+                                            'facilitator' => 'Facilitator',
+                                            'status' => 'Status',
+                                            'time_in' => 'Time In',
+                                        ];
+                                        $attendanceDefaults = ['number', 'student_number', 'student_name', 'course_section', 'status', 'time_in'];
+                                        foreach ($attendanceColumns as $columnKey => $columnLabel):
+                                        ?>
+                                        <div class="col-6">
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="attendanceColumn_<?php echo htmlspecialchars($columnKey); ?>" name="columns[]" value="<?php echo htmlspecialchars($columnKey); ?>" <?php echo in_array($columnKey, $attendanceDefaults, true) ? 'checked' : ''; ?>>
+                                                <label class="custom-control-label" for="attendanceColumn_<?php echo htmlspecialchars($columnKey); ?>"><?php echo htmlspecialchars($columnLabel); ?></label>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                                <p class="muted-note">Exports filtered attendance as an Excel .xlsx file.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download Attendance
                                 </button>
                             </div>
                         </form>
                     </div>
+
+                    <div class="col-lg-6 col-xl-4 mb-3">
+                        <form class="card download-card" method="get" action="endpoint/download-grades-excel.php">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-award mr-2"></i>Student Grades</h3>
+                            </div>
+                            <div class="card-body">
+                                <?php if ($role === 'super_admin'): ?>
+                                <div class="form-group">
+                                    <label for="gradeComponent">Component</label>
+                                    <select class="form-control" id="gradeComponent" name="component">
+                                        <option value="">All Components</option>
+                                        <option value="CWTS">CWTS</option>
+                                        <option value="LTS">LTS</option>
+                                        <option value="ROTC">ROTC</option>
+                                    </select>
+                                </div>
+                                <?php endif; ?>
+                                <div class="form-group">
+                                    <label for="gradeFolder">Folder</label>
+                                    <select class="form-control" id="gradeFolder" name="grade_folder">
+                                        <option value="">All Accessible Folders</option>
+                                        <?php foreach ($gradeExportFolders as $folder): ?>
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                            <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="gradeResultFilter">Records to Download</label>
+                                    <select class="form-control" id="gradeResultFilter" name="result_filter">
+                                        <option value="all">All Students</option>
+                                        <option value="passed">Passed Only</option>
+                                        <option value="failed">Failed Only</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Data to Include</label>
+                                    <div class="row">
+                                        <?php
+                                        $gradeExportColumnOptions = [
+                                            'number' => '#',
+                                            'student_number' => 'Student No.',
+                                            'student_name' => 'Name',
+                                            'course_section' => 'Section',
+                                            'facilitator' => 'Facilitator',
+                                            'attendance_count' => 'Attendance',
+                                            'raw_total' => 'Raw Total',
+                                            'score_percent' => 'Score %',
+                                            'weighted_percent' => 'Weighted %',
+                                            'final_grade' => 'Final Grade',
+                                            'result' => 'Result',
+                                        ];
+                                        $gradeDefaults = ['number', 'student_number', 'student_name', 'course_section', 'attendance_count', 'weighted_percent', 'final_grade', 'result'];
+                                        foreach ($gradeExportColumnOptions as $columnKey => $columnLabel):
+                                        ?>
+                                        <div class="col-6">
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="gradeColumn_<?php echo htmlspecialchars($columnKey); ?>" name="columns[]" value="<?php echo htmlspecialchars($columnKey); ?>" <?php echo in_array($columnKey, $gradeDefaults, true) ? 'checked' : ''; ?>>
+                                                <label class="custom-control-label" for="gradeColumn_<?php echo htmlspecialchars($columnKey); ?>"><?php echo htmlspecialchars($columnLabel); ?></label>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                                <div class="custom-control custom-switch mb-3">
+                                    <input type="checkbox" class="custom-control-input" id="includeGradeScores" name="include_scores" value="1">
+                                    <label class="custom-control-label" for="includeGradeScores">Include individual score columns</label>
+                                </div>
+                                <p class="muted-note">Passed means final grade is 3.00 or better.</p>
+                                <button type="submit" class="btn btn-success btn-block">
+                                    <i class="fas fa-download mr-1"></i> Download Grades
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <?php if ($canDownloadRotcProfiles): ?>
+                    <div class="col-lg-6 col-xl-4 mb-3">
+                        <form class="card download-card" method="get" action="endpoint/download-rotc-cadets-profile.php">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-id-card mr-2"></i>ROTC Cadets' Profile</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="rotcProfileFolder">Folder</label>
+                                    <select class="form-control" id="rotcProfileFolder" name="folder">
+                                        <option value="">All Accessible ROTC Folders</option>
+                                        <?php foreach ($rotcProfileFolders as $folder): ?>
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                            <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' cadets)'); ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="rotcProfileStatus">Registration Status</label>
+                                    <select class="form-control" id="rotcProfileStatus" name="status">
+                                        <option value="">All Statuses</option>
+                                        <option value="submitted">Submitted</option>
+                                        <option value="attendance_only">Attendance Only</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Data to Include</label>
+                                    <div class="row">
+                                        <?php
+                                        $rotcProfileColumns = [
+                                            'number' => 'NR',
+                                            'student_number' => 'Student No.',
+                                            'full_name' => 'Full Name',
+                                            'last_name' => 'LAST NAME',
+                                            'first_name' => 'FIRST NAME',
+                                            'middle_initial' => 'M.I',
+                                            'middle_name' => 'Middle Name',
+                                            'extension_name' => 'Extension',
+                                            'gender' => 'GENDER',
+                                            'date_of_birth' => 'DOB',
+                                            'age' => 'Age',
+                                            'place_of_birth' => 'Birth Place',
+                                            'blood_type' => 'BT',
+                                            'religion' => 'RELIGION',
+                                            'contact_number' => 'CP NR',
+                                            'email' => 'Email',
+                                            'complete_address' => 'Complete Address',
+                                            'address' => 'ADDRESS',
+                                            'college' => 'College',
+                                            'course' => 'COURSE',
+                                            'major' => 'Major',
+                                            'year_section' => 'Year/Section',
+                                            'folder' => 'ROTC Folder',
+                                            'facilitator' => 'Facilitator',
+                                            'height' => 'HEIGHT',
+                                            'beneficiary' => 'BENEFICIARY',
+                                            'emergency_name' => 'Emergency Name',
+                                            'emergency_relationship' => 'Emergency Relation',
+                                            'emergency_contact_number' => 'Emergency Contact',
+                                            'emergency_address' => 'Emergency Address',
+                                            'formal_picture' => 'Picture Path',
+                                            'status' => 'Status',
+                                            'created_at' => 'Registered At',
+                                        ];
+                                        $rotcProfileDefaults = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'contact_number', 'beneficiary'];
+                                        foreach ($rotcProfileColumns as $columnKey => $columnLabel):
+                                        ?>
+                                        <div class="col-6">
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="rotcProfileColumn_<?php echo htmlspecialchars($columnKey); ?>" name="columns[]" value="<?php echo htmlspecialchars($columnKey); ?>" <?php echo in_array($columnKey, $rotcProfileDefaults, true) ? 'checked' : ''; ?>>
+                                                <label class="custom-control-label" for="rotcProfileColumn_<?php echo htmlspecialchars($columnKey); ?>"><?php echo htmlspecialchars($columnLabel); ?></label>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                                <p class="muted-note">Downloads selected ROTC cadet profile fields as an Excel .xlsx file.</p>
+                                <button type="submit" class="btn btn-success btn-block">
+                                    <i class="fas fa-download mr-1"></i> Download Cadets' Profile
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="col-lg-6 col-xl-4 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-archived-attendance.php">
