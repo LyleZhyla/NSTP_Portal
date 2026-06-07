@@ -218,6 +218,77 @@ body.dark-mode .text-muted {
     color: #aaa !important;
 }
 
+/* Green NSTP system palette */
+:root {
+    --nstp-green: #198754;
+    --nstp-green-dark: #0f5132;
+    --nstp-green-soft: #e8f6ee;
+}
+
+.btn-primary,
+.btn-info,
+.bg-primary,
+.bg-info,
+.badge-primary,
+.badge-info,
+.page-item.active .page-link {
+    background-color: var(--nstp-green) !important;
+    border-color: var(--nstp-green) !important;
+}
+
+.text-primary,
+.text-info,
+a,
+.nav-pills .nav-link:not(.active):hover {
+    color: var(--nstp-green) !important;
+}
+
+.btn-primary:hover,
+.btn-info:hover,
+.btn-success:hover {
+    background-color: var(--nstp-green-dark) !important;
+    border-color: var(--nstp-green-dark) !important;
+}
+
+.btn-success,
+.bg-success,
+.badge-success,
+.small-box.bg-success,
+.small-box.bg-info {
+    background-color: var(--nstp-green) !important;
+    border-color: var(--nstp-green) !important;
+}
+
+.main-sidebar,
+.brand-link {
+    background-color: var(--nstp-green-dark) !important;
+}
+
+.nav-sidebar .nav-link.active,
+.nav-pills .nav-link.active,
+.dropdown-item.active {
+    background-color: var(--nstp-green) !important;
+    color: #fff !important;
+}
+
+.card-primary.card-outline,
+.card-info.card-outline,
+.card-success.card-outline {
+    border-top-color: var(--nstp-green) !important;
+}
+
+.form-control:focus,
+.custom-select:focus {
+    border-color: var(--nstp-green) !important;
+    box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.2) !important;
+}
+
+body.dark-mode .nav-sidebar .nav-link.active,
+body.dark-mode .nav-pills .nav-link.active,
+body.dark-mode .dropdown-item.active {
+    background-color: var(--nstp-green) !important;
+}
+
 /* Links Dark Mode */
 body.dark-mode a:not(.btn):not(.nav-link):not(.dropdown-item) {
     color: #5faee3 !important;

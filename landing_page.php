@@ -312,7 +312,7 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
 
     if ($sectionKey === 'cta') {
         return [
-            'guest_label' => cleanLandingContentText($post['cta_guest_label'] ?? 'Open QR Attendance System', 100),
+            'guest_label' => cleanLandingContentText($post['cta_guest_label'] ?? 'Open National Service Training Program', 100),
             'logged_in_label' => cleanLandingContentText($post['cta_logged_in_label'] ?? 'Open Dashboard', 100),
         ];
     }
@@ -350,7 +350,7 @@ $componentLogos = [
 $programDefaultImages = [
     'CWTS' => 'https://images.unsplash.com/photo-1593113598332-cd288d649433?auto=format&fit=crop&w=900&q=80',
     'LTS' => 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=900&q=80',
-    'ROTC' => 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
+    'ROTC' => 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=900&q=80',
     'NSTP' => 'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?auto=format&fit=crop&w=900&q=80',
 ];
 
@@ -402,6 +402,12 @@ $gallery = [
     ],
 ];
 
+$componentDetails = getNstpComponentDetails();
+$programImageMap = [];
+foreach ($componentDetails as $componentKey => $details) {
+    $programImageMap[$componentKey] = $details['hero_image'];
+}
+
 if (!empty($landingSections['programs']['payload']) && is_array($landingSections['programs']['payload'])) {
     $programs = array_map(function ($program) use ($programDefaultImages, $componentLogos) {
         $name = strtoupper((string) ($program['name'] ?? 'NSTP'));
@@ -414,6 +420,13 @@ if (!empty($landingSections['programs']['payload']) && is_array($landingSections
     $landingSections['programs']['payload'] = $programs;
 }
 
+foreach ($programs as $programIndex => $program) {
+    $programName = strtoupper((string) ($program['name'] ?? ''));
+    if (isset($programImageMap[$programName])) {
+        $programs[$programIndex]['image'] = $programImageMap[$programName];
+    }
+}
+
 if (!empty($landingSections['activities']['payload']) && is_array($landingSections['activities']['payload'])) {
     $gallery = $landingSections['activities']['payload'];
 }
@@ -422,8 +435,27 @@ $heroPayload = $landingSections['hero']['payload'] ?? [];
 $quickGuideItems = $landingSections['quick_guide']['payload'] ?? [];
 $differenceRows = $landingSections['difference']['payload'] ?? [];
 $ctaPayload = $landingSections['cta']['payload'] ?? [];
-$componentDetails = getNstpComponentDetails();
-$featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
+$primaryComponent = $componentDetails['CWTS'];
+$secondaryComponent = $componentDetails['LTS'];
+$serviceComponent = $componentDetails['ROTC'];
+$heroSlides = [];
+foreach ($componentDetails as $details) {
+    if (!empty($details['hero_image'])) {
+        $heroSlides[] = $details['hero_image'];
+    }
+
+    foreach (($details['activities'] ?? []) as $activity) {
+        if (!empty($activity['image'])) {
+            $heroSlides[] = $activity['image'];
+        }
+    }
+}
+foreach ($gallery as $galleryItem) {
+    if (!empty($galleryItem['image'])) {
+        $heroSlides[] = $galleryItem['image'];
+    }
+}
+$heroSlides = array_values(array_unique($heroSlides));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1667,6 +1699,693 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
                 align-items: flex-start;
             }
         }
+
+        /* Small Apps inspired landing treatment */
+        body {
+            background: #fff;
+            font-family: 'Plus Jakarta Sans', 'Open Sans', Arial, sans-serif;
+        }
+
+        .site-header {
+            position: sticky;
+            background: #fff;
+            border-bottom: 0;
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.06);
+            backdrop-filter: none;
+        }
+
+        .nav-shell {
+            min-height: 82px;
+        }
+
+        .nav-links a:not(.login-link) {
+            position: relative;
+            color: #222;
+            font-weight: 800;
+        }
+
+        .nav-links a:not(.login-link)::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -10px;
+            height: 2px;
+            background: #2e7eed;
+            transform: scaleX(0);
+            transition: transform 0.2s ease;
+        }
+
+        .nav-links a:not(.login-link):hover::after {
+            transform: scaleX(1);
+        }
+
+        .login-link,
+        .btn-primary,
+        .modal-save {
+            background: #2e7eed;
+            border-color: #2e7eed;
+            color: #fff;
+        }
+
+        .hero {
+            min-height: 760px;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(135deg, #0f5132 0%, #198754 100%);
+            padding: 96px 0 145px;
+        }
+
+        .hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            background:
+                linear-gradient(90deg, rgba(5, 46, 22, 0.9), rgba(15, 81, 50, 0.68) 52%, rgba(21, 128, 61, 0.34)),
+                linear-gradient(45deg, rgba(6, 95, 70, 0.18), rgba(255, 255, 255, 0.08));
+            pointer-events: none;
+        }
+
+        .hero-slideshow {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background: #0f5132;
+        }
+
+        .hero-slide {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            background-position: center;
+            background-size: cover;
+            transform: scale(1.04);
+            transition: opacity 1s ease, transform 5.5s ease;
+        }
+
+        .hero-slide.is-active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .hero-inner {
+            position: relative;
+            z-index: 2;
+            align-items: center;
+            grid-template-columns: minmax(0, 0.95fr) minmax(320px, 0.72fr);
+        }
+
+        h1 {
+            font-size: clamp(2.35rem, 5vw, 4.45rem);
+            line-height: 1.14;
+        }
+
+        .hero-copy {
+            max-width: 620px;
+            font-size: 1rem;
+            line-height: 1.75;
+        }
+
+        .btn {
+            min-height: 50px;
+            border-radius: 3px;
+            padding: 0 26px;
+            box-shadow: 0 14px 26px rgba(21, 68, 168, 0.2);
+        }
+
+        .btn-ghost {
+            background: #fff;
+            color: #2e7eed;
+            border-color: #fff;
+        }
+
+        .eyebrow {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.28);
+        }
+
+        .shapes-container {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .shape {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .shape::before {
+            content: "";
+            position: absolute;
+            inset: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+        }
+
+        .shape:nth-child(1) { left: 8%; top: 18%; }
+        .shape:nth-child(2) { left: 20%; top: 78%; width: 70px; height: 70px; }
+        .shape:nth-child(3) { left: 44%; top: 16%; }
+        .shape:nth-child(4) { right: 12%; top: 12%; width: 58px; height: 58px; }
+        .shape:nth-child(5) { right: 22%; top: 70%; }
+        .shape:nth-child(6) { right: 6%; bottom: 16%; width: 82px; height: 82px; }
+        .shape:nth-child(7) { left: 54%; bottom: 8%; }
+        .shape:nth-child(8) { left: 4%; bottom: 34%; width: 52px; height: 52px; }
+
+        .hero-featured-panel {
+            position: relative;
+            border: 0;
+            border-radius: 34px;
+            padding: 16px;
+            background: #f8fbff;
+            box-shadow: 0 30px 70px rgba(13, 50, 126, 0.28);
+        }
+
+        .hero-featured-panel::before {
+            content: "";
+            display: block;
+            width: 58px;
+            height: 5px;
+            margin: 0 auto 12px;
+            border-radius: 999px;
+            background: #cbd8ee;
+        }
+
+        .hero-featured-panel .featured-toolbar {
+            padding: 10px 4px 14px;
+            border-bottom: 0;
+        }
+
+        .hero-featured-panel .featured-grid {
+            padding: 0;
+            gap: 10px;
+        }
+
+        .hero-featured-panel .featured-card {
+            min-height: 142px;
+            border-radius: 14px;
+        }
+
+        .pull-top {
+            position: relative;
+            z-index: 3;
+            margin-top: -82px;
+            padding-top: 0;
+        }
+
+        .quick-guide-shell {
+            width: min(var(--page-max), calc(100% - (var(--page-gutter) * 2)));
+            margin: 0 auto;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08);
+            padding: 38px;
+        }
+
+        .quick-guide-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 28px;
+        }
+
+        .quick-guide-card {
+            text-align: center;
+        }
+
+        .quick-guide-card img {
+            width: 58px;
+            height: 58px;
+            object-fit: contain;
+            margin: 0 auto 18px;
+        }
+
+        .quick-guide-card h3 {
+            margin: 0 0 9px;
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .quick-guide-card p {
+            margin: 0;
+            color: #808080;
+            font-size: 0.94rem;
+            line-height: 1.6;
+        }
+
+        #programs {
+            padding-top: 92px;
+        }
+
+        .program-card,
+        .component-activity-group,
+        .compare-table,
+        .landing-modal {
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .program-card {
+            border: 0;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.22s ease, box-shadow 0.22s ease;
+        }
+
+        .program-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 18px 34px rgba(46, 126, 237, 0.16);
+        }
+
+        .program-media {
+            height: 220px;
+            background: #f7fbff;
+        }
+
+        .program-media img {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            object-fit: cover;
+            filter: none;
+        }
+
+        .program-badge {
+            position: static;
+            width: fit-content;
+            margin-bottom: 12px;
+            background: #2e7eed !important;
+        }
+
+        .program-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .program-body .program-link {
+            margin-top: auto;
+        }
+
+        .compare-band {
+            background: #fafafa;
+            color: var(--ink);
+        }
+
+        .compare-band .section-kicker,
+        .compare-band .section-head p {
+            color: var(--muted);
+        }
+
+        .compare-table {
+            border: 0;
+            background: #fff;
+        }
+
+        table {
+            background: #fff;
+        }
+
+        th {
+            color: var(--ink);
+            background: #f0f6ff;
+            border-bottom: 1px solid var(--line);
+        }
+
+        td {
+            color: #546275;
+            border-bottom: 1px solid var(--line);
+        }
+
+        td strong {
+            color: var(--ink);
+        }
+
+        .staff-section {
+            background: #fff;
+        }
+
+        .cta {
+            background: #2e7eed;
+            color: #fff;
+            text-align: center;
+        }
+
+        .cta-inner {
+            display: block;
+        }
+
+        .cta h2,
+        .cta p {
+            color: #fff;
+        }
+
+        .cta .btn-primary {
+            margin-top: 24px;
+            background: #fff;
+            border-color: #fff;
+            color: #2e7eed;
+        }
+
+        .site-footer {
+            background: #1a1b1f;
+        }
+
+        /* Green system treatment */
+        :root {
+            --ink: #123524;
+            --muted: #5f7469;
+            --line: #d7e8dd;
+            --wash: #f3faf5;
+            --teal: #16845f;
+            --green: #198754;
+            --gold: #8a9a22;
+            --crimson: #2f6f4e;
+            --blue: #198754;
+        }
+
+        body {
+            background: #f3faf5;
+        }
+
+        .nav-links a:not(.login-link)::after,
+        .login-link,
+        .btn-primary,
+        .modal-save,
+        .program-badge,
+        .edit-chip {
+            background: #198754 !important;
+            border-color: #198754 !important;
+        }
+
+        .btn-ghost,
+        .program-link,
+        .feature-list i,
+        .service-item i,
+        .activity-picture-body span,
+        .section-kicker {
+            color: #198754 !important;
+        }
+
+        .quick-guide-shell,
+        .program-card,
+        .compare-table,
+        .service-box,
+        .activity-picture-card {
+            box-shadow: 0 10px 28px rgba(25, 135, 84, 0.12);
+        }
+
+        .program-card:hover,
+        .activity-picture-card:hover {
+            box-shadow: 0 18px 34px rgba(25, 135, 84, 0.2);
+        }
+
+        .program-media {
+            background: #eef8f1;
+        }
+
+        th {
+            background: #e8f6ee;
+        }
+
+        .compare-band,
+        .service-layout {
+            background: #f3faf5;
+        }
+
+        .cta {
+            background: #198754;
+        }
+
+        .cta .btn-primary {
+            background: #fff !important;
+            border-color: #fff !important;
+            color: #198754 !important;
+        }
+
+        @media (max-width: 980px) {
+            .hero {
+                min-height: auto;
+                padding-bottom: 132px;
+            }
+
+            .quick-guide-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .quick-guide-shell {
+                padding: 30px 22px;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .hero-inner {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-featured-panel {
+                border-radius: 22px;
+            }
+        }
+
+        .app-feature {
+            padding: 96px 0;
+        }
+
+        .feature-row {
+            width: min(var(--page-max), calc(100% - (var(--page-gutter) * 2)));
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 56px;
+            align-items: center;
+        }
+
+        .feature-row.reverse .feature-media {
+            order: 2;
+        }
+
+        .feature-media img {
+            width: 100%;
+            height: 430px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .feature-copy h2 {
+            margin: 0 0 18px;
+            color: #000;
+            font-size: clamp(2rem, 4vw, 2.65rem);
+            font-weight: 700;
+            line-height: 1.22;
+        }
+
+        .feature-copy p {
+            margin: 0 0 20px;
+            color: #808080;
+            line-height: 1.75;
+        }
+
+        .feature-list {
+            display: grid;
+            gap: 10px;
+            margin: 0 0 22px;
+            padding: 0;
+            list-style: none;
+        }
+
+        .feature-list li {
+            display: flex;
+            gap: 10px;
+            color: #334155;
+            font-weight: 700;
+        }
+
+        .feature-list i {
+            margin-top: 5px;
+            color: #2e7eed;
+        }
+
+        .service-layout {
+            background: #fafafa;
+        }
+
+        .service-shell {
+            width: min(var(--page-max), calc(100% - (var(--page-gutter) * 2)));
+            margin: 0 auto;
+        }
+
+        .service-title {
+            max-width: 720px;
+            margin: 0 auto 56px;
+            text-align: center;
+        }
+
+        .service-title h2 {
+            margin: 0 0 12px;
+            font-size: clamp(2rem, 4vw, 2.55rem);
+            font-weight: 700;
+        }
+
+        .service-title p {
+            margin: 0;
+            color: #808080;
+        }
+
+        .service-content {
+            display: grid;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+            gap: 30px;
+            align-items: center;
+        }
+
+        .service-image img {
+            width: 100%;
+            height: 520px;
+            object-fit: cover;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .service-box {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+            border-radius: 8px;
+            background: #fff;
+            padding: 34px;
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .service-item i {
+            display: block;
+            margin-bottom: 16px;
+            color: #2e7eed;
+            font-size: 2rem;
+        }
+
+        .service-item h3 {
+            margin: 0 0 8px;
+            color: #000;
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .service-item p {
+            margin: 0;
+            color: #808080;
+            font-size: 0.92rem;
+            line-height: 1.6;
+        }
+
+        .activity-picture-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 24px;
+        }
+
+        .activity-picture-card {
+            overflow: hidden;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08);
+            transition: transform 0.22s ease, box-shadow 0.22s ease;
+        }
+
+        .activity-picture-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 18px 34px rgba(46, 126, 237, 0.16);
+        }
+
+        .activity-picture-card img {
+            width: 100%;
+            height: 245px;
+            object-fit: cover;
+        }
+
+        .activity-picture-body {
+            padding: 22px;
+        }
+
+        .activity-picture-body span {
+            display: inline-flex;
+            margin-bottom: 10px;
+            color: #2e7eed;
+            font-size: 0.76rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .activity-picture-body h3 {
+            margin: 0 0 8px;
+            color: #000;
+            font-size: 1.08rem;
+            font-weight: 800;
+        }
+
+        .activity-picture-body p {
+            margin: 0;
+            color: #808080;
+            font-size: 0.94rem;
+            line-height: 1.65;
+        }
+
+        .hero-featured-panel,
+        .featured-activity-panel,
+        .component-activities {
+            display: none !important;
+        }
+
+        .cta .fa-qrcode {
+            display: none;
+        }
+
+        @media (max-width: 980px) {
+            .feature-row,
+            .service-content {
+                grid-template-columns: 1fr;
+            }
+
+            .feature-row.reverse .feature-media {
+                order: 0;
+            }
+
+            .service-image img {
+                height: 360px;
+                border-radius: 8px;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .feature-media img {
+                height: 300px;
+            }
+
+            .service-box {
+                grid-template-columns: 1fr;
+                padding: 24px;
+            }
+
+            .activity-picture-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .hero-inner {
+            grid-template-columns: minmax(0, 780px);
+            justify-content: start;
+        }
+
+        .hero-copy {
+            max-width: 680px;
+        }
     </style>
 </head>
 <body>
@@ -1692,6 +2411,19 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
 
     <main>
         <section class="hero" aria-labelledby="hero-title">
+            <div class="hero-slideshow" aria-hidden="true">
+                <?php foreach ($heroSlides as $slideIndex => $slideImage): ?>
+                    <div
+                        class="hero-slide <?php echo $slideIndex === 0 ? 'is-active' : ''; ?>"
+                        style="background-image: url('<?php echo e($slideImage); ?>');"
+                    ></div>
+                <?php endforeach; ?>
+            </div>
+            <div class="shapes-container" aria-hidden="true">
+                <?php for ($shapeIndex = 0; $shapeIndex < 8; $shapeIndex++): ?>
+                    <div class="shape"></div>
+                <?php endfor; ?>
+            </div>
             <div class="hero-inner">
                 <div>
                     <?php renderSectionEditButton('hero', $landingSections['hero'], $canEditLanding); ?>
@@ -1706,38 +2438,87 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
                     </div>
                 </div>
 
-                <aside class="featured-activity-panel hero-featured-panel" aria-label="Featured activity images" aria-live="polite">
-                    <div class="featured-toolbar">
-                        <div>
-                            <strong>Featured activity images</strong>
-                            <span>Preview images that can be placed in this first section.</span>
-                        </div>
-                        <div class="featured-controls">
-                            <button type="button" id="featuredPrev" aria-label="Previous featured images">
-                                <i class="fas fa-chevron-left"></i>
-                            </button>
-                            <button type="button" id="featuredNext" aria-label="Next featured images">
-                                <i class="fas fa-chevron-right"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="featured-grid" id="featuredActivityGrid">
-                        <?php foreach ($featuredActivities as $item): ?>
-                            <a class="featured-card" href="component-detail.php?component=<?php echo e($item['component']); ?>">
-                                <img src="<?php echo e($item['image']); ?>" alt="<?php echo e($item['title']); ?>">
-                                <div class="activity-overlay">
-                                    <span><?php echo e($item['component']); ?> / <?php echo e($item['label']); ?></span>
-                                    <strong><?php echo e($item['title']); ?></strong>
-                                    <p><?php echo e($item['detail']); ?></p>
-                                </div>
-                            </a>
-                        <?php endforeach; ?>
-                    </div>
-                </aside>
             </div>
         </section>
 
-        <section id="programs">
+        <section class="pull-top" aria-label="NSTP quick guide">
+            <div class="quick-guide-shell">
+                <?php renderSectionEditButton('quick_guide', $landingSections['quick_guide'], $canEditLanding); ?>
+                <div class="quick-guide-grid">
+                    <?php foreach ($quickGuideItems as $item): ?>
+                        <?php $quickName = strtoupper((string) ($item['name'] ?? 'NSTP')); ?>
+                        <article class="quick-guide-card">
+                            <img src="<?php echo e($componentLogos[$quickName] ?? $componentLogos['NSTP']); ?>" alt="" aria-hidden="true">
+                            <h3><?php echo e($item['name'] ?? 'NSTP'); ?></h3>
+                            <p><?php echo e($item['description'] ?? ''); ?></p>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </section>
+
+        <section class="app-feature" id="programs">
+            <div class="feature-row">
+                <div class="feature-media">
+                    <img src="<?php echo e($primaryComponent['hero_image']); ?>" alt="<?php echo e($primaryComponent['title']); ?>">
+                </div>
+                <div class="feature-copy">
+                    <?php renderSectionEditButton('programs', $landingSections['programs'], $canEditLanding); ?>
+                    <h2><?php echo e($primaryComponent['title']); ?></h2>
+                    <p><?php echo e($primaryComponent['summary']); ?></p>
+                    <ul class="feature-list">
+                        <?php foreach (array_slice($primaryComponent['highlights'], 0, 3) as $highlight): ?>
+                            <li><i class="fas fa-check-circle"></i><span><?php echo e($highlight); ?></span></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <a class="program-link" href="component-detail.php?component=<?php echo e($primaryComponent['name']); ?>">
+                        View component details <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section class="app-feature">
+            <div class="feature-row reverse">
+                <div class="feature-media">
+                    <img src="<?php echo e($secondaryComponent['hero_image']); ?>" alt="<?php echo e($secondaryComponent['title']); ?>">
+                </div>
+                <div class="feature-copy">
+                    <h2><?php echo e($secondaryComponent['title']); ?></h2>
+                    <p><?php echo e($secondaryComponent['summary']); ?></p>
+                    <ul class="feature-list">
+                        <?php foreach (array_slice($secondaryComponent['highlights'], 0, 3) as $highlight): ?>
+                            <li><i class="fas fa-check-circle"></i><span><?php echo e($highlight); ?></span></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <a class="program-link" href="component-detail.php?component=<?php echo e($secondaryComponent['name']); ?>">
+                        View component details <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section class="app-feature">
+            <div class="feature-row">
+                <div class="feature-media">
+                    <img src="<?php echo e($serviceComponent['hero_image']); ?>" alt="<?php echo e($serviceComponent['title']); ?>">
+                </div>
+                <div class="feature-copy">
+                    <h2><?php echo e($serviceComponent['title']); ?></h2>
+                    <p><?php echo e($serviceComponent['summary']); ?></p>
+                    <ul class="feature-list">
+                        <?php foreach (array_slice($serviceComponent['highlights'], 0, 3) as $highlight): ?>
+                            <li><i class="fas fa-check-circle"></i><span><?php echo e($highlight); ?></span></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <a class="program-link" href="component-detail.php?component=<?php echo e($serviceComponent['name']); ?>">
+                        View component details <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section id="component-cards">
             <div class="section-inner">
                 <div class="section-head">
                     <?php renderSectionEditButton('programs', $landingSections['programs'], $canEditLanding); ?>
@@ -1750,10 +2531,10 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
                     <?php foreach ($programs as $program): ?>
                         <article class="program-card">
                             <div class="program-media">
-                                <img src="<?php echo e($program['image']); ?>" alt="<?php echo e($program['title']); ?>">
-                                <span class="program-badge <?php echo e($program['accent']); ?>"><?php echo e($program['name']); ?></span>
+                                <img src="<?php echo e($program['image']); ?>" alt="" aria-hidden="true">
                             </div>
                             <div class="program-body">
+                                <span class="program-badge <?php echo e($program['accent']); ?>"><?php echo e($program['name']); ?></span>
                                 <h3><?php echo e($program['title']); ?></h3>
                                 <p><?php echo e($program['focus']); ?></p>
                                 <div class="fact-row">
@@ -1808,38 +2589,26 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
             </div>
         </section>
 
-        <section aria-labelledby="gallery-title">
-            <div class="section-inner">
-                <div class="section-head">
+        <section class="service-layout app-feature" aria-labelledby="service-title">
+            <div class="service-shell">
+                <div class="service-title">
                     <?php renderSectionEditButton('activities', $landingSections['activities'], $canEditLanding); ?>
-                    <span class="section-kicker"><?php echo e($landingSections['activities']['kicker']); ?></span>
-                    <h2 id="gallery-title"><?php echo e($landingSections['activities']['title']); ?></h2>
-                    <p><?php echo e($landingSections['activities']['body']); ?></p>
+                    <h2 id="service-title">National Service Training Program Activities</h2>
+                    <p>Each component builds service, leadership, and citizenship through a different learning experience.</p>
                 </div>
 
-                <div class="component-activities">
+                <div class="activity-picture-grid">
                     <?php foreach ($componentDetails as $componentKey => $details): ?>
-                        <article class="component-activity-group">
-                            <div class="component-activity-head">
-                                <h3><?php echo e($details['name']); ?> Activities</h3>
-                                <p><?php echo e($details['short_details']); ?></p>
-                                <a class="program-link" href="component-detail.php?component=<?php echo e($componentKey); ?>">
-                                    More details <i class="fas fa-arrow-right"></i>
-                                </a>
-                            </div>
-                            <div class="component-activity-list">
-                                <?php foreach ($details['activities'] as $activity): ?>
-                                    <a class="component-activity-card" href="component-detail.php?component=<?php echo e($componentKey); ?>">
-                                        <img src="<?php echo e($activity['image']); ?>" alt="<?php echo e($activity['title']); ?>">
-                                        <div class="activity-overlay">
-                                            <span><?php echo e($activity['label']); ?></span>
-                                            <strong><?php echo e($activity['title']); ?></strong>
-                                            <p><?php echo e($activity['detail']); ?></p>
-                                        </div>
-                                    </a>
-                                <?php endforeach; ?>
-                            </div>
-                        </article>
+                        <?php foreach ($details['activities'] as $activity): ?>
+                            <a class="activity-picture-card" href="component-detail.php?component=<?php echo e($componentKey); ?>">
+                                <img src="<?php echo e($activity['image']); ?>" alt="<?php echo e($activity['title']); ?>">
+                                <div class="activity-picture-body">
+                                    <span><?php echo e($componentKey); ?> / <?php echo e($activity['label']); ?></span>
+                                    <h3><?php echo e($activity['title']); ?></h3>
+                                    <p><?php echo e($activity['detail']); ?></p>
+                                </div>
+                            </a>
+                        <?php endforeach; ?>
                     <?php endforeach; ?>
                 </div>
             </div>
@@ -1891,88 +2660,6 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
                 </div>
             </div>
         </section>
-
-        <script>
-            (function () {
-                const grid = document.getElementById('featuredActivityGrid');
-                const prevButton = document.getElementById('featuredPrev');
-                const nextButton = document.getElementById('featuredNext');
-                let offset = 0;
-                const limit = 3;
-
-                if (!grid || !prevButton || !nextButton) {
-                    return;
-                }
-
-                function escapeHtml(value) {
-                    return String(value || '').replace(/[&<>"']/g, function (match) {
-                        return {
-                            '&': '&amp;',
-                            '<': '&lt;',
-                            '>': '&gt;',
-                            '"': '&quot;',
-                            "'": '&#039;'
-                        }[match];
-                    });
-                }
-
-                function renderFeatured(items) {
-                    grid.innerHTML = items.map(function (item) {
-                        const component = escapeHtml(item.component || 'NSTP');
-                        const title = escapeHtml(item.title || 'NSTP Activity');
-                        const label = escapeHtml(item.label || 'Activity');
-                        const detail = escapeHtml(item.detail || '');
-                        const image = escapeHtml(item.image || '');
-                        return `
-                            <a class="featured-card" href="component-detail.php?component=${component}">
-                                <img src="${image}" alt="${title}">
-                                <div class="activity-overlay">
-                                    <span>${component} / ${label}</span>
-                                    <strong>${title}</strong>
-                                    <p>${detail}</p>
-                                </div>
-                            </a>
-                        `;
-                    }).join('');
-                }
-
-                function loadFeatured(direction) {
-                    offset = Math.max(0, offset + (direction * limit));
-                    prevButton.disabled = true;
-                    nextButton.disabled = true;
-
-                    fetch(`endpoint/get-featured-activities.php?offset=${offset}&limit=${limit}`, {
-                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                    })
-                        .then(function (response) {
-                            if (!response.ok) {
-                                throw new Error('Unable to load featured activities.');
-                            }
-                            return response.json();
-                        })
-                        .then(function (data) {
-                            renderFeatured(data.items || []);
-                            offset = data.offset || 0;
-                            prevButton.disabled = offset <= 0;
-                            nextButton.disabled = !data.has_more;
-                        })
-                        .catch(function () {
-                            prevButton.disabled = offset <= 0;
-                            nextButton.disabled = false;
-                        });
-                }
-
-                prevButton.addEventListener('click', function () {
-                    loadFeatured(-1);
-                });
-
-                nextButton.addEventListener('click', function () {
-                    loadFeatured(1);
-                });
-
-                prevButton.disabled = true;
-            })();
-        </script>
 
         <?php if ($canEditLanding): ?>
             <div class="modal-backdrop" id="sectionEditorModal" aria-hidden="true">
@@ -2229,11 +2916,11 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
             <div class="cta-inner">
                 <div>
                     <?php renderSectionEditButton('cta', $landingSections['cta'], $canEditLanding); ?>
-                    <h2><?php echo e($landingSections['cta']['title']); ?></h2>
-                    <p><?php echo e($landingSections['cta']['body']); ?></p>
+                    <h2>National Service Training Program</h2>
+                    <p>Learn the components, explore service activities, and connect with the NSTP office.</p>
                 </div>
                 <a class="btn btn-primary" href="<?php echo $isLoggedIn ? 'index.php' : 'login.php'; ?>">
-                    <i class="fas fa-qrcode"></i> <?php echo e($isLoggedIn ? ($ctaPayload['logged_in_label'] ?? 'Open Dashboard') : ($ctaPayload['guest_label'] ?? 'Open QR Attendance System')); ?>
+                    <i class="fas fa-arrow-right"></i> <?php echo e($isLoggedIn ? 'Open Dashboard' : 'National Service Training Program'); ?>
                 </a>
             </div>
         </section>
@@ -2241,10 +2928,25 @@ $featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
 
     <footer class="site-footer">
         <div class="footer-inner">
-            <span>TAU NSTP QR Attendance System</span>
+            <span>National Service Training Program</span>
             <span>CWTS · LTS · ROTC</span>
         </div>
     </footer>
+    <script>
+        (function () {
+            const slides = Array.from(document.querySelectorAll('.hero-slide'));
+            if (slides.length <= 1) {
+                return;
+            }
+
+            let activeIndex = 0;
+            window.setInterval(function () {
+                slides[activeIndex].classList.remove('is-active');
+                activeIndex = (activeIndex + 1) % slides.length;
+                slides[activeIndex].classList.add('is-active');
+            }, 4800);
+        })();
+    </script>
     <?php if ($canEditLanding): ?>
         <script>
             (function () {

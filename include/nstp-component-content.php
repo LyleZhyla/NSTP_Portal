@@ -77,7 +77,7 @@ function getNstpComponentDetails() {
             'title' => 'Reserve Officers Training Corps',
             'subtitle' => 'Leadership, discipline, formations, and preparedness training.',
             'accent' => 'crimson',
-            'hero_image' => 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80',
+            'hero_image' => 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1600&q=80',
             'summary' => 'ROTC trains students in leadership, discipline, command responsibility, emergency response, and national defense awareness.',
             'short_details' => 'Formations, drills, leadership exercises, preparedness, and command training.',
             'highlights' => [
@@ -91,7 +91,7 @@ function getNstpComponentDetails() {
                     'title' => 'Formation Training',
                     'label' => 'Discipline',
                     'detail' => 'Cadets practice order, timing, and teamwork through structured formations.',
-                    'image' => 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
+                    'image' => 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=900&q=80',
                 ],
                 [
                     'title' => 'Leadership Exercise',
