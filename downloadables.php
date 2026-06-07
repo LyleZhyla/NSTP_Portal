@@ -887,6 +887,8 @@ if ($role === 'super_admin') {
                                             'folder' => 'ROTC Folder',
                                             'facilitator' => 'Facilitator',
                                             'height' => 'HEIGHT',
+                                            'rotc_ms_level' => 'MS Level',
+                                            'rotc_completion_proof' => 'Completion Proof',
                                             'beneficiary' => 'BENEFICIARY',
                                             'emergency_name' => 'Emergency Name',
                                             'emergency_relationship' => 'Emergency Relation',
@@ -896,7 +898,7 @@ if ($role === 'super_admin') {
                                             'status' => 'Status',
                                             'created_at' => 'Registered At',
                                         ];
-                                        $rotcProfileDefaults = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'contact_number', 'beneficiary'];
+                                        $rotcProfileDefaults = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'rotc_ms_level', 'contact_number', 'beneficiary'];
                                         foreach ($rotcProfileColumns as $columnKey => $columnLabel):
                                         ?>
                                         <div class="col-6">

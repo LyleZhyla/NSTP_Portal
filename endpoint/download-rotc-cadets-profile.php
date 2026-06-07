@@ -136,6 +136,8 @@ $availableColumns = [
     'folder' => 'ROTC Folder',
     'facilitator' => 'Facilitator',
     'height' => 'HEIGHT',
+    'rotc_ms_level' => 'MS Level',
+    'rotc_completion_proof' => 'Completion Proof',
     'beneficiary' => 'BENEFICIARY',
     'emergency_name' => 'Emergency Contact Name',
     'emergency_relationship' => 'Emergency Relationship',
@@ -145,7 +147,7 @@ $availableColumns = [
     'status' => 'Registration Status',
     'created_at' => 'Registered At',
 ];
-$defaultColumns = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'contact_number', 'beneficiary'];
+$defaultColumns = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'rotc_ms_level', 'contact_number', 'beneficiary'];
 $requestedColumns = $_GET['columns'] ?? $defaultColumns;
 if (!is_array($requestedColumns)) {
     $requestedColumns = [$requestedColumns];
@@ -161,6 +163,7 @@ $registrationFields = [
     'province', 'city_municipality', 'barangay', 'street', 'house_no', 'emergency_name',
     'emergency_relationship', 'emergency_contact_number', 'emergency_address', 'college', 'course',
     'major', 'year_section', 'component', 'formal_picture', 'status', 'created_at',
+    'height', 'rotc_ms_level', 'rotc_completion_proof',
 ];
 $selectFields = [];
 foreach ($registrationFields as $field) {
@@ -306,7 +309,9 @@ foreach ($cadets as $index => $cadet) {
         'year_section' => rotcCleanValue($cadet['year_section'] ?? ''),
         'folder' => rotcCleanValue($cadet['folder'] ?? ''),
         'facilitator' => rotcCleanValue($cadet['facilitator'] ?? ''),
-        'height' => '',
+        'height' => rotcCleanValue($cadet['height'] ?? ''),
+        'rotc_ms_level' => rotcCleanValue($cadet['rotc_ms_level'] ?? ''),
+        'rotc_completion_proof' => rotcCleanValue($cadet['rotc_completion_proof'] ?? ''),
         'beneficiary' => rotcCleanValue($cadet['emergency_name'] ?? ''),
         'emergency_name' => rotcCleanValue($cadet['emergency_name'] ?? ''),
         'emergency_relationship' => rotcCleanValue($cadet['emergency_relationship'] ?? ''),

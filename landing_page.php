@@ -3,6 +3,7 @@ session_start();
 require_once 'include/logo-functions.php';
 require_once 'include/landing-content.php';
 require_once 'include/user-permissions.php';
+require_once 'include/nstp-component-content.php';
 
 $isLoggedIn = isset($_SESSION['user_id']);
 $canEditLanding = isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator'], true);
@@ -421,6 +422,8 @@ $heroPayload = $landingSections['hero']['payload'] ?? [];
 $quickGuideItems = $landingSections['quick_guide']['payload'] ?? [];
 $differenceRows = $landingSections['difference']['payload'] ?? [];
 $ctaPayload = $landingSections['cta']['payload'] ?? [];
+$componentDetails = getNstpComponentDetails();
+$featuredActivities = array_slice(getNstpFeaturedActivities(), 0, 3);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -775,6 +778,16 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
             font-size: 0.94rem;
         }
 
+        .program-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+            color: var(--blue);
+            font-size: 0.88rem;
+            font-weight: 900;
+        }
+
         .fact-row {
             padding-top: 13px;
             margin-top: 13px;
@@ -843,6 +856,193 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
 
         td strong {
             color: #fff;
+        }
+
+        .featured-activity-panel {
+            margin-bottom: 24px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .hero-featured-panel {
+            margin-bottom: 0;
+            background: rgba(255, 255, 255, 0.96);
+            color: var(--ink);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+        }
+
+        .featured-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .featured-toolbar strong {
+            display: block;
+            font-size: 0.96rem;
+        }
+
+        .featured-toolbar span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .featured-controls {
+            display: inline-flex;
+            gap: 8px;
+        }
+
+        .featured-controls button {
+            min-width: 42px;
+            height: 38px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--wash);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        .featured-controls button:disabled {
+            cursor: wait;
+            opacity: 0.62;
+        }
+
+        .featured-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            padding: 14px;
+        }
+
+        .hero-featured-panel .featured-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .hero-featured-panel .featured-card {
+            min-height: 136px;
+        }
+
+        .featured-card,
+        .component-activity-card {
+            position: relative;
+            min-height: 210px;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #1f2937;
+            color: #fff;
+        }
+
+        .featured-card img,
+        .component-activity-card img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.28s ease;
+        }
+
+        .featured-card::after,
+        .component-activity-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(10, 21, 38, 0.08), rgba(10, 21, 38, 0.84));
+        }
+
+        .featured-card:hover img,
+        .featured-card:focus-within img,
+        .component-activity-card:hover img,
+        .component-activity-card:focus-within img {
+            transform: scale(1.05);
+        }
+
+        .activity-overlay {
+            position: absolute;
+            inset: auto 14px 14px 14px;
+            z-index: 1;
+        }
+
+        .activity-overlay span {
+            display: inline-flex;
+            margin-bottom: 7px;
+            padding: 5px 8px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.18);
+            font-size: 0.7rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .activity-overlay strong {
+            display: block;
+            font-size: 1.05rem;
+            line-height: 1.2;
+        }
+
+        .activity-overlay p {
+            max-height: 0;
+            margin: 0;
+            overflow: hidden;
+            color: rgba(255, 255, 255, 0.84);
+            font-size: 0.84rem;
+            font-weight: 650;
+            line-height: 1.45;
+            opacity: 0;
+            transition: max-height 0.25s ease, margin-top 0.25s ease, opacity 0.25s ease;
+        }
+
+        .featured-card:hover .activity-overlay p,
+        .featured-card:focus-within .activity-overlay p,
+        .component-activity-card:hover .activity-overlay p,
+        .component-activity-card:focus-within .activity-overlay p {
+            max-height: 90px;
+            margin-top: 8px;
+            opacity: 1;
+        }
+
+        .component-activities {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .component-activity-group {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .component-activity-head {
+            padding: 18px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .component-activity-head h3 {
+            margin: 0 0 6px;
+            font-size: 1rem;
+        }
+
+        .component-activity-head p {
+            margin: 0 0 12px;
+            color: var(--muted);
+            font-size: 0.86rem;
+            font-weight: 650;
+        }
+
+        .component-activity-list {
+            display: grid;
+            gap: 10px;
+            padding: 12px;
         }
 
         .gallery-grid {
@@ -1453,6 +1653,11 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
                 margin-top: 22px;
             }
 
+            .featured-grid,
+            .component-activities {
+                grid-template-columns: 1fr;
+            }
+
             section {
                 padding: 54px 0;
             }
@@ -1501,16 +1706,33 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
                     </div>
                 </div>
 
-                <aside class="quick-panel" aria-label="Program quick guide">
-                    <?php renderSectionEditButton('quick_guide', $landingSections['quick_guide'], $canEditLanding); ?>
-                    <h2><?php echo e($landingSections['quick_guide']['title']); ?></h2>
-                    <?php foreach ($quickGuideItems as $index => $item): ?>
-                        <?php $quickName = strtoupper((string) ($item['name'] ?? 'NSTP')); ?>
-                        <div class="quick-item">
-                            <img class="quick-icon" src="<?php echo e($componentLogos[$quickName] ?? $componentLogos['NSTP']); ?>" alt="<?php echo e($quickName); ?> logo">
-                            <span><strong><?php echo e($item['name'] ?? 'NSTP'); ?></strong><span><?php echo e($item['description'] ?? ''); ?></span></span>
+                <aside class="featured-activity-panel hero-featured-panel" aria-label="Featured activity images" aria-live="polite">
+                    <div class="featured-toolbar">
+                        <div>
+                            <strong>Featured activity images</strong>
+                            <span>Preview images that can be placed in this first section.</span>
                         </div>
-                    <?php endforeach; ?>
+                        <div class="featured-controls">
+                            <button type="button" id="featuredPrev" aria-label="Previous featured images">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <button type="button" id="featuredNext" aria-label="Next featured images">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="featured-grid" id="featuredActivityGrid">
+                        <?php foreach ($featuredActivities as $item): ?>
+                            <a class="featured-card" href="component-detail.php?component=<?php echo e($item['component']); ?>">
+                                <img src="<?php echo e($item['image']); ?>" alt="<?php echo e($item['title']); ?>">
+                                <div class="activity-overlay">
+                                    <span><?php echo e($item['component']); ?> / <?php echo e($item['label']); ?></span>
+                                    <strong><?php echo e($item['title']); ?></strong>
+                                    <p><?php echo e($item['detail']); ?></p>
+                                </div>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
                 </aside>
             </div>
         </section>
@@ -1542,6 +1764,9 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
                                     <span>Common outputs</span>
                                     <strong><?php echo e($program['output']); ?></strong>
                                 </div>
+                                <a class="program-link" href="component-detail.php?component=<?php echo e(strtoupper((string) ($program['name'] ?? ''))); ?>">
+                                    View component details <i class="fas fa-arrow-right"></i>
+                                </a>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -1592,13 +1817,27 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
                     <p><?php echo e($landingSections['activities']['body']); ?></p>
                 </div>
 
-                <div class="gallery-grid">
-                    <?php foreach ($gallery as $item): ?>
-                        <article class="gallery-tile">
-                            <img src="<?php echo e($item['image']); ?>" alt="<?php echo e($item['title']); ?>">
-                            <div class="gallery-caption">
-                                <span><?php echo e($item['label']); ?></span>
-                                <strong><?php echo e($item['title']); ?></strong>
+                <div class="component-activities">
+                    <?php foreach ($componentDetails as $componentKey => $details): ?>
+                        <article class="component-activity-group">
+                            <div class="component-activity-head">
+                                <h3><?php echo e($details['name']); ?> Activities</h3>
+                                <p><?php echo e($details['short_details']); ?></p>
+                                <a class="program-link" href="component-detail.php?component=<?php echo e($componentKey); ?>">
+                                    More details <i class="fas fa-arrow-right"></i>
+                                </a>
+                            </div>
+                            <div class="component-activity-list">
+                                <?php foreach ($details['activities'] as $activity): ?>
+                                    <a class="component-activity-card" href="component-detail.php?component=<?php echo e($componentKey); ?>">
+                                        <img src="<?php echo e($activity['image']); ?>" alt="<?php echo e($activity['title']); ?>">
+                                        <div class="activity-overlay">
+                                            <span><?php echo e($activity['label']); ?></span>
+                                            <strong><?php echo e($activity['title']); ?></strong>
+                                            <p><?php echo e($activity['detail']); ?></p>
+                                        </div>
+                                    </a>
+                                <?php endforeach; ?>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -1652,6 +1891,88 @@ $ctaPayload = $landingSections['cta']['payload'] ?? [];
                 </div>
             </div>
         </section>
+
+        <script>
+            (function () {
+                const grid = document.getElementById('featuredActivityGrid');
+                const prevButton = document.getElementById('featuredPrev');
+                const nextButton = document.getElementById('featuredNext');
+                let offset = 0;
+                const limit = 3;
+
+                if (!grid || !prevButton || !nextButton) {
+                    return;
+                }
+
+                function escapeHtml(value) {
+                    return String(value || '').replace(/[&<>"']/g, function (match) {
+                        return {
+                            '&': '&amp;',
+                            '<': '&lt;',
+                            '>': '&gt;',
+                            '"': '&quot;',
+                            "'": '&#039;'
+                        }[match];
+                    });
+                }
+
+                function renderFeatured(items) {
+                    grid.innerHTML = items.map(function (item) {
+                        const component = escapeHtml(item.component || 'NSTP');
+                        const title = escapeHtml(item.title || 'NSTP Activity');
+                        const label = escapeHtml(item.label || 'Activity');
+                        const detail = escapeHtml(item.detail || '');
+                        const image = escapeHtml(item.image || '');
+                        return `
+                            <a class="featured-card" href="component-detail.php?component=${component}">
+                                <img src="${image}" alt="${title}">
+                                <div class="activity-overlay">
+                                    <span>${component} / ${label}</span>
+                                    <strong>${title}</strong>
+                                    <p>${detail}</p>
+                                </div>
+                            </a>
+                        `;
+                    }).join('');
+                }
+
+                function loadFeatured(direction) {
+                    offset = Math.max(0, offset + (direction * limit));
+                    prevButton.disabled = true;
+                    nextButton.disabled = true;
+
+                    fetch(`endpoint/get-featured-activities.php?offset=${offset}&limit=${limit}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    })
+                        .then(function (response) {
+                            if (!response.ok) {
+                                throw new Error('Unable to load featured activities.');
+                            }
+                            return response.json();
+                        })
+                        .then(function (data) {
+                            renderFeatured(data.items || []);
+                            offset = data.offset || 0;
+                            prevButton.disabled = offset <= 0;
+                            nextButton.disabled = !data.has_more;
+                        })
+                        .catch(function () {
+                            prevButton.disabled = offset <= 0;
+                            nextButton.disabled = false;
+                        });
+                }
+
+                prevButton.addEventListener('click', function () {
+                    loadFeatured(-1);
+                });
+
+                nextButton.addEventListener('click', function () {
+                    loadFeatured(1);
+                });
+
+                prevButton.disabled = true;
+            })();
+        </script>
 
         <?php if ($canEditLanding): ?>
             <div class="modal-backdrop" id="sectionEditorModal" aria-hidden="true">
