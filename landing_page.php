@@ -263,6 +263,7 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
             'primary_label' => cleanLandingContentText($post['hero_primary_label'] ?? 'View Programs', 80),
             'secondary_label' => cleanLandingContentText($post['hero_secondary_label'] ?? 'Meet Staff', 80),
             'images' => $images,
+            'images_configured' => !empty($post['hero_images_configured']),
         ];
     }
 
@@ -512,6 +513,7 @@ $serviceProgram = $programByName['ROTC'] ?? ($programs[2] ?? $primaryProgram);
 $heroSlides = [];
 $defaultHeroSlides = [];
 $heroImages = is_array($heroPayload['images'] ?? null) ? $heroPayload['images'] : [];
+$heroImagesConfigured = !empty($heroPayload['images_configured']);
 foreach ($heroImages as $heroImage) {
     if (is_array($heroImage) && !empty($heroImage['image'])) {
         $heroSlides[] = $heroImage['image'];
@@ -536,11 +538,22 @@ foreach ($gallery as $galleryItem) {
         $defaultHeroSlides[] = $galleryItem['image'];
     }
 }
+$defaultHeroSlides = array_values(array_unique($defaultHeroSlides));
 
-if (count($heroSlides) < 2) {
+if (!$heroImagesConfigured && !$heroSlides) {
     $heroSlides = array_merge($heroSlides, $defaultHeroSlides);
 }
 $heroSlides = array_values(array_unique($heroSlides));
+
+if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
+    $landingSections['hero']['payload']['images'] = array_map(static function ($image) {
+        return [
+            'image' => $image,
+            'alt' => '',
+        ];
+    }, $defaultHeroSlides);
+    $landingSections['hero']['payload']['images_configured'] = false;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -2859,6 +2872,7 @@ $heroSlides = array_values(array_unique($heroSlides));
                                     <textarea name="section_body" id="sectionBody"></textarea>
                                 </div>
                                 <div class="payload-panel" data-payload-panel="hero">
+                                    <input type="hidden" name="hero_images_configured" value="1">
                                     <div class="modal-grid">
                                         <div class="field">
                                             <label for="heroPrimaryLabel">Primary Button Label</label>
