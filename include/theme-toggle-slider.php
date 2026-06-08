@@ -14,7 +14,7 @@
 .theme-toggle-label {
     margin-right: 10px;
     font-size: 0.9rem;
-    color: #2c3e50;
+    color: #0f5132;
     font-weight: 500;
 }
 
@@ -42,7 +42,7 @@ body.dark-mode .theme-toggle-label {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: linear-gradient(135deg, #198754, #0f5132);
     transition: .4s;
     border-radius: 34px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
@@ -100,7 +100,7 @@ body.dark-mode .theme-toggle-label {
 
 .theme-auto-indicator i {
     font-size: 0.8rem;
-    color: #17a2b8;
+    color: #20c997;
 }
 
 body.dark-mode .theme-auto-indicator {
@@ -110,9 +110,9 @@ body.dark-mode .theme-auto-indicator {
 }
 
 .theme-auto-indicator:hover {
-    background: #17a2b8;
+    background: #20c997;
     color: white;
-    border-color: #17a2b8;
+    border-color: #20c997;
 }
 
 .theme-auto-indicator:hover i {
@@ -120,9 +120,9 @@ body.dark-mode .theme-auto-indicator {
 }
 
 .theme-auto-indicator.active {
-    background: #17a2b8;
+    background: #20c997;
     color: white;
-    border-color: #17a2b8;
+    border-color: #20c997;
 }
 
 .theme-auto-indicator.active i {

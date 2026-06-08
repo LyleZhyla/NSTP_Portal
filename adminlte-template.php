@@ -26,7 +26,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'QR Code Attendance System';
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?php echo $pageTitle; ?> - QR Attendance</title>
+    <title><?php echo $pageTitle; ?> - National Service Training Program</title>
     
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -36,7 +36,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'QR Code Attendance System';
     
     <style>
         :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --primary-gradient: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             --success-gradient: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
             --info-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
@@ -88,7 +88,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'QR Code Attendance System';
             width: 100%;
             max-width: 400px;
             border-radius: 10px;
-            border: 3px solid #007bff;
+            border: 3px solid #198754;
         }
         
         .manila-time-card {
@@ -173,7 +173,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'QR Code Attendance System';
     <aside class="main-sidebar sidebar-dark-primary elevation-4">
         <a href="index.php" class="brand-link">
             <i class="fas fa-qrcode brand-icon"></i>
-            <span class="brand-text font-weight-light">QR Attendance</span>
+            <span class="brand-text font-weight-light">National Service Training Program</span>
         </a>
 
         <div class="sidebar">

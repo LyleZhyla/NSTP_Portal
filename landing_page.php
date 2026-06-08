@@ -236,9 +236,28 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
     $payload = is_array($existingSection['payload'] ?? null) ? $existingSection['payload'] : [];
 
     if ($sectionKey === 'hero') {
+        $images = [];
+        foreach (($post['hero_image_existing'] ?? []) as $index => $existingImage) {
+            $image = arrayTextValue($post['hero_image_existing'] ?? [], $index, '', 255);
+            if (!empty($files['hero_image_upload'])) {
+                $uploadedImage = uploadLandingSectionImage($files['hero_image_upload'], $index, $baseDir);
+                if ($uploadedImage) {
+                    $image = $uploadedImage;
+                }
+            }
+
+            if ($image !== '') {
+                $images[] = [
+                    'image' => $image,
+                    'alt' => arrayTextValue($post['hero_image_alt'] ?? [], $index, '', 160),
+                ];
+            }
+        }
+
         return [
             'primary_label' => cleanLandingContentText($post['hero_primary_label'] ?? 'View Programs', 80),
             'secondary_label' => cleanLandingContentText($post['hero_secondary_label'] ?? 'Meet Staff', 80),
+            'images' => $images,
         ];
     }
 
@@ -403,9 +422,17 @@ $gallery = [
 ];
 
 $componentDetails = getNstpComponentDetails();
-$programImageMap = [];
-foreach ($componentDetails as $componentKey => $details) {
-    $programImageMap[$componentKey] = $details['hero_image'];
+$componentGallery = [];
+foreach ($componentDetails as $componentCode => $details) {
+    foreach (($details['activities'] ?? []) as $activity) {
+        $componentGallery[] = [
+            'title' => $activity['title'] ?? $details['title'],
+            'label' => $componentCode,
+            'detail' => $activity['detail'] ?? ($details['short_details'] ?? $details['subtitle']),
+            'image' => $activity['image'] ?? ($details['hero_image'] ?? ''),
+            'component' => $componentCode,
+        ];
+    }
 }
 
 if (!empty($landingSections['programs']['payload']) && is_array($landingSections['programs']['payload'])) {
@@ -420,39 +447,89 @@ if (!empty($landingSections['programs']['payload']) && is_array($landingSections
     $landingSections['programs']['payload'] = $programs;
 }
 
-foreach ($programs as $programIndex => $program) {
-    $programName = strtoupper((string) ($program['name'] ?? ''));
-    if (isset($programImageMap[$programName])) {
-        $programs[$programIndex]['image'] = $programImageMap[$programName];
-    }
-}
-
 if (!empty($landingSections['activities']['payload']) && is_array($landingSections['activities']['payload'])) {
     $gallery = $landingSections['activities']['payload'];
 }
+$gallery = array_merge($gallery, $componentGallery);
+$uniqueGallery = [];
+foreach ($gallery as $galleryItem) {
+    $galleryKey = trim((string) ($galleryItem['image'] ?? '')) . '|' . trim((string) ($galleryItem['title'] ?? ''));
+    if ($galleryKey === '|') {
+        continue;
+    }
+    if (!isset($uniqueGallery[$galleryKey])) {
+        $uniqueGallery[$galleryKey] = $galleryItem;
+    }
+}
+$gallery = array_values($uniqueGallery);
 
 $heroPayload = $landingSections['hero']['payload'] ?? [];
 $quickGuideItems = $landingSections['quick_guide']['payload'] ?? [];
 $differenceRows = $landingSections['difference']['payload'] ?? [];
 $ctaPayload = $landingSections['cta']['payload'] ?? [];
-$primaryComponent = $componentDetails['CWTS'];
-$secondaryComponent = $componentDetails['LTS'];
-$serviceComponent = $componentDetails['ROTC'];
-$heroSlides = [];
-foreach ($componentDetails as $details) {
-    if (!empty($details['hero_image'])) {
-        $heroSlides[] = $details['hero_image'];
+$normalizePublicText = static function ($value) {
+    if (!is_string($value)) {
+        return $value;
     }
 
-    foreach (($details['activities'] ?? []) as $activity) {
-        if (!empty($activity['image'])) {
-            $heroSlides[] = $activity['image'];
-        }
+    return str_replace(
+        [
+            'QR Attendance System',
+            'QR Attendance',
+            'attendance scan',
+            'scan QR codes',
+            'Open NSTP System',
+        ],
+        [
+            'National Service Training Program',
+            'National Service Training Program',
+            'classroom session',
+            'manage NSTP records',
+            'Open NSTP Portal',
+        ],
+        $value
+    );
+};
+$landingSections['activities']['title'] = $normalizePublicText((string) ($landingSections['activities']['title'] ?? ''));
+$landingSections['activities']['description'] = $normalizePublicText((string) ($landingSections['activities']['description'] ?? ''));
+foreach (['title', 'body', 'guest_label', 'logged_in_label'] as $ctaField) {
+    if (isset($ctaPayload[$ctaField])) {
+        $ctaPayload[$ctaField] = $normalizePublicText($ctaPayload[$ctaField]);
     }
 }
-foreach ($gallery as $galleryItem) {
-    if (!empty($galleryItem['image'])) {
-        $heroSlides[] = $galleryItem['image'];
+$programByName = [];
+foreach ($programs as $program) {
+    $programByName[strtoupper((string) ($program['name'] ?? ''))] = $program;
+}
+$primaryProgram = $programByName['CWTS'] ?? ($programs[0] ?? []);
+$secondaryProgram = $programByName['LTS'] ?? ($programs[1] ?? $primaryProgram);
+$serviceProgram = $programByName['ROTC'] ?? ($programs[2] ?? $primaryProgram);
+$heroSlides = [];
+$heroImages = is_array($heroPayload['images'] ?? null) ? $heroPayload['images'] : [];
+foreach ($heroImages as $heroImage) {
+    if (is_array($heroImage) && !empty($heroImage['image'])) {
+        $heroSlides[] = $heroImage['image'];
+    } elseif (is_string($heroImage) && $heroImage !== '') {
+        $heroSlides[] = $heroImage;
+    }
+}
+
+if (!$heroSlides) {
+    foreach ($componentDetails as $details) {
+        if (!empty($details['hero_image'])) {
+            $heroSlides[] = $details['hero_image'];
+        }
+
+        foreach (($details['activities'] ?? []) as $activity) {
+            if (!empty($activity['image'])) {
+                $heroSlides[] = $activity['image'];
+            }
+        }
+    }
+    foreach ($gallery as $galleryItem) {
+        if (!empty($galleryItem['image'])) {
+            $heroSlides[] = $galleryItem['image'];
+        }
     }
 }
 $heroSlides = array_values(array_unique($heroSlides));
@@ -469,16 +546,16 @@ $heroSlides = array_values(array_unique($heroSlides));
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --ink: #14213d;
-            --muted: #637083;
-            --line: #d8e0ea;
+            --ink: #0f2f22;
+            --muted: #5f7469;
+            --line: #cfe2d6;
             --paper: #ffffff;
-            --wash: #f4f8fb;
-            --teal: #167a7f;
+            --wash: #f3fbf6;
+            --teal: #198754;
             --green: #2f855a;
             --gold: #b7791f;
             --crimson: #b8323b;
-            --blue: #2b6cb0;
+            --blue: #198754;
             --page-max: 1180px;
             --page-gutter: clamp(20px, 4vw, 48px);
         }
@@ -560,7 +637,7 @@ $heroSlides = array_values(array_unique($heroSlides));
             display: flex;
             align-items: center;
             gap: 20px;
-            color: #334155;
+            color: #315c47;
             font-size: 0.9rem;
             font-weight: 700;
         }
@@ -806,7 +883,7 @@ $heroSlides = array_values(array_unique($heroSlides));
 
         .program-body p {
             margin: 0 0 16px;
-            color: #415269;
+            color: #456b58;
             font-size: 0.94rem;
         }
 
@@ -843,7 +920,7 @@ $heroSlides = array_values(array_unique($heroSlides));
         }
 
         .compare-band {
-            background: #0f1f35;
+            background: #063f28;
             color: #fff;
         }
 
@@ -1142,7 +1219,7 @@ $heroSlides = array_values(array_unique($heroSlides));
             --org-card-width: 280px;
             --org-gap: 16px;
             --org-level-width: 1168px;
-            --line-color: #1d2f3f;
+            --line-color: #0f5132;
             --line-size: 2px;
             position: relative;
             overflow-x: hidden;
@@ -1363,15 +1440,15 @@ $heroSlides = array_values(array_unique($heroSlides));
         }
 
         .section-edit-btn {
-            position: absolute;
-            top: 0;
-            right: -52px;
+            position: static;
             width: 38px;
             height: 38px;
+            margin-bottom: 12px;
             display: grid;
             place-items: center;
             background: var(--ink);
             color: #fff;
+            vertical-align: top;
         }
 
         .landing-alert {
@@ -1490,6 +1567,33 @@ $heroSlides = array_values(array_unique($heroSlides));
             font-size: 0.9rem;
         }
 
+        .payload-item-head {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .payload-item-head h4 {
+            grid-column: auto;
+        }
+
+        .add-payload-row {
+            margin-top: 12px;
+            background: var(--wash);
+            color: var(--ink);
+            border: 1px solid var(--line);
+        }
+
+        .remove-payload-row {
+            min-height: 34px;
+            padding: 0 10px;
+            background: #fff1f2;
+            color: #b91c1c;
+            border: 1px solid #fecdd3;
+        }
+
         .payload-preview {
             width: 100%;
             height: 120px;
@@ -1603,7 +1707,7 @@ $heroSlides = array_values(array_unique($heroSlides));
 
         .site-footer {
             padding: 24px 0;
-            background: #0f1f35;
+            background: #063f28;
             color: rgba(255, 255, 255, 0.72);
         }
 
@@ -1731,7 +1835,7 @@ $heroSlides = array_values(array_unique($heroSlides));
             right: 0;
             bottom: -10px;
             height: 2px;
-            background: #2e7eed;
+            background: #198754;
             transform: scaleX(0);
             transition: transform 0.2s ease;
         }
@@ -1743,8 +1847,8 @@ $heroSlides = array_values(array_unique($heroSlides));
         .login-link,
         .btn-primary,
         .modal-save {
-            background: #2e7eed;
-            border-color: #2e7eed;
+            background: #198754;
+            border-color: #198754;
             color: #fff;
         }
 
@@ -1818,7 +1922,7 @@ $heroSlides = array_values(array_unique($heroSlides));
 
         .btn-ghost {
             background: #fff;
-            color: #2e7eed;
+            color: #198754;
             border-color: #fff;
         }
 
@@ -1979,7 +2083,7 @@ $heroSlides = array_values(array_unique($heroSlides));
             position: static;
             width: fit-content;
             margin-bottom: 12px;
-            background: #2e7eed !important;
+            background: #198754 !important;
         }
 
         .program-body {
@@ -2031,7 +2135,7 @@ $heroSlides = array_values(array_unique($heroSlides));
         }
 
         .cta {
-            background: #2e7eed;
+            background: #198754;
             color: #fff;
             text-align: center;
         }
@@ -2049,7 +2153,7 @@ $heroSlides = array_values(array_unique($heroSlides));
             margin-top: 24px;
             background: #fff;
             border-color: #fff;
-            color: #2e7eed;
+            color: #198754;
         }
 
         .site-footer {
@@ -2203,13 +2307,13 @@ $heroSlides = array_values(array_unique($heroSlides));
         .feature-list li {
             display: flex;
             gap: 10px;
-            color: #334155;
+            color: #315c47;
             font-weight: 700;
         }
 
         .feature-list i {
             margin-top: 5px;
-            color: #2e7eed;
+            color: #198754;
         }
 
         .service-layout {
@@ -2266,7 +2370,7 @@ $heroSlides = array_values(array_unique($heroSlides));
         .service-item i {
             display: block;
             margin-bottom: 16px;
-            color: #2e7eed;
+            color: #198754;
             font-size: 2rem;
         }
 
@@ -2316,7 +2420,7 @@ $heroSlides = array_values(array_unique($heroSlides));
         .activity-picture-body span {
             display: inline-flex;
             margin-bottom: 10px;
-            color: #2e7eed;
+            color: #198754;
             font-size: 0.76rem;
             font-weight: 900;
             letter-spacing: 0.08em;
@@ -2335,6 +2439,16 @@ $heroSlides = array_values(array_unique($heroSlides));
             color: #808080;
             font-size: 0.94rem;
             line-height: 1.65;
+        }
+
+        .activity-detail-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            color: #198754;
+            font-size: 0.84rem;
+            font-weight: 900;
         }
 
         .hero-featured-panel,
@@ -2460,18 +2574,18 @@ $heroSlides = array_values(array_unique($heroSlides));
         <section class="app-feature" id="programs">
             <div class="feature-row">
                 <div class="feature-media">
-                    <img src="<?php echo e($primaryComponent['hero_image']); ?>" alt="<?php echo e($primaryComponent['title']); ?>">
+                    <img src="<?php echo e($primaryProgram['image'] ?? ''); ?>" alt="<?php echo e($primaryProgram['title'] ?? 'CWTS'); ?>">
                 </div>
                 <div class="feature-copy">
                     <?php renderSectionEditButton('programs', $landingSections['programs'], $canEditLanding); ?>
-                    <h2><?php echo e($primaryComponent['title']); ?></h2>
-                    <p><?php echo e($primaryComponent['summary']); ?></p>
+                    <h2><?php echo e($primaryProgram['title'] ?? 'Civic Welfare Training Service'); ?></h2>
+                    <p><?php echo e($primaryProgram['focus'] ?? ''); ?></p>
                     <ul class="feature-list">
-                        <?php foreach (array_slice($primaryComponent['highlights'], 0, 3) as $highlight): ?>
+                        <?php foreach (array_filter([$primaryProgram['best_for'] ?? '', $primaryProgram['output'] ?? '']) as $highlight): ?>
                             <li><i class="fas fa-check-circle"></i><span><?php echo e($highlight); ?></span></li>
                         <?php endforeach; ?>
                     </ul>
-                    <a class="program-link" href="component-detail.php?component=<?php echo e($primaryComponent['name']); ?>">
+                    <a class="program-link" href="component-detail.php?component=<?php echo e(strtoupper((string) ($primaryProgram['name'] ?? 'CWTS'))); ?>">
                         View component details <i class="fas fa-arrow-right"></i>
                     </a>
                 </div>
@@ -2481,17 +2595,17 @@ $heroSlides = array_values(array_unique($heroSlides));
         <section class="app-feature">
             <div class="feature-row reverse">
                 <div class="feature-media">
-                    <img src="<?php echo e($secondaryComponent['hero_image']); ?>" alt="<?php echo e($secondaryComponent['title']); ?>">
+                    <img src="<?php echo e($secondaryProgram['image'] ?? ''); ?>" alt="<?php echo e($secondaryProgram['title'] ?? 'LTS'); ?>">
                 </div>
                 <div class="feature-copy">
-                    <h2><?php echo e($secondaryComponent['title']); ?></h2>
-                    <p><?php echo e($secondaryComponent['summary']); ?></p>
+                    <h2><?php echo e($secondaryProgram['title'] ?? 'Literacy Training Service'); ?></h2>
+                    <p><?php echo e($secondaryProgram['focus'] ?? ''); ?></p>
                     <ul class="feature-list">
-                        <?php foreach (array_slice($secondaryComponent['highlights'], 0, 3) as $highlight): ?>
+                        <?php foreach (array_filter([$secondaryProgram['best_for'] ?? '', $secondaryProgram['output'] ?? '']) as $highlight): ?>
                             <li><i class="fas fa-check-circle"></i><span><?php echo e($highlight); ?></span></li>
                         <?php endforeach; ?>
                     </ul>
-                    <a class="program-link" href="component-detail.php?component=<?php echo e($secondaryComponent['name']); ?>">
+                    <a class="program-link" href="component-detail.php?component=<?php echo e(strtoupper((string) ($secondaryProgram['name'] ?? 'LTS'))); ?>">
                         View component details <i class="fas fa-arrow-right"></i>
                     </a>
                 </div>
@@ -2501,17 +2615,17 @@ $heroSlides = array_values(array_unique($heroSlides));
         <section class="app-feature">
             <div class="feature-row">
                 <div class="feature-media">
-                    <img src="<?php echo e($serviceComponent['hero_image']); ?>" alt="<?php echo e($serviceComponent['title']); ?>">
+                    <img src="<?php echo e($serviceProgram['image'] ?? ''); ?>" alt="<?php echo e($serviceProgram['title'] ?? 'ROTC'); ?>">
                 </div>
                 <div class="feature-copy">
-                    <h2><?php echo e($serviceComponent['title']); ?></h2>
-                    <p><?php echo e($serviceComponent['summary']); ?></p>
+                    <h2><?php echo e($serviceProgram['title'] ?? 'Reserve Officers Training Corps'); ?></h2>
+                    <p><?php echo e($serviceProgram['focus'] ?? ''); ?></p>
                     <ul class="feature-list">
-                        <?php foreach (array_slice($serviceComponent['highlights'], 0, 3) as $highlight): ?>
+                        <?php foreach (array_filter([$serviceProgram['best_for'] ?? '', $serviceProgram['output'] ?? '']) as $highlight): ?>
                             <li><i class="fas fa-check-circle"></i><span><?php echo e($highlight); ?></span></li>
                         <?php endforeach; ?>
                     </ul>
-                    <a class="program-link" href="component-detail.php?component=<?php echo e($serviceComponent['name']); ?>">
+                    <a class="program-link" href="component-detail.php?component=<?php echo e(strtoupper((string) ($serviceProgram['name'] ?? 'ROTC'))); ?>">
                         View component details <i class="fas fa-arrow-right"></i>
                     </a>
                 </div>
@@ -2589,26 +2703,29 @@ $heroSlides = array_values(array_unique($heroSlides));
             </div>
         </section>
 
-        <section class="service-layout app-feature" aria-labelledby="service-title">
+        <section class="service-layout app-feature" aria-labelledby="gallery-title">
             <div class="service-shell">
                 <div class="service-title">
                     <?php renderSectionEditButton('activities', $landingSections['activities'], $canEditLanding); ?>
-                    <h2 id="service-title">National Service Training Program Activities</h2>
-                    <p>Each component builds service, leadership, and citizenship through a different learning experience.</p>
+                    <h2 id="gallery-title"><?php echo e($landingSections['activities']['title']); ?></h2>
+                    <p><?php echo e($landingSections['activities']['body']); ?></p>
                 </div>
 
                 <div class="activity-picture-grid">
-                    <?php foreach ($componentDetails as $componentKey => $details): ?>
-                        <?php foreach ($details['activities'] as $activity): ?>
-                            <a class="activity-picture-card" href="component-detail.php?component=<?php echo e($componentKey); ?>">
-                                <img src="<?php echo e($activity['image']); ?>" alt="<?php echo e($activity['title']); ?>">
-                                <div class="activity-picture-body">
-                                    <span><?php echo e($componentKey); ?> / <?php echo e($activity['label']); ?></span>
-                                    <h3><?php echo e($activity['title']); ?></h3>
-                                    <p><?php echo e($activity['detail']); ?></p>
-                                </div>
-                            </a>
-                        <?php endforeach; ?>
+                    <?php foreach ($gallery as $activity): ?>
+                        <article class="activity-picture-card">
+                            <img src="<?php echo e($activity['image'] ?? ''); ?>" alt="<?php echo e($activity['title'] ?? 'NSTP activity'); ?>">
+                            <div class="activity-picture-body">
+                                <span><?php echo e($activity['label'] ?? 'NSTP'); ?></span>
+                                <h3><?php echo e($activity['title'] ?? 'NSTP Activity'); ?></h3>
+                                <p><?php echo e($activity['detail'] ?? $landingSections['activities']['body']); ?></p>
+                                <?php if (!empty($activity['component'])): ?>
+                                    <a class="activity-detail-link" href="component-detail.php?component=<?php echo e($activity['component']); ?>">
+                                        View component details <i class="fas fa-arrow-right"></i>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                        </article>
                     <?php endforeach; ?>
                 </div>
             </div>
@@ -2700,6 +2817,10 @@ $heroSlides = array_values(array_unique($heroSlides));
                                             <input type="text" name="hero_secondary_label" id="heroSecondaryLabel">
                                         </div>
                                     </div>
+                                    <div class="payload-list hero-image-list" id="heroImageList"></div>
+                                    <button type="button" class="modal-action add-payload-row" id="addHeroImageBtn">
+                                        <i class="fas fa-plus"></i> Add Hero Image
+                                    </button>
                                 </div>
 
                                 <div class="payload-panel" data-payload-panel="quick_guide">
@@ -2916,11 +3037,11 @@ $heroSlides = array_values(array_unique($heroSlides));
             <div class="cta-inner">
                 <div>
                     <?php renderSectionEditButton('cta', $landingSections['cta'], $canEditLanding); ?>
-                    <h2>National Service Training Program</h2>
-                    <p>Learn the components, explore service activities, and connect with the NSTP office.</p>
+                    <h2><?php echo e($landingSections['cta']['title']); ?></h2>
+                    <p><?php echo e($landingSections['cta']['body']); ?></p>
                 </div>
                 <a class="btn btn-primary" href="<?php echo $isLoggedIn ? 'index.php' : 'login.php'; ?>">
-                    <i class="fas fa-arrow-right"></i> <?php echo e($isLoggedIn ? 'Open Dashboard' : 'National Service Training Program'); ?>
+                    <i class="fas fa-arrow-right"></i> <?php echo e($isLoggedIn ? ($ctaPayload['logged_in_label'] ?? 'Open Dashboard') : ($ctaPayload['guest_label'] ?? 'Open NSTP System')); ?>
                 </a>
             </div>
         </section>
@@ -2997,6 +3118,74 @@ $heroSlides = array_values(array_unique($heroSlides));
                     }
                 }
 
+                function renumberHeroImageRows() {
+                    document.querySelectorAll('#heroImageList .payload-item').forEach(function (item, index) {
+                        item.querySelector('h4').textContent = 'Hero Image ' + (index + 1);
+                    });
+                }
+
+                function addHeroImageRow(item) {
+                    const list = document.getElementById('heroImageList');
+                    if (!list) {
+                        return;
+                    }
+
+                    const row = document.createElement('div');
+                    row.className = 'payload-item';
+                    row.innerHTML = `
+                        <div class="payload-item-head">
+                            <h4>Hero Image</h4>
+                            <button type="button" class="modal-action remove-payload-row">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                        <div class="field">
+                            <label>Upload Picture</label>
+                            <input type="file" name="hero_image_upload[]" accept="image/*">
+                            <input type="hidden" name="hero_image_existing[]" value="">
+                        </div>
+                        <div class="field">
+                            <label>Alt Text</label>
+                            <input type="text" name="hero_image_alt[]" value="">
+                        </div>
+                        <div class="field full">
+                            <img class="payload-preview" alt="">
+                        </div>
+                    `;
+
+                    const existingInput = row.querySelector('input[name="hero_image_existing[]"]');
+                    const altInput = row.querySelector('input[name="hero_image_alt[]"]');
+                    const preview = row.querySelector('.payload-preview');
+                    const image = item && typeof item === 'object' ? (item.image || '') : (item || '');
+
+                    existingInput.value = image;
+                    altInput.value = item && typeof item === 'object' ? (item.alt || '') : '';
+                    preview.src = image;
+                    preview.style.display = image ? 'block' : 'none';
+
+                    row.querySelector('.remove-payload-row').addEventListener('click', function () {
+                        row.remove();
+                        renumberHeroImageRows();
+                    });
+
+                    list.appendChild(row);
+                    renumberHeroImageRows();
+                }
+
+                function renderHeroImages(payload) {
+                    const list = document.getElementById('heroImageList');
+                    if (!list) {
+                        return;
+                    }
+
+                    list.innerHTML = '';
+                    const images = payload && Array.isArray(payload.images) ? payload.images : [];
+                    images.forEach(addHeroImageRow);
+                    if (!images.length) {
+                        addHeroImageRow({});
+                    }
+                }
+
                 function showPayloadPanel(sectionKey, payload) {
                     document.querySelectorAll('.payload-panel').forEach(function (panel) {
                         panel.classList.toggle('is-active', panel.dataset.payloadPanel === sectionKey);
@@ -3016,6 +3205,9 @@ $heroSlides = array_values(array_unique($heroSlides));
                     if (sectionKey === 'hero' && payload) {
                         document.getElementById('heroPrimaryLabel').value = payload.primary_label || '';
                         document.getElementById('heroSecondaryLabel').value = payload.secondary_label || '';
+                        renderHeroImages(payload);
+                    } else {
+                        renderHeroImages(null);
                     }
 
                     if (sectionKey === 'quick_guide' && Array.isArray(payload)) {
@@ -3103,6 +3295,10 @@ $heroSlides = array_values(array_unique($heroSlides));
 
                 document.getElementById('addLandingEntryBtn')?.addEventListener('click', function () {
                     openModal('add', {});
+                });
+
+                document.getElementById('addHeroImageBtn')?.addEventListener('click', function () {
+                    addHeroImageRow({});
                 });
 
                 document.querySelectorAll('.section-edit-btn').forEach(function (button) {

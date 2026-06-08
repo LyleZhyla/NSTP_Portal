@@ -83,6 +83,7 @@ function getDefaultLandingSections() {
             'payload' => [
                 'primary_label' => 'View Programs',
                 'secondary_label' => 'Meet Staff',
+                'images' => [],
             ],
         ],
         'quick_guide' => [
@@ -117,7 +118,7 @@ function getDefaultLandingSections() {
         ],
         'activities' => [
             'kicker' => 'Activities',
-            'title' => 'NSTP learning happens beyond the attendance scan.',
+            'title' => 'NSTP learning happens through service, education, and leadership.',
             'body' => 'These visual themes show the kind of work students encounter across service, education, and leadership activities.',
             'payload' => [
                 ['title' => 'Community Work', 'label' => 'Service', 'image' => 'https://images.unsplash.com/photo-1593113598332-cd288d649433?auto=format&fit=crop&w=800&q=80'],
@@ -133,9 +134,9 @@ function getDefaultLandingSections() {
         'cta' => [
             'kicker' => '',
             'title' => 'Ready to manage NSTP attendance?',
-            'body' => 'Staff can sign in to scan QR codes, view attendance, and manage student records.',
+            'body' => 'Staff can sign in to manage NSTP records, activities, attendance, and student information.',
             'payload' => [
-                'guest_label' => 'Open QR Attendance System',
+                'guest_label' => 'Open National Service Training Program',
                 'logged_in_label' => 'Open Dashboard',
             ],
         ],

@@ -738,7 +738,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Grades · TAU NSTP QR Attendance System</title>
+    <title>Grades · TAU NSTP National Service Training Program</title>
     <?php echo getFaviconTags(); ?>
     <link rel="icon" type="image/png" href="include/logo.png">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">

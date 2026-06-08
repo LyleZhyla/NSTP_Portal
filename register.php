@@ -96,7 +96,7 @@ if (isset($_SESSION['user_id'])) {
             font-size: 2rem;
             font-weight: 800;
             letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.3rem;
@@ -112,7 +112,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .nstp-badge {
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             color: white;
             padding: 0.4rem 1.2rem;
             border-radius: 50px;
@@ -199,7 +199,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .input-group:focus-within {
-            border-color: #3498db;
+            border-color: #198754;
             box-shadow: 0 8px 18px rgba(52, 152, 219, 0.2);
             background: white;
         }
@@ -207,7 +207,7 @@ if (isset($_SESSION['user_id'])) {
         .input-group-text {
             background: white;
             border: none;
-            color: #2c3e50;
+            color: #0f5132;
             padding: 0.85rem 1rem 0.85rem 1.5rem;
             font-size: 1rem;
             border-radius: 50px 0 0 50px;
@@ -218,7 +218,7 @@ if (isset($_SESSION['user_id'])) {
             padding: 0.85rem 1rem 0.85rem 0.2rem;
             font-size: 0.95rem;
             font-weight: 400;
-            color: #2c3e50;
+            color: #0f5132;
             background: white;
             border-radius: 0 50px 50px 0;
         }
@@ -238,7 +238,7 @@ if (isset($_SESSION['user_id'])) {
         .password-toggle {
             background: white;
             border: none;
-            color: #3498db;
+            color: #198754;
             padding: 0 1.2rem;
             display: flex;
             align-items: center;
@@ -249,7 +249,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .password-toggle:hover {
-            color: #2c3e50;
+            color: #0f5132;
             background: #ecf6fa;
         }
 
@@ -310,7 +310,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .btn-register {
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             border: none;
             padding: 0.85rem 1.8rem;
             font-size: 0.95rem;
@@ -332,7 +332,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .btn-register:hover {
-            background: linear-gradient(135deg, #3498db, #2c3e50);
+            background: linear-gradient(135deg, #198754, #0f5132);
             transform: translateY(-3px);
             box-shadow: 0 16px 28px rgba(44,62,80,0.3);
         }
@@ -351,7 +351,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .login-link a {
-            color: #2c3e50;
+            color: #0f5132;
             text-decoration: none;
             font-size: 0.88rem;
             font-weight: 600;
@@ -368,8 +368,8 @@ if (isset($_SESSION['user_id'])) {
 
         .login-link a:hover {
             background: white;
-            border-color: #3498db;
-            color: #2c3e50;
+            border-color: #198754;
+            color: #0f5132;
         }
 
         /* ALERTS */
@@ -429,7 +429,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .footer-credit i {
-            color: #3498db;
+            color: #198754;
         }
 
         /* RESPONSIVE */
@@ -449,7 +449,43 @@ if (isset($_SESSION['user_id'])) {
         .form-control:-webkit-autofill,
         .form-control:-webkit-autofill:focus {
             -webkit-box-shadow: 0 0 0 100px white inset;
-            -webkit-text-fill-color: #2c3e50;
+            -webkit-text-fill-color: #0f5132;
+        }
+        /* NSTP green uniform override */
+        body {
+            background: linear-gradient(145deg, #0f5132 0%, #198754 100%) !important;
+        }
+        .right-panel {
+            background: linear-gradient(165deg, #e8f6ee, #cce8d6) !important;
+        }
+        .nstp-brand,
+        .logo-text {
+            background: linear-gradient(135deg, #0f5132, #198754) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+        }
+        .nstp-badge,
+        .register-btn,
+        .btn-primary {
+            background: linear-gradient(135deg, #0f5132, #198754) !important;
+            border-color: #198754 !important;
+        }
+        .input-group:focus-within,
+        .form-control:focus,
+        .btn-outline-primary {
+            border-color: #198754 !important;
+            box-shadow: 0 8px 18px rgba(25, 135, 84, 0.18) !important;
+        }
+        .input-group-text,
+        .password-toggle,
+        .footer-credit i,
+        .login-link {
+            color: #198754 !important;
+        }
+        .footer-credit span,
+        .left-tagline,
+        .right-panel h3 {
+            color: #0f5132 !important;
         }
     </style>
 </head>
@@ -475,7 +511,7 @@ if (isset($_SESSION['user_id'])) {
                 </div>
                 
                 <div class="left-tagline">
-                    <i class="fas fa-qrcode me-2"></i> QR Attendance System
+                    <i class="fas fa-leaf me-2"></i> National Service Training Program
                 </div>
             </div>
         </div>
@@ -561,7 +597,7 @@ if (isset($_SESSION['user_id'])) {
             <div class="footer-credit">
                 <i class="fas fa-qrcode"></i> TAU-NSTP · v2.1
                 <span style="color:#679aa5;">•</span>
-                <span style="color: #2c3e50;">QR Attendance</span>
+                <span style="color: #0f5132;">National Service Training Program</span>
             </div>
         </div>
     </div>
@@ -585,7 +621,7 @@ if (isset($_SESSION['user_id'])) {
                     toggleIcon.classList.toggle('fa-eye');
                     toggleIcon.classList.toggle('fa-eye-slash');
                     
-                    this.style.color = type === 'text' ? '#3498db' : '#568e9c';
+                    this.style.color = type === 'text' ? '#198754' : '#5f7469';
                 });
             }
 
@@ -601,7 +637,7 @@ if (isset($_SESSION['user_id'])) {
                     toggleConfirmIcon.classList.toggle('fa-eye');
                     toggleConfirmIcon.classList.toggle('fa-eye-slash');
                     
-                    this.style.color = type === 'text' ? '#3498db' : '#568e9c';
+                    this.style.color = type === 'text' ? '#198754' : '#5f7469';
                 });
             }
 
@@ -760,7 +796,7 @@ if (isset($_SESSION['user_id'])) {
 
             // Input focus effects
             $('.form-control').on('focus', function() {
-                $(this).closest('.input-group').css('border-color', '#3498db');
+                $(this).closest('.input-group').css('border-color', '#198754');
             }).on('blur', function() {
                 $(this).closest('.input-group').css('border-color', '#7faebb');
             });

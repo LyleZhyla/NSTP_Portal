@@ -11,6 +11,7 @@ if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
 }
 
 ensureLandingStaffTable($conn);
+ensureLandingSectionsTable($conn);
 
 $message = '';
 $messageType = 'success';
@@ -76,7 +77,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = $_POST['action'] ?? '';
 
-        if ($action === 'add' || $action === 'update') {
+        if ($action === 'section_update') {
+            saveLandingSection($conn, [
+                'section_key' => $_POST['section_key'] ?? '',
+                'kicker' => $_POST['section_kicker'] ?? '',
+                'title' => $_POST['section_title'] ?? '',
+                'body' => $_POST['section_body'] ?? '',
+                'payload' => $_POST['section_payload'] ?? '',
+            ], $_SESSION['user_id'] ?? null);
+            $message = 'Landing section updated.';
+        } elseif ($action === 'add' || $action === 'update') {
             $fullName = cleanLandingText($_POST['full_name'] ?? '', 150);
             $positionTitle = cleanLandingText($_POST['position_title'] ?? '', 150);
             $program = normalizeLandingProgram($_POST['program'] ?? 'NSTP');
@@ -159,6 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$landingSections = getLandingSections($conn);
 $staffEntries = getLandingStaff($conn, false);
 ?>
 <!DOCTYPE html>
@@ -230,6 +241,65 @@ $staffEntries = getLandingStaff($conn, false);
                         </button>
                     </div>
                 <?php endif; ?>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-layer-group mr-2"></i>Landing Sections</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="accordion" id="landingSectionAccordion">
+                            <?php foreach ($landingSections as $sectionKey => $section): ?>
+                                <?php
+                                    $sectionId = 'landingSection' . preg_replace('/[^a-zA-Z0-9]/', '', $sectionKey);
+                                    $payloadJson = isset($section['payload']) ? json_encode($section['payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
+                                ?>
+                                <div class="card mb-2">
+                                    <div class="card-header p-0" id="<?php echo htmlspecialchars($sectionId); ?>Header">
+                                        <button class="btn btn-link btn-block text-left px-3 py-2" type="button" data-toggle="collapse" data-target="#<?php echo htmlspecialchars($sectionId); ?>" aria-expanded="<?php echo $sectionKey === 'hero' ? 'true' : 'false'; ?>">
+                                            <strong><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $sectionKey))); ?></strong>
+                                            <span class="text-muted ml-2"><?php echo htmlspecialchars($section['title'] ?? ''); ?></span>
+                                        </button>
+                                    </div>
+                                    <div id="<?php echo htmlspecialchars($sectionId); ?>" class="collapse <?php echo $sectionKey === 'hero' ? 'show' : ''; ?>" data-parent="#landingSectionAccordion">
+                                        <form method="POST">
+                                            <input type="hidden" name="action" value="section_update">
+                                            <input type="hidden" name="section_key" value="<?php echo htmlspecialchars($sectionKey); ?>">
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-md-3">
+                                                        <div class="form-group">
+                                                            <label>Kicker / Small Label</label>
+                                                            <input type="text" name="section_kicker" class="form-control" value="<?php echo htmlspecialchars($section['kicker'] ?? ''); ?>">
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-9">
+                                                        <div class="form-group">
+                                                            <label>Title</label>
+                                                            <input type="text" name="section_title" class="form-control" value="<?php echo htmlspecialchars($section['title'] ?? ''); ?>" required>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Body Text</label>
+                                                    <textarea name="section_body" class="form-control" rows="3"><?php echo htmlspecialchars($section['body'] ?? ''); ?></textarea>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Payload JSON</label>
+                                                    <textarea name="section_payload" class="form-control" rows="<?php echo $sectionKey === 'hero' ? 8 : 10; ?>" spellcheck="false"><?php echo htmlspecialchars($payloadJson); ?></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="card-footer text-right">
+                                                <button type="submit" class="btn btn-success">
+                                                    <i class="fas fa-save mr-1"></i> Save Section
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="card">
                     <div class="card-header">

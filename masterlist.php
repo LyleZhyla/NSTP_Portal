@@ -578,7 +578,7 @@ if ($user_role === 'super_admin') {
         }
         
         .multiple-sections-container {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             padding: 12px 14px;
             border-radius: 8px;
             border: 0;
@@ -879,7 +879,7 @@ if ($user_role === 'super_admin') {
         }
         
         .admin-folder-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             color: white;
             padding: 15px 20px;
             cursor: pointer;
@@ -964,7 +964,7 @@ if ($user_role === 'super_admin') {
         }
         
         .search-box input:focus {
-            border-color: #667eea;
+            border-color: #198754;
             box-shadow: none;
         }
         
@@ -979,9 +979,9 @@ if ($user_role === 'super_admin') {
         }
         
         .admin-filter .btn.active {
-            background: #667eea;
+            background: #198754;
             color: white;
-            border-color: #667eea;
+            border-color: #198754;
         }
         
         .section-select-container {
@@ -1002,12 +1002,12 @@ if ($user_role === 'super_admin') {
         }
         
         .section-option:hover {
-            border-color: #667eea;
+            border-color: #198754;
             background: #f0f2ff;
         }
         
         .section-option.selected {
-            border-color: #667eea;
+            border-color: #198754;
             background: #e8eaff;
             position: relative;
         }
@@ -1018,7 +1018,7 @@ if ($user_role === 'super_admin') {
             right: 15px;
             top: 50%;
             transform: translateY(-50%);
-            color: #667eea;
+            color: #198754;
             font-weight: bold;
         }
         

@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $buttonHtml = renderEmailButton('Reset Your Password', $reset_link);
                     $bodyHtml = <<<HTML
 <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
-<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">We received a request to reset your password for the TAU NSTP QR Attendance System.</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">We received a request to reset your password for the National Service Training Program.</p>
 {$buttonHtml}
 <p style="margin:0 0 14px;font-size:15px;line-height:1.7;color:#42515c;">This link will expire in <strong>1 hour</strong>.</p>
 <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#667784;">If the button does not work, copy and paste this link into your browser:</p>
@@ -74,7 +74,7 @@ HTML;
                         . $reset_link . "\n\n"
                         . "This link will expire in 1 hour.\n"
                         . "If you did not request this, please ignore this email.\n\n"
-                        . "Best regards,\nTAU NSTP QR Attendance System";
+                        . "Best regards,\nNational Service Training Program";
 
                     if (sendAppMail($email, $user['full_name'], $subject, $htmlMessage, $textMessage)) {
                         $success = "Password reset link has been sent to your email.";
@@ -104,7 +104,7 @@ HTML;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forgot Password - TAU NSTP QR Attendance</title>
+    <title>Forgot Password - National Service Training Program</title>
     
     <!-- Google Fonts - Plus Jakarta Sans -->
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -190,7 +190,7 @@ HTML;
             font-size: 2rem;
             font-weight: 800;
             letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.3rem;
@@ -206,7 +206,7 @@ HTML;
         }
 
         .nstp-badge {
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             color: white;
             padding: 0.4rem 1.2rem;
             border-radius: 50px;
@@ -293,7 +293,7 @@ HTML;
         }
 
         .input-group:focus-within {
-            border-color: #3498db;
+            border-color: #198754;
             box-shadow: 0 8px 18px rgba(52, 152, 219, 0.2);
             background: white;
         }
@@ -301,7 +301,7 @@ HTML;
         .input-group-text {
             background: white;
             border: none;
-            color: #2c3e50;
+            color: #0f5132;
             padding: 0.95rem 1rem 0.95rem 1.5rem;
             font-size: 1rem;
             border-radius: 50px 0 0 50px;
@@ -312,7 +312,7 @@ HTML;
             padding: 0.95rem 1rem 0.95rem 0.2rem;
             font-size: 0.98rem;
             font-weight: 400;
-            color: #2c3e50;
+            color: #0f5132;
             background: white;
             border-radius: 0 50px 50px 0;
         }
@@ -341,12 +341,12 @@ HTML;
         }
 
         .info-text i {
-            color: #3498db;
+            color: #198754;
             margin-right: 0.4rem;
         }
 
         .btn-reset {
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             border: none;
             padding: 0.95rem 1.8rem;
             font-size: 0.95rem;
@@ -368,7 +368,7 @@ HTML;
         }
 
         .btn-reset:hover {
-            background: linear-gradient(135deg, #3498db, #2c3e50);
+            background: linear-gradient(135deg, #198754, #0f5132);
             transform: translateY(-3px);
             box-shadow: 0 16px 28px rgba(44,62,80,0.3);
         }
@@ -387,7 +387,7 @@ HTML;
         }
 
         .back-link a {
-            color: #2c3e50;
+            color: #0f5132;
             text-decoration: none;
             font-size: 0.88rem;
             font-weight: 600;
@@ -404,8 +404,8 @@ HTML;
 
         .back-link a:hover {
             background: white;
-            border-color: #3498db;
-            color: #2c3e50;
+            border-color: #198754;
+            color: #0f5132;
         }
 
         /* ALERTS */
@@ -465,7 +465,7 @@ HTML;
         }
 
         .footer-credit i {
-            color: #3498db;
+            color: #198754;
         }
 
         /* RESPONSIVE */
@@ -485,7 +485,7 @@ HTML;
         .form-control:-webkit-autofill,
         .form-control:-webkit-autofill:focus {
             -webkit-box-shadow: 0 0 0 100px white inset;
-            -webkit-text-fill-color: #2c3e50;
+            -webkit-text-fill-color: #0f5132;
         }
 
         /* Test link styling */
@@ -500,6 +500,41 @@ HTML;
         .test-link a {
             color: #266155;
             text-decoration: underline;
+        }
+        /* NSTP green uniform override */
+        body {
+            background: linear-gradient(145deg, #0f5132 0%, #198754 100%) !important;
+        }
+        .right-panel {
+            background: linear-gradient(165deg, #e8f6ee, #cce8d6) !important;
+        }
+        .nstp-brand,
+        .logo-text {
+            background: linear-gradient(135deg, #0f5132, #198754) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+        }
+        .nstp-badge,
+        .reset-btn,
+        .btn-primary {
+            background: linear-gradient(135deg, #0f5132, #198754) !important;
+            border-color: #198754 !important;
+        }
+        .input-group:focus-within,
+        .form-control:focus,
+        .btn-outline-primary {
+            border-color: #198754 !important;
+            box-shadow: 0 8px 18px rgba(25, 135, 84, 0.18) !important;
+        }
+        .input-group-text,
+        .footer-credit i,
+        .login-link {
+            color: #198754 !important;
+        }
+        .footer-credit span,
+        .left-tagline,
+        .right-panel h3 {
+            color: #0f5132 !important;
         }
     </style>
 </head>
@@ -525,7 +560,7 @@ HTML;
                 </div>
                 
                 <div class="left-tagline">
-                    <i class="fas fa-qrcode me-2"></i> QR Attendance System
+                    <i class="fas fa-leaf me-2"></i> National Service Training Program
                 </div>
             </div>
         </div>
@@ -598,7 +633,7 @@ HTML;
             <div class="footer-credit">
                 <i class="fas fa-qrcode"></i> TAU-NSTP · v2.1
                 <span style="color:#679aa5;">•</span>
-                <span style="color: #2c3e50;">QR Attendance</span>
+                <span style="color: #0f5132;">National Service Training Program</span>
             </div>
         </div>
     </div>
@@ -653,7 +688,7 @@ HTML;
 
             // Input focus effects
             $('.form-control').on('focus', function() {
-                $(this).closest('.input-group').css('border-color', '#3498db');
+                $(this).closest('.input-group').css('border-color', '#198754');
             }).on('blur', function() {
                 $(this).closest('.input-group').css('border-color', '#7faebb');
             });

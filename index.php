@@ -155,7 +155,7 @@ if ($currentUserRole === 'super_admin') {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dashboard · TAU NSTP QR Attendance System</title>
+    <title>Dashboard · TAU NSTP National Service Training Program</title>
     
     <?php echo getFaviconTags(); ?>
     
@@ -173,7 +173,7 @@ if ($currentUserRole === 'super_admin') {
     <style>
         .small-box { border-radius: 10px; }
         .manila-time-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             color: white;
             border-radius: 10px;
             padding: 8px 15px;
@@ -237,7 +237,7 @@ if ($currentUserRole === 'super_admin') {
             background: rgba(52, 152, 219, 0.08);
             padding: 5px 15px;
             border-radius: 50px;
-            border: 1px dashed #3498db;
+            border: 1px dashed #198754;
             box-shadow: 0 2px 8px rgba(52, 152, 219, 0.1);
         }
         
@@ -248,7 +248,7 @@ if ($currentUserRole === 'super_admin') {
             padding-right: 12px;
             margin-right: 5px;
             border-right: 2px solid #cbd5e0;
-            color: #2c3e50;
+            color: #0f5132;
             font-size: 0.85rem;
             font-weight: 700;
             text-transform: uppercase;
@@ -284,7 +284,7 @@ if ($currentUserRole === 'super_admin') {
             width: 42px;
             height: 42px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #3498db, #2c3e50);
+            background: linear-gradient(135deg, #198754, #0f5132);
             color: white;
             transition: all 0.3s ease;
             text-decoration: none !important;
@@ -298,7 +298,7 @@ if ($currentUserRole === 'super_admin') {
         .quick-action-icon:hover {
             transform: translateY(-5px) scale(1.08);
             box-shadow: 0 8px 20px rgba(52, 152, 219, 0.4);
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #0f5132, #198754);
             color: white;
         }
         
@@ -413,7 +413,7 @@ if ($currentUserRole === 'super_admin') {
                 background: rgba(52, 152, 219, 0.15);
                 padding: 6px 16px;
                 border-radius: 30px;
-                border: 1px solid #3498db;
+                border: 1px solid #198754;
             }
         }
         
@@ -481,7 +481,7 @@ if ($currentUserRole === 'super_admin') {
             <li class="nav-item d-none d-sm-inline-block ml-2">
                 <div class="d-flex align-items-center">
                     <img src="include/logo.png" alt="NSTP Logo" style="width: 30px; height: 30px; border-radius: 6px; margin-right: 8px;">
-                    <span style="font-weight: 600; color: #2c3e50; font-size: 14px;"> TAU NSTP</span>
+                    <span style="font-weight: 600; color: #0f5132; font-size: 14px;"> TAU NSTP</span>
                 </div>
             </li>
         </ul>
@@ -526,7 +526,7 @@ if ($currentUserRole === 'super_admin') {
                         <div class="header-container">
                             <!-- Dashboard Title with Icon -->
                             <h1 class="dashboard-title">
-                                <i class="fas fa-qrcode mr-2" style="color: #3498db;"></i> 
+                                <i class="fas fa-qrcode mr-2" style="color: #198754;"></i> 
                                 Dashboard
                             </h1>
                             
@@ -724,7 +724,7 @@ if ($currentUserRole === 'super_admin') {
                     <div class="col-lg-12">
                         <div class="card">
                             <div class="card-header">
-                                <h3 class="card-title"><i class="fas fa-history mr-2" style="color: #3498db;"></i> Recent Attendance Activity</h3>
+                                <h3 class="card-title"><i class="fas fa-history mr-2" style="color: #198754;"></i> Recent Attendance Activity</h3>
                                 <?php if ($currentUserRole === 'super_admin'): ?>
                                     <span class="badge badge-danger float-right">All Admins</span>
                                 <?php else: ?>

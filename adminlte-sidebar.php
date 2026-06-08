@@ -104,7 +104,7 @@ if (isset($_SESSION['user_id'])) {
                          alt="User Image"
                          style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%; border: 2px solid #fff;">
                 <?php else: ?>
-                    <div class="img-circle elevation-2" style="width: 40px; height: 40px; background: linear-gradient(135deg, #2c3e50, #3498db); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; border-radius: 50%; border: 2px solid #fff;">
+                    <div class="img-circle elevation-2" style="width: 40px; height: 40px; background: linear-gradient(135deg, #0f5132, #198754); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; border-radius: 50%; border: 2px solid #fff;">
                         <?php 
                         $initials = '';
                         if (isset($_SESSION['full_name'])) {
@@ -223,6 +223,12 @@ if (isset($_SESSION['user_id'])) {
                         <p>User Management</p>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="landing-content-manager.php" class="nav-link <?= ($currentPage == 'landing-content-manager.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-edit"></i>
+                        <p>Landing Content</p>
+                    </a>
+                </li>
                 <?php endif; ?>
 
                 <!-- Divider -->
@@ -290,12 +296,12 @@ if (isset($_SESSION['user_id'])) {
         align-items: center;
         padding: 15px 12px !important;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        background: linear-gradient(135deg, #2c3e50, #3498db);
+        background: linear-gradient(135deg, #0f5132, #198754);
         transition: all 0.3s ease;
     }
     
     .brand-link:hover {
-        background: linear-gradient(135deg, #3498db, #2c3e50);
+        background: linear-gradient(135deg, #198754, #0f5132);
     }
     
     .brand-image {
@@ -338,7 +344,7 @@ if (isset($_SESSION['user_id'])) {
     }
     
     .user-panel .info a:hover {
-        color: #3498db;
+        color: #198754;
     }
     
     .user-panel .info small {
@@ -358,11 +364,11 @@ if (isset($_SESSION['user_id'])) {
     .nav-sidebar .nav-item > .nav-link:hover {
         background: rgba(255, 255, 255, 0.1);
         color: white;
-        border-left-color: #3498db;
+        border-left-color: #198754;
     }
     
     .nav-sidebar .nav-item > .nav-link.active {
-        background: linear-gradient(135deg, #2c3e50, #3498db);
+        background: linear-gradient(135deg, #0f5132, #198754);
         color: white;
         border-left: 3px solid #ffc107;
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);

@@ -77,12 +77,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error) && isset($token_data)
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reset Password - QR Code Attendance System</title>
+    <title>Reset Password - National Service Training Program</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0f5132 0%, #198754 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error) && isset($token_data)
             }
         }
         .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0f5132 0%, #198754 100%);
             color: white;
             text-align: center;
             border-radius: 15px 15px 0 0 !important;
@@ -138,11 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error) && isset($token_data)
             transition: all 0.3s;
         }
         .form-control:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.1);
+            border-color: #198754;
+            box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.14);
         }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0f5132 0%, #198754 100%);
             border: none;
             height: 50px;
             border-radius: 10px;
@@ -152,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error) && isset($token_data)
         }
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 5px 20px rgba(25, 135, 84, 0.35);
         }
         .btn-primary:active {
             transform: translateY(0);

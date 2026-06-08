@@ -28,10 +28,10 @@ function e($value) {
             --muted: #637083;
             --line: #d8e0ea;
             --wash: #f4f8fb;
-            --blue: #2b6cb0;
-            --teal: #167a7f;
-            --gold: #b7791f;
-            --crimson: #b8323b;
+            --blue: #198754;
+            --teal: #16845f;
+            --gold: #8a9a22;
+            --crimson: #2f6f4e;
             --page-max: 1120px;
             --page-gutter: clamp(20px, 4vw, 48px);
         }
@@ -94,7 +94,7 @@ function e($value) {
             min-height: 40px;
             padding: 0 14px;
             border-radius: 6px;
-            background: var(--ink);
+            background: var(--blue);
             color: #fff;
             font-size: 0.9rem;
         }
@@ -106,7 +106,7 @@ function e($value) {
             padding: 132px 0 64px;
             color: #fff;
             background:
-                linear-gradient(90deg, rgba(10, 21, 38, 0.9), rgba(10, 21, 38, 0.58) 58%, rgba(10, 21, 38, 0.22)),
+                linear-gradient(90deg, rgba(5, 46, 22, 0.9), rgba(15, 81, 50, 0.62) 58%, rgba(21, 128, 61, 0.22)),
                 url('<?php echo e($component['hero_image']); ?>') center/cover;
         }
 
@@ -297,7 +297,7 @@ function e($value) {
 
         .footer {
             padding: 28px 0;
-            background: var(--ink);
+            background: #0f5132;
             color: rgba(255, 255, 255, 0.78);
             font-size: 0.9rem;
             font-weight: 700;
@@ -390,7 +390,7 @@ function e($value) {
     </main>
 
     <footer class="footer">
-        <div class="section-inner">TAU NSTP QR Attendance System</div>
+        <div class="section-inner">National Service Training Program</div>
     </footer>
 </body>
 </html>

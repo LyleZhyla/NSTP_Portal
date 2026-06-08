@@ -8,9 +8,9 @@ $height = 200;
 $image = imagecreatetruecolor($width, $height);
 
 // Colors - Matte color scheme
-$bg_color = imagecolorallocate($image, 44, 62, 80); // Dark blue-gray (#2c3e50)
+$bg_color = imagecolorallocate($image, 44, 62, 80); // Dark blue-gray (#0f5132)
 $text_color = imagecolorallocate($image, 255, 255, 255); // White
-$accent_color = imagecolorallocate($image, 52, 152, 219); // Light blue (#3498db)
+$accent_color = imagecolorallocate($image, 52, 152, 219); // Light blue (#198754)
 $border_color = imagecolorallocate($image, 41, 128, 185); // Darker blue
 
 // Fill background

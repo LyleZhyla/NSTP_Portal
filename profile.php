@@ -358,7 +358,7 @@ if (!empty($user['full_name'])) {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>My Profile - TAU NSTP QR Attendance System</title>
+    <title>My Profile - TAU NSTP National Service Training Program</title>
       <?php include('./include/theme-loader.php'); ?>
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="include/logo.png">
@@ -390,7 +390,7 @@ if (!empty($user['full_name'])) {
         }
         
         .profile-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             padding: 30px 20px;
             color: white;
             text-align: center;
@@ -433,7 +433,7 @@ if (!empty($user['full_name'])) {
             position: absolute;
             bottom: 5px;
             right: 5px;
-            background: #007bff;
+            background: #198754;
             color: white;
             border-radius: 50%;
             width: 36px;
@@ -485,7 +485,7 @@ if (!empty($user['full_name'])) {
         }
         
         .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             color: white;
             border-radius: 10px;
             padding: 20px 15px;
@@ -529,7 +529,7 @@ if (!empty($user['full_name'])) {
         }
         
         .info-title i {
-            color: #007bff;
+            color: #198754;
             margin-right: 8px;
         }
         
@@ -545,7 +545,7 @@ if (!empty($user['full_name'])) {
         
         .info-label i {
             width: 18px;
-            color: #007bff;
+            color: #198754;
         }
         
         .info-value {
@@ -587,13 +587,13 @@ if (!empty($user['full_name'])) {
         }
         
         .nav-tabs .nav-link.active {
-            color: #007bff;
+            color: #198754;
             background: transparent;
-            border-bottom: 3px solid #007bff;
+            border-bottom: 3px solid #198754;
         }
         
         .nav-tabs .nav-link:hover {
-            color: #007bff;
+            color: #198754;
             background: rgba(0,123,255,0.05);
         }
         
@@ -616,7 +616,7 @@ if (!empty($user['full_name'])) {
         }
         
         .form-control:focus {
-            border-color: #007bff;
+            border-color: #198754;
             box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.1);
         }
         
@@ -648,12 +648,12 @@ if (!empty($user['full_name'])) {
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
             border: none;
         }
         
         .btn-primary:hover {
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            background: linear-gradient(135deg, #0f5132 0%, #198754 100%);
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102,126,234,0.4);
         }
@@ -714,7 +714,7 @@ if (!empty($user['full_name'])) {
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            background: #007bff;
+            background: #198754;
             color: white;
             display: flex;
             align-items: center;
@@ -740,7 +740,7 @@ if (!empty($user['full_name'])) {
             display: inline-block;
             padding: 5px 15px;
             border-radius: 20px;
-            background: #007bff;
+            background: #198754;
             color: white;
             font-size: 0.9rem;
         }
@@ -807,7 +807,7 @@ if (!empty($user['full_name'])) {
         }
         
         body.dark-mode .section-badge {
-            background: #2c3e50;
+            background: #0f5132;
             color: #5faee3;
             border-left-color: #5faee3;
         }
