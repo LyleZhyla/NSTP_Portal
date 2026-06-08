@@ -54,7 +54,7 @@ if (isset($_SESSION['user_id'])) {
 <!-- Main Sidebar Container -->
 <aside class="main-sidebar sidebar-dark-primary elevation-4">
     <!-- Brand Logo - UPDATED WITH NSTP LOGO -->
-    <a href="index.php" class="brand-link">
+    <a href="landing_page.php" class="brand-link">
         <img src="include/logo.png" alt="NSTP Logo" class="brand-image" style="width: 35px; height: 35px; object-fit: contain; border-radius: 8px; border: 2px solid rgba(255,255,255,0.2); background: white; padding: 3px;">
         <span class="brand-text font-weight-bold">TAU NSTP </span>
         <span class="brand-text-sm font-weight-light d-block d-md-none ml-2" style="font-size: 12px;">NSTP</span>
@@ -221,12 +221,6 @@ if (isset($_SESSION['user_id'])) {
                     <a href="admin-management.php" class="nav-link <?= ($currentPage == 'admin-management.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-user-shield"></i>
                         <p>User Management</p>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="landing-content-manager.php" class="nav-link <?= ($currentPage == 'landing-content-manager.php') ? 'active' : '' ?>">
-                        <i class="nav-icon fas fa-edit"></i>
-                        <p>Landing Content</p>
                     </a>
                 </li>
                 <?php endif; ?>

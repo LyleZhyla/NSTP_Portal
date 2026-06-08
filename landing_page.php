@@ -237,7 +237,12 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
 
     if ($sectionKey === 'hero') {
         $images = [];
-        foreach (($post['hero_image_existing'] ?? []) as $index => $existingImage) {
+        $heroExisting = $post['hero_image_existing'] ?? [];
+        $heroAlt = $post['hero_image_alt'] ?? [];
+        $heroUploadNames = $files['hero_image_upload']['name'] ?? [];
+        $heroImageCount = max(count($heroExisting), count($heroAlt), count($heroUploadNames));
+
+        for ($index = 0; $index < $heroImageCount; $index++) {
             $image = arrayTextValue($post['hero_image_existing'] ?? [], $index, '', 255);
             if (!empty($files['hero_image_upload'])) {
                 $uploadedImage = uploadLandingSectionImage($files['hero_image_upload'], $index, $baseDir);
@@ -505,6 +510,7 @@ $primaryProgram = $programByName['CWTS'] ?? ($programs[0] ?? []);
 $secondaryProgram = $programByName['LTS'] ?? ($programs[1] ?? $primaryProgram);
 $serviceProgram = $programByName['ROTC'] ?? ($programs[2] ?? $primaryProgram);
 $heroSlides = [];
+$defaultHeroSlides = [];
 $heroImages = is_array($heroPayload['images'] ?? null) ? $heroPayload['images'] : [];
 foreach ($heroImages as $heroImage) {
     if (is_array($heroImage) && !empty($heroImage['image'])) {
@@ -514,23 +520,25 @@ foreach ($heroImages as $heroImage) {
     }
 }
 
-if (!$heroSlides) {
-    foreach ($componentDetails as $details) {
-        if (!empty($details['hero_image'])) {
-            $heroSlides[] = $details['hero_image'];
-        }
+foreach ($componentDetails as $details) {
+    if (!empty($details['hero_image'])) {
+        $defaultHeroSlides[] = $details['hero_image'];
+    }
 
-        foreach (($details['activities'] ?? []) as $activity) {
-            if (!empty($activity['image'])) {
-                $heroSlides[] = $activity['image'];
-            }
+    foreach (($details['activities'] ?? []) as $activity) {
+        if (!empty($activity['image'])) {
+            $defaultHeroSlides[] = $activity['image'];
         }
     }
-    foreach ($gallery as $galleryItem) {
-        if (!empty($galleryItem['image'])) {
-            $heroSlides[] = $galleryItem['image'];
-        }
+}
+foreach ($gallery as $galleryItem) {
+    if (!empty($galleryItem['image'])) {
+        $defaultHeroSlides[] = $galleryItem['image'];
     }
+}
+
+if (count($heroSlides) < 2) {
+    $heroSlides = array_merge($heroSlides, $defaultHeroSlides);
 }
 $heroSlides = array_values(array_unique($heroSlides));
 ?>
@@ -1895,6 +1903,40 @@ $heroSlides = array_values(array_unique($heroSlides));
             transform: scale(1);
         }
 
+        .hero-slider-controls {
+            position: absolute;
+            left: var(--page-gutter);
+            right: var(--page-gutter);
+            top: 50%;
+            z-index: 3;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            transform: translateY(-50%);
+        }
+
+        .hero-slider-btn {
+            width: 46px;
+            height: 46px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            border-radius: 999px;
+            background: rgba(20, 33, 61, 0.58);
+            color: #fff;
+            cursor: pointer;
+            pointer-events: auto;
+            backdrop-filter: blur(8px);
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .hero-slider-btn:hover,
+        .hero-slider-btn:focus-visible {
+            background: rgba(20, 33, 61, 0.84);
+            transform: scale(1.04);
+            outline: none;
+        }
+
         .hero-inner {
             position: relative;
             z-index: 2;
@@ -2533,6 +2575,16 @@ $heroSlides = array_values(array_unique($heroSlides));
                     ></div>
                 <?php endforeach; ?>
             </div>
+            <?php if (count($heroSlides) > 1): ?>
+                <div class="hero-slider-controls" aria-label="Hero image controls">
+                    <button type="button" class="hero-slider-btn" data-hero-slide="prev" aria-label="Previous image">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button type="button" class="hero-slider-btn" data-hero-slide="next" aria-label="Next image">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            <?php endif; ?>
             <div class="shapes-container" aria-hidden="true">
                 <?php for ($shapeIndex = 0; $shapeIndex < 8; $shapeIndex++): ?>
                     <div class="shape"></div>
@@ -3061,11 +3113,32 @@ $heroSlides = array_values(array_unique($heroSlides));
             }
 
             let activeIndex = 0;
-            window.setInterval(function () {
+            let timerId = null;
+
+            function showSlide(nextIndex) {
                 slides[activeIndex].classList.remove('is-active');
-                activeIndex = (activeIndex + 1) % slides.length;
+                activeIndex = (nextIndex + slides.length) % slides.length;
                 slides[activeIndex].classList.add('is-active');
-            }, 4800);
+            }
+
+            function startTimer() {
+                window.clearInterval(timerId);
+                timerId = window.setInterval(function () {
+                    showSlide(activeIndex + 1);
+                }, 4800);
+            }
+
+            document.querySelector('[data-hero-slide="prev"]')?.addEventListener('click', function () {
+                showSlide(activeIndex - 1);
+                startTimer();
+            });
+
+            document.querySelector('[data-hero-slide="next"]')?.addEventListener('click', function () {
+                showSlide(activeIndex + 1);
+                startTimer();
+            });
+
+            startTimer();
         })();
     </script>
     <?php if ($canEditLanding): ?>

@@ -479,10 +479,10 @@ if ($currentUserRole === 'super_admin') {
                 <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
             </li>
             <li class="nav-item d-none d-sm-inline-block ml-2">
-                <div class="d-flex align-items-center">
+                <a href="landing_page.php" class="d-flex align-items-center text-decoration-none">
                     <img src="include/logo.png" alt="NSTP Logo" style="width: 30px; height: 30px; border-radius: 6px; margin-right: 8px;">
                     <span style="font-weight: 600; color: #0f5132; font-size: 14px;"> TAU NSTP</span>
-                </div>
+                </a>
             </li>
         </ul>
         <ul class="navbar-nav ml-auto">

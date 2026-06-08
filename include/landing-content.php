@@ -156,11 +156,16 @@ function getLandingSections(PDO $conn) {
             $payload = json_decode($row['payload'], true);
         }
 
+        $defaultPayload = $sections[$row['section_key']]['payload'] ?? null;
+        if (is_array($defaultPayload) && is_array($payload)) {
+            $payload = array_replace_recursive($defaultPayload, $payload);
+        }
+
         $sections[$row['section_key']] = [
             'kicker' => $row['kicker'] ?? '',
             'title' => $row['title'] ?? '',
             'body' => $row['body'] ?? '',
-            'payload' => is_array($payload) ? $payload : ($sections[$row['section_key']]['payload'] ?? null),
+            'payload' => is_array($payload) ? $payload : $defaultPayload,
         ];
     }
 
