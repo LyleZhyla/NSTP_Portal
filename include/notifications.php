@@ -279,6 +279,34 @@ function getUnreadNotifications(PDO $conn, $userId, $limit = 10) {
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+function getUserNotifications(PDO $conn, $userId, $limit = 12) {
+    ensureNotificationTables($conn);
+
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM tbl_notifications
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT " . max(1, (int) $limit)
+    );
+    $stmt->execute([(int) $userId]);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function countUnreadNotifications(PDO $conn, $userId) {
+    ensureNotificationTables($conn);
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_notifications
+        WHERE user_id = ? AND is_read = 0
+    ");
+    $stmt->execute([(int) $userId]);
+
+    return (int) $stmt->fetchColumn();
+}
+
 function getRecentAnnouncements(PDO $conn, array $actor, $limit = 20) {
     ensureNotificationTables($conn);
 

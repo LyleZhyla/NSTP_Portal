@@ -99,6 +99,195 @@ function chedAddress(array $student) {
     return implode(', ', $parts);
 }
 
+function chedEnsureGradeTables(PDO $conn) {
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_grade_columns (
+            grade_column_id INT AUTO_INCREMENT PRIMARY KEY,
+            column_key VARCHAR(80) NOT NULL UNIQUE,
+            program_scope VARCHAR(20) NULL,
+            label VARCHAR(160) NOT NULL,
+            group_code VARCHAR(60) NOT NULL,
+            group_label VARCHAR(120) NOT NULL,
+            max_score DECIMAL(8,2) NOT NULL DEFAULT 0,
+            weight_percent DECIMAL(8,2) NOT NULL DEFAULT 0,
+            sort_order INT NOT NULL DEFAULT 0,
+            is_default TINYINT(1) NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_by INT NULL,
+            updated_by INT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_grade_scores (
+            grade_score_id INT AUTO_INCREMENT PRIMARY KEY,
+            grade_column_id INT NOT NULL,
+            tbl_student_id INT NOT NULL,
+            score DECIMAL(8,2) NULL,
+            updated_by INT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_grade_score (grade_column_id, tbl_student_id),
+            INDEX idx_grade_student (tbl_student_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_grade_settings (
+            setting_key VARCHAR(100) PRIMARY KEY,
+            setting_value VARCHAR(255) NOT NULL,
+            updated_by INT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_grade_column_visibility (
+            grade_column_visibility_id INT AUTO_INCREMENT PRIMARY KEY,
+            grade_column_id INT NOT NULL,
+            user_id INT NOT NULL,
+            program_scope VARCHAR(20) NOT NULL DEFAULT 'global',
+            is_hidden TINYINT(1) NOT NULL DEFAULT 0,
+            updated_by INT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_grade_column_visibility (grade_column_id, user_id, program_scope),
+            INDEX idx_grade_column_visibility_user (user_id, program_scope)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $columns = $conn->query("SHOW COLUMNS FROM tbl_grade_columns")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('program_scope', $columns, true)) {
+        $conn->exec("ALTER TABLE tbl_grade_columns ADD COLUMN program_scope VARCHAR(20) NULL AFTER column_key");
+    }
+    if (!in_array('updated_by', $columns, true)) {
+        $conn->exec("ALTER TABLE tbl_grade_columns ADD COLUMN updated_by INT NULL AFTER created_by");
+    }
+    if (!in_array('updated_at', $columns, true)) {
+        $conn->exec("ALTER TABLE tbl_grade_columns ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
+    }
+}
+
+function chedSeedDefaultGradeColumns(PDO $conn) {
+    $defaults = [
+        ['bandage_head', 'Top of the head', 'bandaging', 'Bandaging Evaluation', 16, 15, 10],
+        ['bandage_chest', 'Chest/Back', 'bandaging', 'Bandaging Evaluation', 16, 15, 20],
+        ['bandage_hand_foot', 'Hand/Foot', 'bandaging', 'Bandaging Evaluation', 16, 15, 30],
+        ['bandage_shoulder_hips', 'Shoulder/Hips (SEMI)', 'bandaging', 'Bandaging Evaluation', 16, 15, 40],
+        ['bandage_elbow_knee', 'Elbow/Knee (SEMI)', 'bandaging', 'Bandaging Evaluation', 16, 15, 50],
+        ['bandage_forehead', 'Forehead (narrow)', 'bandaging', 'Bandaging Evaluation', 16, 15, 60],
+        ['bandage_ear_cheek_jaw', 'Ear/Cheek/Jaw (narrow)', 'bandaging', 'Bandaging Evaluation', 16, 15, 70],
+        ['bandage_palm', 'Palm (narrow)', 'bandaging', 'Bandaging Evaluation', 16, 15, 80],
+        ['bandage_forearm_leg', 'Forearm/Leg (narrow)', 'bandaging', 'Bandaging Evaluation', 16, 15, 90],
+        ['carry_walking_assist', 'Walking assist', 'carrying', 'Carrying Evaluation', 24, 15, 110],
+        ['carry_cradle', 'Cradle carry', 'carrying', 'Carrying Evaluation', 24, 15, 120],
+        ['carry_pack_strap', 'Pack strap', 'carrying', 'Carrying Evaluation', 24, 15, 130],
+        ['carry_firefighter', 'Firefighter', 'carrying', 'Carrying Evaluation', 24, 15, 140],
+        ['carry_extremity', 'Extremity carry', 'carrying', 'Carrying Evaluation', 28, 15, 150],
+        ['carry_swing', 'Swing carry', 'carrying', 'Carrying Evaluation', 28, 15, 160],
+        ['carry_chair', 'Chair carry', 'carrying', 'Carrying Evaluation', 28, 15, 170],
+        ['carry_hammock', 'Hammock carry', 'three_man_carry', '3-4 Man Carry', 28, 15, 190],
+        ['carry_bearers', "Bearer's along side", 'three_man_carry', '3-4 Man Carry', 28, 15, 200],
+        ['carry_blanket', 'Blanket carry', 'three_man_carry', '3-4 Man Carry', 28, 15, 210],
+        ['carry_stretcher', 'Improvised stretcher', 'three_man_carry', '3-4 Man Carry', 28, 15, 220],
+        ['spine_board', 'Spine Board Management', 'spine_board', 'Spine Board Equivalent', 32, 15, 240],
+        ['cpr', 'CPR', 'cpr', 'CPR Equivalent', 40, 20, 260],
+        ['proposal', 'Proposal', 'community', 'Community Immersion', 35, 40, 300],
+        ['implementation', 'MRF and Beautification / Implementation', 'community', 'Community Immersion', 55, 60, 310],
+    ];
+
+    $stmt = $conn->prepare("
+        INSERT IGNORE INTO tbl_grade_columns
+            (column_key, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
+    ");
+
+    foreach ($defaults as $column) {
+        $stmt->execute($column);
+    }
+}
+
+function chedGradeSetting(PDO $conn, $key, $default) {
+    $stmt = $conn->prepare("SELECT setting_value FROM tbl_grade_settings WHERE setting_key = ?");
+    $stmt->execute([$key]);
+    $value = $stmt->fetchColumn();
+    return $value === false ? $default : $value;
+}
+
+function chedTransmuteGrade($equivalentPoints, $denominator = 100) {
+    $denominator = max((float) $denominator, 1);
+    $grade = 5 - (4 / $denominator * (float) $equivalentPoints);
+    return max(1, min(5, $grade));
+}
+
+function chedBuildGradeGroups(array $gradeColumns) {
+    $groups = [];
+    foreach ($gradeColumns as $column) {
+        $groupCode = $column['group_code'];
+        if (!isset($groups[$groupCode])) {
+            $groups[$groupCode] = [
+                'max' => 0,
+                'weights' => [],
+                'weight' => 0,
+                'has_custom' => false,
+            ];
+        }
+        $weight = (float) $column['weight_percent'];
+        $groups[$groupCode]['max'] += (float) $column['max_score'];
+        $groups[$groupCode]['weights'][] = $weight;
+        $groups[$groupCode]['has_custom'] = $groups[$groupCode]['has_custom'] || ((int) $column['is_default'] === 0);
+    }
+
+    foreach ($groups as $groupCode => $group) {
+        $uniqueWeights = array_values(array_unique(array_map(fn($weight) => number_format((float) $weight, 4, '.', ''), $group['weights'])));
+        $groups[$groupCode]['weight'] = ($group['has_custom'] || count($uniqueWeights) > 1)
+            ? array_sum($group['weights'])
+            : (float) ($group['weights'][0] ?? 0);
+    }
+    return $groups;
+}
+
+function chedComputeGradeSummary(array $gradeColumns, array $scores, array $gradeGroups, $attendanceCount, $totalMeetings, $attendanceWeight) {
+    $rawTotal = 0;
+    $maxTotal = 0;
+    $weightedPoints = 0;
+    $totalWeight = 0;
+    $rawByGroup = [];
+
+    foreach ($gradeColumns as $column) {
+        $groupCode = $column['group_code'];
+        $rawByGroup[$groupCode] = $rawByGroup[$groupCode] ?? 0;
+        $columnId = (int) $column['grade_column_id'];
+        $score = $scores[$columnId] ?? null;
+        $score = $score === null || $score === '' ? 0 : (float) $score;
+        $rawByGroup[$groupCode] += $score;
+        $rawTotal += $score;
+        $maxTotal += (float) $column['max_score'];
+    }
+
+    foreach ($gradeGroups as $groupCode => $group) {
+        $groupPercent = (($rawByGroup[$groupCode] ?? 0) / max((float) $group['max'], 1)) * 100;
+        $groupWeight = (float) $group['weight'];
+        $weightedPoints += ($groupPercent / 100) * $groupWeight;
+        $totalWeight += $groupWeight;
+    }
+
+    $attendanceWeight = max(0, (float) $attendanceWeight);
+    if ($attendanceWeight > 0) {
+        $attendancePercent = (min((int) $attendanceCount, (int) $totalMeetings) / max((int) $totalMeetings, 1)) * 100;
+        $weightedPoints += ($attendancePercent / 100) * $attendanceWeight;
+        $totalWeight += $attendanceWeight;
+    }
+
+    $scorePercent = $maxTotal > 0 ? ($rawTotal / $maxTotal) * 100 : 0;
+    $weightedPercent = $totalWeight > 0 ? ($weightedPoints / $totalWeight) * 100 : $scorePercent;
+
+    return [
+        'weighted_percent' => $weightedPercent,
+        'final_grade' => chedTransmuteGrade($weightedPercent),
+    ];
+}
+
 $role = $currentUser['role'] ?? '';
 $component = $coordinatorProgram;
 
@@ -180,6 +369,93 @@ if ($registrationComponentWhere !== '') {
 }
 $stmt->execute($queryParams);
 $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+chedEnsureGradeTables($conn);
+chedSeedDefaultGradeColumns($conn);
+
+$settingScope = strtolower($component);
+$columnVisibilityScope = $component;
+$sheetOwnerId = (int) $currentUser['user_id'];
+$columnsStmt = $conn->prepare("
+    SELECT *
+    FROM tbl_grade_columns
+    WHERE is_active = 1
+      AND (program_scope IS NULL OR program_scope = ?)
+      AND (
+        is_default = 1
+        OR created_by IS NULL
+        OR created_by = ?
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tbl_grade_column_visibility v
+        WHERE v.grade_column_id = tbl_grade_columns.grade_column_id
+          AND v.user_id = ?
+          AND (v.program_scope <=> ?)
+          AND v.is_hidden = 1
+      )
+    ORDER BY sort_order ASC, grade_column_id ASC
+");
+$columnsStmt->execute([$component, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+$gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+$gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
+$studentIds = array_map('intval', array_column($students, 'tbl_student_id'));
+
+$scoresByStudent = [];
+if ($studentIds && $gradeColumnIds) {
+    $studentPlaceholders = implode(',', array_fill(0, count($studentIds), '?'));
+    $columnPlaceholders = implode(',', array_fill(0, count($gradeColumnIds), '?'));
+    $stmt = $conn->prepare("
+        SELECT tbl_student_id, grade_column_id, score
+        FROM tbl_grade_scores
+        WHERE tbl_student_id IN ($studentPlaceholders)
+          AND grade_column_id IN ($columnPlaceholders)
+    ");
+    $stmt->execute(array_merge($studentIds, $gradeColumnIds));
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $scoresByStudent[(int) $row['tbl_student_id']][(int) $row['grade_column_id']] = $row['score'];
+    }
+}
+
+$attendanceCounts = [];
+if ($studentIds) {
+    $studentPlaceholders = implode(',', array_fill(0, count($studentIds), '?'));
+    $stmt = $conn->prepare("
+        SELECT tbl_student_id, COUNT(DISTINCT attendance_date) AS attendance_count
+        FROM (
+            SELECT tbl_student_id, DATE(time_in) AS attendance_date
+            FROM tbl_attendance
+            WHERE tbl_student_id IN ($studentPlaceholders)
+            UNION ALL
+            SELECT tbl_student_id, DATE(time_in) AS attendance_date
+            FROM tbl_attendance_archive
+            WHERE tbl_student_id IN ($studentPlaceholders)
+        ) attendance_days
+        GROUP BY tbl_student_id
+    ");
+    $stmt->execute(array_merge($studentIds, $studentIds));
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $attendanceCounts[(int) $row['tbl_student_id']] = (int) $row['attendance_count'];
+    }
+}
+
+$gradeGroups = chedBuildGradeGroups($gradeColumns);
+$totalMeetings = max(1, (int) chedGradeSetting($conn, 'total_meetings_' . $settingScope, '11'));
+$scoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $gradeGroups));
+$attendanceWeight = max(0, 100 - $scoreWeight);
+$students = array_values(array_filter($students, function ($student) use ($gradeColumns, $gradeGroups, $scoresByStudent, $attendanceCounts, $totalMeetings, $attendanceWeight) {
+    $studentId = (int) $student['tbl_student_id'];
+    $summary = chedComputeGradeSummary(
+        $gradeColumns,
+        $scoresByStudent[$studentId] ?? [],
+        $gradeGroups,
+        $attendanceCounts[$studentId] ?? 0,
+        $totalMeetings,
+        $attendanceWeight
+    );
+
+    return (float) $summary['final_grade'] <= 3.0;
+}));
 
 $spreadsheet = IOFactory::load($templatePath);
 $sheet = $spreadsheet->getSheet(0);

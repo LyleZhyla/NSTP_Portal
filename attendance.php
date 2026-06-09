@@ -516,6 +516,7 @@ if ($admin_role === 'super_admin') {
         </ul>
         
         <ul class="navbar-nav ml-auto">
+            <?php include './include/header-notifications.php'; ?>
             <li class="nav-item">
                 <a class="nav-link" href="#" data-toggle="tooltip" title="Manila Time">
                     <i class="far fa-clock"></i>

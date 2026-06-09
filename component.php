@@ -278,6 +278,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
             </li>
         </ul>
         <ul class="navbar-nav ml-auto">
+            <?php include './include/header-notifications.php'; ?>
             <?php include './include/theme-toggle.php'; ?>
             <?php include './include/theme-toggle-slider.php'; ?>
         </ul>

@@ -154,6 +154,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'QR Code Attendance System';
         </ul>
 
         <ul class="navbar-nav ml-auto">
+            <?php include './include/header-notifications.php'; ?>
             <li class="nav-item dropdown">
                 <a class="nav-link" data-toggle="dropdown" href="#">
                     <i class="far fa-user"></i>

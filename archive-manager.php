@@ -118,6 +118,7 @@ if (!canAccessStaffTools($user_role)) {
             </li>
         </ul>
         <ul class="navbar-nav ml-auto">
+            <?php include './include/header-notifications.php'; ?>
             <li class="nav-item">
                 <span class="navbar-text mr-3">
                     <i class="fas fa-user-circle mr-1"></i> 

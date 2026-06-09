@@ -866,6 +866,7 @@ if (!empty($user['full_name'])) {
             </ul>
             
             <ul class="navbar-nav ml-auto">
+                <?php include './include/header-notifications.php'; ?>
                 <!-- Time Display -->
                 <li class="nav-item">
                     <a class="nav-link" href="#">

@@ -547,6 +547,7 @@ if ($role === 'super_admin') {
             </li>
         </ul>
         <ul class="navbar-nav ml-auto">
+            <?php include './include/header-notifications.php'; ?>
             <?php include('./include/theme-toggle.php'); ?>
         </ul>
     </nav>
@@ -701,10 +702,15 @@ if ($role === 'super_admin') {
                 </div>
 
                 <div class="row">
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-attendance-excel.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>Attendance Report</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
@@ -754,10 +760,15 @@ if ($role === 'super_admin') {
                         </form>
                     </div>
 
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-grades-excel.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-award mr-2"></i>Student Grades</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <?php if ($role === 'super_admin'): ?>
@@ -832,10 +843,15 @@ if ($role === 'super_admin') {
                     </div>
 
                     <?php if ($canDownloadRotcProfiles): ?>
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-rotc-cadets-profile.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-id-card mr-2"></i>ROTC Cadets' Profile</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
@@ -919,10 +935,15 @@ if ($role === 'super_admin') {
                     </div>
                     <?php endif; ?>
 
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-archived-attendance.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-archive mr-2"></i>Archived Attendance</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="form-row">
@@ -944,10 +965,15 @@ if ($role === 'super_admin') {
                     </div>
 
                     <?php if (in_array($role, ['super_admin', 'coordinator'], true)): ?>
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-public-registration-attendance.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-clipboard-list mr-2"></i>Public Registration Attendance</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
@@ -983,17 +1009,22 @@ if ($role === 'super_admin') {
                     <?php endif; ?>
 
                     <?php if ($role === 'coordinator' && in_array($program, ['CWTS', 'LTS'], true)): ?>
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-ched-serial-number.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>CHED Serial Number</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
                                     <label>NSTP Component</label>
                                     <input type="text" class="form-control" value="<?php echo htmlspecialchars($program); ?>" disabled>
                                 </div>
-                                <p class="muted-note">Exports all students in the selected LTS/CWTS component using the CHED serial number template.</p>
+                                <p class="muted-note">Exports passed students in the selected LTS/CWTS component using the CHED serial number template.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download CHED Format
                                 </button>
@@ -1002,10 +1033,15 @@ if ($role === 'super_admin') {
                     </div>
                     <?php endif; ?>
 
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <div class="card download-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>QR Codes ZIP</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
@@ -1037,10 +1073,15 @@ if ($role === 'super_admin') {
                     </div>
 
                     <?php if ($role === 'super_admin'): ?>
-                    <div class="col-lg-6 col-xl-4 mb-3">
+                    <div class="col-12 mb-3">
                         <div class="card download-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-database mr-2"></i>Database Backup</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <p class="muted-note">Downloads a SQL backup of the system database.</p>

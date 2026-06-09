@@ -486,6 +486,7 @@ if ($currentUserRole === 'super_admin') {
             </li>
         </ul>
         <ul class="navbar-nav ml-auto">
+            <?php include './include/header-notifications.php'; ?>
             <!-- Time Display in Navbar -->
             <li class="nav-item">
                 <div class="manila-time-card mr-2">
