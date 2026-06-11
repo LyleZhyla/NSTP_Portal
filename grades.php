@@ -840,17 +840,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         }
 
         .grade-folder-card {
-            border-left: 4px solid #2f6f7e;
+            border-left: 4px solid #198754;
         }
 
         .collapse-toggle {
-            color: #2f6f7e;
+            color: #198754;
             font-weight: 800;
             text-decoration: none;
         }
 
         .collapse-toggle:hover {
-            color: #244f5b;
+            color: #0f5132;
             text-decoration: none;
         }
 

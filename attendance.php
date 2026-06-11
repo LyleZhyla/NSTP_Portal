@@ -131,7 +131,7 @@ if ($admin_role === 'super_admin') {
         }
         
         .qr-detected-box {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            background: #0f5132;
             color: white;
             border-radius: 8px;
             padding: 20px;
@@ -165,12 +165,12 @@ if ($admin_role === 'super_admin') {
         }
         
         .btn-success {
-            background: #28a745;
+            background: #198754;
             border: none;
         }
         
         .btn-success:hover {
-            background: #218838;
+            background: #0f5132;
             transform: translateY(-2px);
         }
         
@@ -185,23 +185,23 @@ if ($admin_role === 'super_admin') {
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #0f5132, #198754);
+            background: #0f5132;
             border: none;
         }
         
         .btn-primary:hover {
-            background: linear-gradient(135deg, #198754, #0f5132);
+            background: #198754;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(44, 62, 80, 0.2);
         }
         
         .btn-info {
-            background: #20c997;
+            background: #198754;
             border: none;
         }
         
         .btn-info:hover {
-            background: #168f70;
+            background: #0f5132;
             transform: translateY(-2px);
         }
         
@@ -266,11 +266,11 @@ if ($admin_role === 'super_admin') {
         }
         
         .bg-gradient-info {
-            background: linear-gradient(135deg, #20c997, #168f70);
+            background: #0f5132;
         }
         
         .bg-gradient-success {
-            background: linear-gradient(135deg, #28a745, #218838);
+            background: #198754;
         }
         
         .bg-gradient-warning {
@@ -332,7 +332,7 @@ if ($admin_role === 'super_admin') {
         }
         
         .badge-success {
-            background: #28a745;
+            background: #198754;
             color: white;
         }
         
@@ -414,7 +414,7 @@ if ($admin_role === 'super_admin') {
         
         .form-control:focus {
             border-color: #198754;
-            box-shadow: 0 0 0 0.2rem rgba(52, 152, 219, 0.25);
+            box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.25);
         }
         
         .input-group-text {
@@ -437,7 +437,7 @@ if ($admin_role === 'super_admin') {
         
         .select2-container--bootstrap4.select2-container--focus .select2-selection {
             border-color: #198754 !important;
-            box-shadow: 0 0 0 0.2rem rgba(52, 152, 219, 0.25) !important;
+            box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.25) !important;
         }
         
         /* SCANNER STATUS */
@@ -754,7 +754,7 @@ if ($admin_role === 'super_admin') {
                         
                         <!-- Attendance Success Section -->
                         <div id="attendanceSuccessSection" style="display: none;">
-                            <div class="qr-detected-box text-center" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">
+                            <div class="qr-detected-box text-center" style="background: #0f5132;">
                                 <i class="fas fa-check-circle fa-2x mb-2"></i>
                                 <h5 style="font-size: 1.1rem;">Attendance Recorded!</h5>
                                 <div class="student-info" id="successStudentInfo"></div>
@@ -908,7 +908,7 @@ if ($admin_role === 'super_admin') {
                             </div>
                             <div class="col-sm-6 text-right">
                                 <small class="text-muted">
-                                    Last updated: <?= date('h:i:s A') ?>
+                                    Last updated: <span id="lastUpdatedTime"><?= date('h:i:s A') ?></span>
                                 </small>
                             </div>
                         </div>
@@ -1243,10 +1243,10 @@ if ($admin_role === 'super_admin') {
                     
                     showStatus('success', 'Student found: ' + response.student_name);
                     
-                    // Automatically submit the form after 1.5 seconds
+                    // Submit right after validation so the attendance list updates immediately.
                     setTimeout(() => {
                         $('#attendanceForm').submit();
-                    }, 1500);
+                    }, 250);
                 }
             } else {
                 console.warn('Student validation failed:', response.message);
@@ -1310,7 +1310,11 @@ if ($admin_role === 'super_admin') {
                     
                     showToast('success', 'Success!', response.message);
                     
-                    refreshAttendanceData();
+                    refreshAttendanceData().always(function() {
+                        setTimeout(() => {
+                            resumeScanner();
+                        }, 800);
+                    });
                     
                 } else {
                     showToast('error', 'Error', response.message);
@@ -1335,7 +1339,7 @@ if ($admin_role === 'super_admin') {
     
     // Refresh attendance data via AJAX
     function refreshAttendanceData() {
-        $.ajax({
+        return $.ajax({
             url: './endpoint/get-attendance-data.php',
             method: 'GET',
             dataType: 'json',
@@ -1348,10 +1352,14 @@ if ($admin_role === 'super_admin') {
                     $('#onTimeCount').text(response.statistics.on_time);
                     $('#lateCount').text(response.statistics.late);
                     
-                    if (dataTable) {
-                        dataTable.clear().destroy();
-                        dataTable = null;
+                    if ($.fn.DataTable && $.fn.DataTable.isDataTable('#attendanceTable')) {
+                        try {
+                            $('#attendanceTable').DataTable().clear().destroy();
+                        } catch (e) {
+                            console.error('Error destroying existing DataTable:', e);
+                        }
                     }
+                    dataTable = null;
                     
                     if (response.records && response.records.length > 0) {
                         $('#emptyState').hide();
@@ -1412,6 +1420,8 @@ if ($admin_role === 'super_admin') {
                         }
                         $('#recordCount').text('0');
                     }
+                    
+                    $('#lastUpdatedTime').text(formatCurrentTimeWithSeconds());
                 } else {
                     console.error('Error refreshing data:', response.error);
                     showToast('error', 'Error', response.error || 'Failed to refresh data');
@@ -1422,6 +1432,16 @@ if ($admin_role === 'super_admin') {
                 showToast('error', 'Error', 'Failed to refresh attendance data. Please refresh the page.');
             }
         });
+    }
+    
+    function formatCurrentTimeWithSeconds() {
+        const now = new Date();
+        let hours = now.getHours();
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const seconds = now.getSeconds().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = (hours % 12 || 12).toString().padStart(2, '0');
+        return `${hours}:${minutes}:${seconds} ${ampm}`;
     }
     
     // Helper function to escape HTML

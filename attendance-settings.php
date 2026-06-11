@@ -16,6 +16,7 @@ $componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
+$autoSectionEnabledForCurrentUser = $autoSectionComponent !== 'ROTC';
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
 
 date_default_timezone_set('Asia/Manila');
@@ -173,6 +174,7 @@ date_default_timezone_set('Asia/Manila');
                         </div>
                     </div>
 
+                    <?php if ($autoSectionEnabledForCurrentUser): ?>
                     <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
@@ -212,8 +214,11 @@ date_default_timezone_set('Asia/Manila');
                                 </div>
                             </form>
                         </div>
+                    </div>
+                    <?php endif; ?>
 
-                        <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
+                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
+                    <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-clock mr-2"></i>Late Start Times</h3>
@@ -246,8 +251,8 @@ date_default_timezone_set('Asia/Manila');
                                 </div>
                             </form>
                         </div>
-                        <?php endif; ?>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </section>

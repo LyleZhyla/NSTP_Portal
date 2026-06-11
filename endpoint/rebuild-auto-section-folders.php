@@ -23,6 +23,9 @@ try {
         if (!$component) {
             throw new RuntimeException('Coordinator program is missing.');
         }
+        if (!autoSectionUsesAutomaticFolders($component)) {
+            throw new RuntimeException('Automatic folder sectioning is not used for ROTC.');
+        }
     }
 
     ensureSectionFoldersTable($conn);

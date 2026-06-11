@@ -558,13 +558,13 @@ if (!empty($user['full_name'])) {
         
         .section-badge {
             display: inline-block;
-            background: #e7f3ff;
-            color: #0066cc;
+            background: #f3faf6;
+            color: #0f5132;
             padding: 4px 12px;
             border-radius: 20px;
             font-size: 0.85rem;
             margin: 0 3px 5px 0;
-            border-left: 3px solid #0066cc;
+            border-left: 3px solid #198754;
         }
         
         /* Tabs */

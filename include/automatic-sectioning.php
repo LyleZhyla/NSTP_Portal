@@ -65,6 +65,10 @@ function autoSectionFolderName($component, $number) {
     return autoSectionFolderPrefix($component) . ' ' . autoSectionAlphaLabel(max(1, (int) $number));
 }
 
+function autoSectionUsesAutomaticFolders($component) {
+    return autoSectionComponent($component) !== 'ROTC';
+}
+
 function autoSectionAlphaLabel($number) {
     $number = max(1, (int) $number);
     $label = '';
@@ -184,11 +188,16 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $groupLabel, $crea
 function autoSectionFolderForStudent(PDO $conn, $component, $course, $yearSection, $fallbackOriginal = '', $createdBy = null) {
     $component = autoSectionComponent($component, $fallbackOriginal);
     $groupLabel = autoSectionOriginalSection($course, $yearSection, $fallbackOriginal);
+    if (!autoSectionUsesAutomaticFolders($component)) {
+        return $groupLabel;
+    }
+
     return autoSectionFindFolderForGroup($conn, $component, $groupLabel, $createdBy);
 }
 
 function rebuildAutoSectionFolders(PDO $conn, $component = null) {
-    $components = $component ? [autoSectionComponent($component)] : ['CWTS', 'LTS', 'ROTC', 'PUBLIC'];
+    $components = $component ? [autoSectionComponent($component)] : ['CWTS', 'LTS', 'PUBLIC'];
+    $components = array_values(array_filter($components, 'autoSectionUsesAutomaticFolders'));
     $moved = 0;
 
     foreach ($components as $currentComponent) {

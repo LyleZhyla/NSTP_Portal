@@ -521,13 +521,13 @@ if ($user_role === 'super_admin') {
         }
 
         .column-picker-toggle {
-            color: #2f6f7e;
+            color: #198754;
             font-weight: 800;
             text-decoration: none;
         }
 
         .column-picker-toggle:hover {
-            color: #244f5b;
+            color: #0f5132;
             text-decoration: none;
         }
 
@@ -542,8 +542,8 @@ if ($user_role === 'super_admin') {
             height: 54px;
             object-fit: cover;
             border-radius: 8px;
-            border: 1px solid #d7e4ea;
-            background: #f4f8fa;
+            border: 1px solid #dfe7e2;
+            background: #f8fafc;
         }
 
         .qr-thumb {
@@ -564,8 +564,8 @@ if ($user_role === 'super_admin') {
         
         .section-info {
             font-size: 0.9rem;
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
+            background: #f8fbf9;
+            border-left: 4px solid #8bc4a4;
             padding: 10px 15px;
             margin-bottom: 15px;
             border-radius: 4px;
@@ -578,16 +578,17 @@ if ($user_role === 'super_admin') {
         }
         
         .multiple-sections-container {
-            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
+            background: #fff;
             padding: 12px 14px;
             border-radius: 8px;
-            border: 0;
+            border: 1px solid #dfe7e2;
+            border-left: 4px solid #198754;
             height: 100%;
-            color: #fff;
+            color: #1f2933;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.18);
+            box-shadow: 0 8px 20px rgba(31, 41, 55, 0.08);
         }
 
         .multiple-sections-container .folder-summary-title {
@@ -596,7 +597,7 @@ if ($user_role === 'super_admin') {
             gap: 8px;
             margin-bottom: 8px;
             font-weight: 800;
-            color: #fff;
+            color: #0f5132;
         }
 
         .multiple-sections-container .folder-summary-title h4 {
@@ -607,7 +608,7 @@ if ($user_role === 'super_admin') {
 
         .multiple-sections-container .folder-summary-text {
             margin: 0 0 8px;
-            color: rgba(255,255,255,0.9);
+            color: #5f7168;
             font-size: 0.88rem;
             line-height: 1.3;
         }
@@ -616,11 +617,11 @@ if ($user_role === 'super_admin') {
             display: inline-block;
             padding: 4px 10px;
             margin: 2px;
-            background: rgba(255,255,255,0.18);
+            background: #f3faf6;
             border-radius: 25px;
             font-size: 0.82rem;
-            border: 1px solid rgba(255,255,255,0.3);
-            color: #fff;
+            border: 1px solid #d7eadf;
+            color: #0f5132;
         }
         
         .section-chip i {
@@ -653,7 +654,7 @@ if ($user_role === 'super_admin') {
         }
         
         .section-folder-header {
-            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+            background: #0f5132;
             color: white;
             padding: 15px 20px;
             cursor: pointer;
@@ -739,13 +740,13 @@ if ($user_role === 'super_admin') {
         }
         
         .original-section-badge {
-            background-color: #e7f3ff;
-            color: #0066cc;
+            background-color: #f3faf6;
+            color: #0f5132;
             padding: 3px 8px;
             border-radius: 4px;
             font-size: 0.85rem;
             display: inline-block;
-            border-left: 3px solid #0066cc;
+            border-left: 3px solid #198754;
         }
         
         .folder-section-badge {
@@ -780,12 +781,12 @@ if ($user_role === 'super_admin') {
             display: block;
             min-height: 126px;
             padding: 14px;
-            border: 1px solid #d7e4ea;
+            border: 1px solid #e1e8e4;
             border-radius: 8px;
             background: #fff;
             color: #1f2933;
             text-decoration: none;
-            box-shadow: 0 8px 20px rgba(32,72,84,0.08);
+            box-shadow: 0 8px 20px rgba(31, 41, 55, 0.06);
             transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
         }
 
@@ -793,8 +794,8 @@ if ($user_role === 'super_admin') {
             color: #1f2933;
             text-decoration: none;
             transform: translateY(-2px);
-            border-color: #2f6f7e;
-            box-shadow: 0 12px 28px rgba(32,72,84,0.14);
+            border-color: #198754;
+            box-shadow: 0 12px 28px rgba(31, 41, 55, 0.12);
         }
 
         .folder-box-wrap {
@@ -826,8 +827,8 @@ if ($user_role === 'super_admin') {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: #eef7f9;
-            color: #2f6f7e;
+            background: #f3faf6;
+            color: #198754;
             font-size: 1.1rem;
             margin-bottom: 10px;
         }
@@ -841,7 +842,7 @@ if ($user_role === 'super_admin') {
 
         .folder-box-meta {
             display: block;
-            color: #667784;
+            color: #5f7168;
             font-size: 0.87rem;
             line-height: 1.35;
         }
@@ -853,8 +854,8 @@ if ($user_role === 'super_admin') {
             margin-top: 10px;
             padding: 5px 10px;
             border-radius: 999px;
-            background: #f4f8fa;
-            color: #2f6f7e;
+            background: #f3faf6;
+            color: #198754;
             font-weight: 700;
             font-size: 0.82rem;
         }
@@ -879,7 +880,7 @@ if ($user_role === 'super_admin') {
         }
         
         .admin-folder-header {
-            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
+            background: #0f5132;
             color: white;
             padding: 15px 20px;
             cursor: pointer;
@@ -913,7 +914,7 @@ if ($user_role === 'super_admin') {
         }
         
         .my-folder .admin-folder-header {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
         }
         
         .system-folder .admin-folder-header {
@@ -922,7 +923,7 @@ if ($user_role === 'super_admin') {
         
         /* Nested section folders inside admin folders */
         .nested-section-folder {
-            border-left: 3px solid #4a90e2;
+            border-left: 3px solid #198754;
             margin: 10px 20px;
             border-radius: 4px;
             background: #f8f9fa;

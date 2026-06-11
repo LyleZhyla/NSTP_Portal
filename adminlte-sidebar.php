@@ -284,18 +284,26 @@ if (isset($_SESSION['user_id'])) {
 
 <!-- Custom Styles for NSTP Branding and Responsiveness -->
 <style>
+    .main-sidebar {
+        background: #082f21 !important;
+    }
+
+    .main-sidebar .sidebar {
+        background: #082f21 !important;
+    }
+
     /* NSTP Branding Styles */
     .brand-link {
         display: flex;
         align-items: center;
         padding: 15px 12px !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        background: linear-gradient(135deg, #0f5132, #198754);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+        background: #063f28 !important;
         transition: all 0.3s ease;
     }
     
     .brand-link:hover {
-        background: linear-gradient(135deg, #198754, #0f5132);
+        background: #0f5132 !important;
     }
     
     .brand-image {
@@ -327,84 +335,86 @@ if (isset($_SESSION['user_id'])) {
     
     /* User Panel Improvements */
     .user-panel {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
         padding-bottom: 15px !important;
         margin-bottom: 15px !important;
     }
     
     .user-panel .info a {
-        color: #fff;
-        font-weight: 500;
+        color: #f8fafc !important;
+        font-weight: 600;
     }
     
     .user-panel .info a:hover {
-        color: #198754;
+        color: #f7c948 !important;
     }
     
     .user-panel .info small {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.7) !important;
+        color: #b7dfc6 !important;
     }
     
     /* Navigation Menu Styles */
     .nav-sidebar .nav-item > .nav-link {
-        border-radius: 0;
-        color: rgba(255, 255, 255, 0.8);
-        padding: 12px 15px;
+        border-radius: 8px;
+        color: #e8f6ee !important;
+        padding: 11px 13px;
+        margin: 2px 8px;
         transition: all 0.2s ease;
         border-left: 3px solid transparent;
     }
     
     .nav-sidebar .nav-item > .nav-link:hover {
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-        border-left-color: #198754;
+        background: #124832 !important;
+        color: #ffffff !important;
+        border-left-color: #f7c948;
     }
     
     .nav-sidebar .nav-item > .nav-link.active {
-        background: linear-gradient(135deg, #0f5132, #198754);
-        color: white;
-        border-left: 3px solid #ffc107;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        background: #ffffff !important;
+        color: #0f5132 !important;
+        border-left: 3px solid #f7c948 !important;
+        box-shadow: 0 8px 18px rgba(0,0,0,0.22);
+        font-weight: 700;
     }
     
     .nav-sidebar .nav-item > .nav-link.active i {
-        color: white;
+        color: #198754 !important;
     }
     
     .nav-sidebar .nav-link i {
-        color: rgba(255, 255, 255, 0.7);
+        color: #b7dfc6 !important;
         margin-right: 10px;
         width: 20px;
         text-align: center;
     }
     
     .nav-sidebar .nav-link.active i {
-        color: white;
+        color: #198754 !important;
     }
     
     .nav-sidebar .nav-header {
-        color: rgba(255, 255, 255, 0.5);
+        color: #9dcfb2 !important;
         font-size: 0.75rem;
         padding: 10px 15px 5px;
         text-transform: uppercase;
         letter-spacing: 1px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
         margin-bottom: 5px;
     }
     
     /* Logout button special style */
     .nav-sidebar .nav-item:last-child .nav-link {
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        border-top: 1px solid rgba(255, 255, 255, 0.14);
         margin-top: 5px;
     }
     
     .nav-sidebar .nav-item .text-danger {
-        color: #ff6b6b !important;
+        color: #ffb4b4 !important;
     }
     
     .nav-sidebar .nav-item .text-danger:hover {
-        background: rgba(255, 107, 107, 0.2) !important;
+        background: rgba(220, 53, 69, 0.28) !important;
         color: white !important;
     }
     

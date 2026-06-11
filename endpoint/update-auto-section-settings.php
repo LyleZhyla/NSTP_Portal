@@ -24,6 +24,9 @@ try {
     if (($currentUser['role'] ?? '') === 'coordinator' && !$component) {
         throw new RuntimeException('Coordinator program is missing.');
     }
+    if ($component && !autoSectionUsesAutomaticFolders($component)) {
+        throw new RuntimeException('Automatic folder sectioning is not used for ROTC.');
+    }
 
     $maxStudents = (int) ($_POST['max_students'] ?? 40);
     saveAutoSectionMaxStudents($conn, $maxStudents, $component);

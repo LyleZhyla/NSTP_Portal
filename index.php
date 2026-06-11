@@ -234,11 +234,11 @@ if ($currentUserRole === 'super_admin') {
             margin-left: 10px;
             position: relative;
             z-index: 9999;
-            background: rgba(52, 152, 219, 0.08);
+            background: #fff;
             padding: 5px 15px;
             border-radius: 50px;
-            border: 1px dashed #198754;
-            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.1);
+            border: 1px solid #dfe7e2;
+            box-shadow: 0 6px 18px rgba(15, 81, 50, 0.08);
         }
         
         .quick-actions-label {
@@ -247,7 +247,7 @@ if ($currentUserRole === 'super_admin') {
             gap: 5px;
             padding-right: 12px;
             margin-right: 5px;
-            border-right: 2px solid #cbd5e0;
+            border-right: 1px solid #dfe7e2;
             color: #0f5132;
             font-size: 0.85rem;
             font-weight: 700;
@@ -284,21 +284,21 @@ if ($currentUserRole === 'super_admin') {
             width: 42px;
             height: 42px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #198754, #0f5132);
-            color: white;
+            background: #f3faf6;
+            color: #0f5132;
             transition: all 0.3s ease;
             text-decoration: none !important;
             position: relative;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(15, 81, 50, 0.10);
             cursor: pointer;
-            border: 2px solid white;
+            border: 1px solid #d7eadf;
             z-index: 10000;
         }
         
         .quick-action-icon:hover {
             transform: translateY(-5px) scale(1.08);
-            box-shadow: 0 8px 20px rgba(52, 152, 219, 0.4);
-            background: linear-gradient(135deg, #0f5132, #198754);
+            box-shadow: 0 10px 24px rgba(15, 81, 50, 0.22);
+            background: #198754;
             color: white;
         }
         
@@ -312,11 +312,15 @@ if ($currentUserRole === 'super_admin') {
         }
         
         .quick-action-icon.special {
-            background: linear-gradient(135deg, #28a745, #20c997);
+            background: #fff7e6;
+            color: #8a5a00;
+            border-color: #f3d28b;
         }
         
         .quick-action-icon.special:hover {
-            background: linear-gradient(135deg, #20c997, #28a745);
+            background: #d97706;
+            border-color: #d97706;
+            color: #fff;
         }
         
         /* Click indicator badge */
@@ -410,7 +414,7 @@ if ($currentUserRole === 'super_admin') {
                 border-right: none;
                 padding-right: 0;
                 margin-right: 8px;
-                background: rgba(52, 152, 219, 0.15);
+                background: #f3faf6;
                 padding: 6px 16px;
                 border-radius: 30px;
                 border: 1px solid #198754;

@@ -391,7 +391,7 @@ $detailColumns = [
     <style>
         .folder-hero {
             background: #fff;
-            border: 1px solid #d7e4ea;
+            border: 1px solid #dfe7e2;
             border-radius: 8px;
             padding: 14px 16px;
             display: flex;
@@ -407,8 +407,8 @@ $detailColumns = [
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: #eef7f9;
-            color: #2f6f7e;
+            background: #f3faf6;
+            color: #198754;
             font-size: 1.25rem;
             margin-right: 10px;
         }
@@ -424,7 +424,7 @@ $detailColumns = [
         }
         .folder-title-wrap p {
             margin: 4px 0 0;
-            color: #667784;
+            color: #5f7168;
         }
         .student-count-pill {
             display: inline-flex;
@@ -432,8 +432,8 @@ $detailColumns = [
             gap: 8px;
             padding: 6px 10px;
             border-radius: 999px;
-            background: #f4f8fa;
-            color: #2f6f7e;
+            background: #f3faf6;
+            color: #198754;
             font-weight: 800;
         }
         .folder-grid {
@@ -444,7 +444,7 @@ $detailColumns = [
         .folder-box {
             display: block;
             height: 100%;
-            border: 1px solid #d7e4ea;
+            border: 1px solid #e1e8e4;
             border-radius: 8px;
             padding: 13px 14px;
             color: #1f2937;
@@ -464,8 +464,8 @@ $detailColumns = [
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: #eef7f9;
-            color: #2f6f7e;
+            background: #f3faf6;
+            color: #198754;
             margin-bottom: 8px;
         }
         .folder-box-title {
@@ -476,13 +476,13 @@ $detailColumns = [
         .folder-box-meta,
         .folder-box-count {
             display: block;
-            color: #667784;
+            color: #5f7168;
             font-size: 0.88rem;
         }
         .folder-box-count {
             margin-top: 10px;
             font-weight: 800;
-            color: #2f6f7e;
+            color: #198754;
         }
         .qr-thumb {
             width: 74px;
@@ -494,12 +494,12 @@ $detailColumns = [
             background: #fbfdfe;
         }
         .column-picker-toggle {
-            color: #2f6f7e;
+            color: #198754;
             font-weight: 800;
             text-decoration: none;
         }
         .column-picker-toggle:hover {
-            color: #244f5b;
+            color: #0f5132;
             text-decoration: none;
         }
         .column-picker-grid {
@@ -512,8 +512,8 @@ $detailColumns = [
             height: 54px;
             object-fit: cover;
             border-radius: 8px;
-            border: 1px solid #d7e4ea;
-            background: #f4f8fa;
+            border: 1px solid #dfe7e2;
+            background: #f8fafc;
         }
         .student-detail-table th,
         .student-detail-table td {
@@ -525,10 +525,10 @@ $detailColumns = [
             white-space: normal;
         }
         .folder-group-row td {
-            background: #eef7f9;
-            color: #2f6f7e;
+            background: #f3faf6;
+            color: #198754;
             font-weight: 800;
-            border-top: 2px solid #d7e4ea;
+            border-top: 2px solid #d7eadf;
         }
     </style>
 </head>
