@@ -56,6 +56,59 @@ function isFacilitatorScanRestrictionEnabled(PDO $conn) {
     return getSystemSetting($conn, 'facilitator_scan_restriction_enabled', '0') === '1';
 }
 
+function rotcStudentSqlCondition($studentAlias = 's') {
+    $studentAlias = preg_replace('/[^A-Za-z0-9_]/', '', (string) $studentAlias) ?: 's';
+
+    return "(
+        UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%ROTC%'
+        OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%ALPHA%'
+        OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%PLATOON%'
+        OR EXISTS (
+            SELECT 1
+            FROM tbl_users student_user
+            WHERE student_user.user_id = {$studentAlias}.user_id
+              AND student_user.program = 'ROTC'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM tbl_public_student_registrations rotc_registration
+            WHERE rotc_registration.student_number = {$studentAlias}.student_number
+              AND rotc_registration.component = 'ROTC'
+              AND rotc_registration.registration_id = (
+                    SELECT MAX(latest_rotc_registration.registration_id)
+                    FROM tbl_public_student_registrations latest_rotc_registration
+                    WHERE latest_rotc_registration.student_number = {$studentAlias}.student_number
+              )
+        )
+    )";
+}
+
+function isRotcStudentRecord(PDO $conn, array $student) {
+    if (inferProgramFromText($student['course_section'] ?? '') === 'ROTC') {
+        return true;
+    }
+
+    $studentId = (int) ($student['tbl_student_id'] ?? 0);
+    if ($studentId <= 0) {
+        return false;
+    }
+
+    try {
+        $condition = rotcStudentSqlCondition('s');
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM tbl_student s
+            WHERE s.tbl_student_id = ?
+              AND {$condition}
+        ");
+        $stmt->execute([$studentId]);
+
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
 function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
     $role = $actor['role'] ?? '';
 
@@ -76,6 +129,10 @@ function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
     }
 
     if (!isFacilitatorScanRestrictionEnabled($conn)) {
+        return true;
+    }
+
+    if (normalizeProgram($actor['program'] ?? null) === 'ROTC' && isRotcStudentRecord($conn, $student)) {
         return true;
     }
 

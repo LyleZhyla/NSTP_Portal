@@ -485,20 +485,24 @@ if (!empty($user['full_name'])) {
         }
         
         .stat-card {
-            background: linear-gradient(135deg, #198754 0%, #0f5132 100%);
-            color: white;
+            background: #fff;
+            color: #1f2933;
             border-radius: 10px;
             padding: 20px 15px;
             text-align: center;
+            border: 1px solid #e1e8e4;
+            border-left: 4px solid #2f6f7e;
+            box-shadow: 0 8px 20px rgba(31, 41, 55, 0.08);
         }
         
         .stat-card.success {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            border-left-color: #198754;
         }
         
         .stat-icon {
             font-size: 2rem;
             margin-bottom: 8px;
+            color: #198754;
         }
         
         .stat-number {
@@ -509,7 +513,7 @@ if (!empty($user['full_name'])) {
         
         .stat-label {
             font-size: 0.85rem;
-            opacity: 0.9;
+            color: #5f7168;
             text-transform: uppercase;
             letter-spacing: 1px;
         }

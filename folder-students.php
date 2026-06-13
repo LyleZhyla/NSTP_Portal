@@ -109,6 +109,21 @@ try {
             throw new RuntimeException('Invalid component folder.');
         }
 
+        if ($program === 'ROTC') {
+            $rotcCondition = rotcStudentSqlCondition('s');
+            $stmt = $conn->prepare("
+                SELECT s.*
+                FROM tbl_student s
+                LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+                WHERE {$rotcCondition}
+                   OR (creator.role = 'facilitator' AND creator.program = 'ROTC')
+                ORDER BY
+                    COALESCE(NULLIF(creator.full_name, ''), creator.username, 'Pending/System') ASC,
+                    s.course_section ASC,
+                    s.student_name ASC
+            ");
+            $stmt->execute();
+        } else {
         $stmt = $conn->prepare("
             SELECT s.*
             FROM tbl_student s
@@ -124,9 +139,26 @@ try {
                 s.student_name ASC
         ");
         $stmt->execute([$program, $program, autoSectionFolderPrefix($program) . ' %']);
+        }
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $pageTitle = $program;
         $folderMeta = 'Component folder';
+    } elseif ($scope === 'rotc_all' && $role === 'facilitator') {
+        if (normalizeProgram($currentUser['program'] ?? null) !== 'ROTC') {
+            throw new RuntimeException('You are not allowed to view ROTC students.');
+        }
+
+        $rotcCondition = rotcStudentSqlCondition('s');
+        $stmt = $conn->prepare("
+            SELECT s.*
+            FROM tbl_student s
+            WHERE {$rotcCondition}
+            ORDER BY s.student_name ASC
+        ");
+        $stmt->execute();
+        $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $pageTitle = 'All ROTC Students';
+        $folderMeta = 'Visible to all ROTC facilitators';
     } elseif ($scope === 'student_folder' && in_array($role, ['super_admin', 'coordinator'], true)) {
         if ($folder === '') {
             throw new RuntimeException('Invalid student folder.');

@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 date_default_timezone_set('Asia/Manila');
 include ('../conn/conn.php');
+require_once '../include/user-permissions.php';
 
 header('Content-Type: application/json');
 
@@ -22,6 +23,12 @@ try {
     $attendance_id = $_REQUEST['attendance_id'] ?? $_REQUEST['attendance'];
     $admin_id = $_SESSION['user_id'];
     $admin_role = $_SESSION['role'] ?? 'facilitator';
+    $currentUser = getCurrentUserRecord($conn);
+    $isRotcFacilitator = $admin_role === 'facilitator'
+        && normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null)) === 'ROTC';
+    $facilitatorStudentAccessCondition = "(s.created_by = ? OR ads.user_id = ?"
+        . ($isRotcFacilitator ? " OR " . rotcStudentSqlCondition('s') : "")
+        . ")";
     
     // Verify that the user has permission to delete this attendance record
     if ($admin_role == 'super_admin') {
@@ -36,7 +43,7 @@ try {
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE a.tbl_attendance_id = ? 
-            AND (s.created_by = ? OR ads.user_id = ?)
+            AND {$facilitatorStudentAccessCondition}
         ");
         $stmt->execute([$attendance_id, $admin_id, $admin_id]);
     }

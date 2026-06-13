@@ -152,7 +152,7 @@ function gradeProgramCondition($program, &$params) {
     }
 
     if ($program === 'ROTC') {
-        return "(UPPER(s.course_section) LIKE ? OR UPPER(s.course_section) LIKE ?)";
+        return rotcStudentSqlCondition('s');
     }
 
     return "1 = 0";
@@ -162,7 +162,7 @@ function gradeProgramParams($program) {
     $program = normalizeProgram($program);
 
     if ($program === 'ROTC') {
-        return ['%ROTC%', '%ALPHA%'];
+        return [];
     }
 
     return ['%' . $program . '%'];
@@ -384,6 +384,22 @@ if ($userRole === 'coordinator') {
         }
     }
 } else {
+    if ($currentProgram === 'ROTC') {
+        $rotcCondition = rotcStudentSqlCondition('s');
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS student_count
+            FROM tbl_student s
+            WHERE {$rotcCondition}
+        ");
+        $stmt->execute();
+        $gradeFolderOptions[] = [
+            'key' => 'rotc_all',
+            'facilitator_id' => $userId,
+            'folder' => '__rotc_all__',
+            'label' => 'All ROTC Students',
+            'student_count' => (int) $stmt->fetchColumn(),
+        ];
+    } else {
     $stmt = $conn->prepare("
         SELECT ads.course_section, COUNT(s.tbl_student_id) AS student_count
         FROM tbl_admin_sections ads
@@ -403,6 +419,7 @@ if ($userRole === 'coordinator') {
             'label' => $row['course_section'],
             'student_count' => (int) $row['student_count'],
         ];
+    }
     }
 
     $requestedFolderKey = trim((string) ($_GET['grade_folder'] ?? ''));
@@ -424,7 +441,16 @@ $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
-if ($selectedGradeFolder !== '' && $selectedGradeFacilitatorId) {
+if ($selectedGradeFolder === '__rotc_all__' && $currentProgram === 'ROTC') {
+    $rotcCondition = rotcStudentSqlCondition('s');
+    $studentSql = "
+        SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'ROTC') AS facilitator_name
+        FROM tbl_student s
+        LEFT JOIN tbl_users u ON s.created_by = u.user_id
+        WHERE {$rotcCondition}
+        ORDER BY s.student_name ASC
+    ";
+} elseif ($selectedGradeFolder !== '' && $selectedGradeFacilitatorId) {
     $studentSql = "
         SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'Pending Facilitator Assignment') AS facilitator_name
         FROM tbl_student s

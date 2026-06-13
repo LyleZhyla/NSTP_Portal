@@ -188,11 +188,6 @@ if ($folderFilter !== '') {
 $where = ["r.registrant_role = 'student'", "r.component = 'ROTC'"];
 $params = [];
 
-if ($role === 'facilitator') {
-    $where[] = "s.created_by = ?";
-    $params[] = $userId;
-}
-
 if ($folderFacilitatorId && $folderName !== '') {
     $where[] = "s.created_by = ? AND s.course_section = ?";
     $params[] = $folderFacilitatorId;

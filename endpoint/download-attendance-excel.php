@@ -4,6 +4,7 @@ date_default_timezone_set('Asia/Manila');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/attendance-settings.php';
 require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -31,6 +32,11 @@ if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
 $userId = (int) $currentUser['user_id'];
 $userRole = $currentUser['role'] ?? 'facilitator';
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
+$isRotcFacilitator = $userRole === 'facilitator'
+    && normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null)) === 'ROTC';
+$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
+$canViewAllAttendance = $userRole === 'super_admin'
+    || ($userRole === 'facilitator' && !$facilitatorScanRestrictionEnabled);
 $statusFilter = strtolower(trim((string) ($_GET['status_filter'] ?? 'all')));
 $allowedStatusFilters = ['all', 'present', 'on_time', 'late', 'absent'];
 if (!in_array($statusFilter, $allowedStatusFilters, true)) {
@@ -56,43 +62,68 @@ if (empty($selectedColumns)) {
     $selectedColumns = $defaultColumns;
 }
 
-if ($userRole === 'super_admin') {
+if ($canViewAllAttendance) {
+    $studentWhere = '';
+    if ($userRole !== 'super_admin' && $program === 'ROTC') {
+        $studentWhere = 'WHERE ' . rotcStudentSqlCondition('s');
+    }
+
     $studentSql = "
         SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
                COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
+        {$studentWhere}
         ORDER BY s.course_section ASC, s.student_name ASC
     ";
     $studentStmt = $conn->prepare($studentSql);
     $studentStmt->execute();
-    $adminDisplay = 'SUPER ADMIN';
+    $adminDisplay = $userRole === 'super_admin'
+        ? 'SUPER ADMIN'
+        : strtoupper($_SESSION['username'] ?? 'FACILITATOR');
 } elseif ($userRole === 'coordinator') {
-    $studentSql = "
-        SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
-               COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
-        FROM tbl_student s
-        LEFT JOIN tbl_users u ON s.created_by = u.user_id
-        WHERE (u.role = 'facilitator' AND u.program = :program)
-           OR s.course_section = :program_section
-        ORDER BY s.course_section ASC, s.student_name ASC
-    ";
-    $studentStmt = $conn->prepare($studentSql);
-    $studentStmt->execute([
-        ':program' => $program,
-        ':program_section' => $program,
-    ]);
+    if ($program === 'ROTC') {
+        $studentSql = "
+            SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+                   COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
+            FROM tbl_student s
+            LEFT JOIN tbl_users u ON s.created_by = u.user_id
+            WHERE " . rotcStudentSqlCondition('s') . "
+            ORDER BY s.course_section ASC, s.student_name ASC
+        ";
+        $studentStmt = $conn->prepare($studentSql);
+        $studentStmt->execute();
+    } else {
+        $studentSql = "
+            SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+                   COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
+            FROM tbl_student s
+            LEFT JOIN tbl_users u ON s.created_by = u.user_id
+            WHERE (u.role = 'facilitator' AND u.program = :program)
+               OR s.course_section = :program_section
+            ORDER BY s.course_section ASC, s.student_name ASC
+        ";
+        $studentStmt = $conn->prepare($studentSql);
+        $studentStmt->execute([
+            ':program' => $program,
+            ':program_section' => $program,
+        ]);
+    }
     $adminDisplay = strtoupper(($program ?: 'NSTP') . ' COORDINATOR');
 } else {
+    $facilitatorStudentAccessCondition = "(s.created_by = :creator_user_id OR ads.user_id = :section_user_id"
+        . ($isRotcFacilitator ? " OR " . rotcStudentSqlCondition('s') : "")
+        . ")";
+    if ($program === 'ROTC') {
+        $facilitatorStudentAccessCondition = "({$facilitatorStudentAccessCondition} AND " . rotcStudentSqlCondition('s') . ")";
+    }
     $studentSql = "
-        SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+        SELECT DISTINCT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
                COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name
         FROM tbl_student s
-        INNER JOIN tbl_admin_sections ads
-            ON ads.course_section = s.course_section
-           AND ads.user_id = :section_user_id
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
-        WHERE s.created_by = :creator_user_id
+        WHERE {$facilitatorStudentAccessCondition}
         ORDER BY s.course_section ASC, s.student_name ASC
     ";
     $studentStmt = $conn->prepare($studentSql);
@@ -121,26 +152,32 @@ foreach ($students as $student) {
     $studentId = (int) $student['tbl_student_id'];
     $record = $attendanceLookup[$studentId] ?? null;
     $status = 'Absent';
+    $statusGroup = 'Absent';
     $timeIn = '';
     if ($record) {
-        $status = stripos((string) ($record['status'] ?? ''), 'Late') === 0 ? 'Late' : 'On Time';
-        $timeIn = date('h:i A', strtotime($record['attendance_time']));
+        $rawStatus = trim((string) ($record['status'] ?? ''));
+        $status = $rawStatus !== ''
+            ? $rawStatus
+            : getAttendanceStatus($conn, $student['course_section'] ?? '', $record['time_in'] ?? null);
+        $statusGroup = stripos($status, 'Late') === 0 ? 'Late' : 'On Time';
+        $timeIn = date('h:i A', strtotime($record['time_in']));
     }
 
     if ($statusFilter === 'present' && !$record) {
         continue;
     }
-    if ($statusFilter === 'on_time' && $status !== 'On Time') {
+    if ($statusFilter === 'on_time' && $statusGroup !== 'On Time') {
         continue;
     }
-    if ($statusFilter === 'late' && $status !== 'Late') {
+    if ($statusFilter === 'late' && $statusGroup !== 'Late') {
         continue;
     }
-    if ($statusFilter === 'absent' && $status !== 'Absent') {
+    if ($statusFilter === 'absent' && $statusGroup !== 'Absent') {
         continue;
     }
 
     $student['computed_status'] = $status;
+    $student['computed_status_group'] = $statusGroup;
     $student['computed_time_in'] = $timeIn;
     $section = trim((string) ($student['course_section'] ?? '')) ?: 'No Section';
     $studentsBySection[$section][] = $student;
@@ -189,13 +226,13 @@ if (!empty($studentsBySection)) {
         $late = 0;
         $onTime = 0;
         foreach ($sectionStudents as $student) {
-            if ($student['computed_status'] !== 'Absent') {
+            if ($student['computed_status_group'] !== 'Absent') {
                 $present++;
             }
-            if ($student['computed_status'] === 'Late') {
+            if ($student['computed_status_group'] === 'Late') {
                 $late++;
             }
-            if ($student['computed_status'] === 'On Time') {
+            if ($student['computed_status_group'] === 'On Time') {
                 $onTime++;
             }
         }
@@ -233,7 +270,7 @@ if (!empty($studentsBySection)) {
             $statusColumnIndex = array_search('status', $selectedColumns, true);
             if ($statusColumnIndex !== false) {
                 $cell = Coordinate::stringFromColumnIndex($statusColumnIndex + 1) . $row;
-                $color = $student['computed_status'] === 'On Time' ? 'C8E6C9' : ($student['computed_status'] === 'Late' ? 'FFCCCB' : 'FFEBEE');
+                $color = $student['computed_status_group'] === 'On Time' ? 'C8E6C9' : ($student['computed_status_group'] === 'Late' ? 'FFCCCB' : 'FFEBEE');
                 $sheet->getStyle($cell)->applyFromArray([
                     'font' => ['bold' => true],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $color]],

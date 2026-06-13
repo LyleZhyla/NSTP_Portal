@@ -15,6 +15,13 @@ require_once './include/section-folders.php';
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'] ?? 'facilitator';
 $user_name = $_SESSION['full_name'] ?? 'User';
+$user_program = normalizeProgram($_SESSION['program'] ?? null);
+if (!$user_program) {
+    $programStmt = $conn->prepare("SELECT program FROM tbl_users WHERE user_id = ?");
+    $programStmt->execute([$user_id]);
+    $user_program = normalizeProgram($programStmt->fetchColumn());
+}
+$isRotcFacilitator = $user_role === 'facilitator' && $user_program === 'ROTC';
 
 if (!canAccessStaffTools($user_role)) {
     header("Location: profile.php");
@@ -265,7 +272,17 @@ if ($user_role === 'coordinator') {
 }
 
 // FOR REGULAR ADMIN WITH MULTIPLE SECTIONS - Get students organized by section folder
-if ($user_role === 'facilitator' && $sections_count > 1) {
+if ($user_role === 'facilitator' && $isRotcFacilitator) {
+    $rotcCondition = rotcStudentSqlCondition('s');
+    $stmt = $conn->prepare("
+        SELECT s.*, s.original_section
+        FROM tbl_student s
+        WHERE {$rotcCondition}
+        ORDER BY s.student_name ASC
+    ");
+    $stmt->execute();
+    $result = $stmt->fetchAll();
+} elseif ($user_role === 'facilitator' && $sections_count > 1) {
     // Get all students for this admin, organized by folder section
     $sections_with_students = [];
     
@@ -321,6 +338,17 @@ if ($user_role === 'coordinator') {
     $folderAssignableFacilitators = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach (['CWTS', 'LTS', 'ROTC'] as $componentName) {
+        if ($componentName === 'ROTC') {
+            $rotcCondition = rotcStudentSqlCondition('s');
+            $stmt = $conn->prepare("
+                SELECT COUNT(DISTINCT s.tbl_student_id)
+                FROM tbl_student s
+                LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+                WHERE {$rotcCondition}
+                   OR (creator.role = 'facilitator' AND creator.program = 'ROTC')
+            ");
+            $stmt->execute();
+        } else {
         $stmt = $conn->prepare("
             SELECT COUNT(DISTINCT s.tbl_student_id)
             FROM tbl_student s
@@ -332,6 +360,7 @@ if ($user_role === 'coordinator') {
                )
         ");
         $stmt->execute([$componentName, $componentName, autoSectionFolderPrefix($componentName) . ' %']);
+        }
 
         $facilitatorStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users WHERE role = 'facilitator' AND program = ?");
         $facilitatorStmt->execute([$componentName]);
@@ -454,6 +483,15 @@ if ($user_role === 'super_admin') {
     $total_coordinators = $total_coordinators_stmt->fetchColumn();
 } elseif ($user_role === 'facilitator') {
     if (!empty($assignedSections)) {
+        if ($isRotcFacilitator) {
+            $rotcCondition = rotcStudentSqlCondition('s');
+            $total_stmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM tbl_student s
+                WHERE {$rotcCondition}
+            ");
+            $total_stmt->execute();
+        } else {
         $placeholders = implode(',', array_fill(0, count($assignedSections), '?'));
         $total_stmt = $conn->prepare("
             SELECT COUNT(*)
@@ -461,6 +499,15 @@ if ($user_role === 'super_admin') {
             WHERE created_by = ? AND course_section IN ($placeholders)
         ");
         $total_stmt->execute(array_merge([$user_id], $assignedSections));
+        }
+    } elseif ($isRotcFacilitator) {
+        $rotcCondition = rotcStudentSqlCondition('s');
+        $total_stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM tbl_student s
+            WHERE {$rotcCondition}
+        ");
+        $total_stmt->execute();
     } else {
         $total_stmt = $conn->prepare("SELECT 0");
         $total_stmt->execute();
@@ -930,7 +977,7 @@ if ($user_role === 'super_admin') {
         }
         
         .nested-section-header {
-            background: linear-gradient(135deg, #6c8ebf 0%, #4a6fa5 100%);
+            background: #3f5661;
             color: white;
             padding: 12px 15px;
             cursor: pointer;
@@ -1234,7 +1281,16 @@ if ($user_role === 'super_admin') {
                 <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>
                 <div class="row mb-3">
                     <div class="col-12">
-                        <?php if ($assignedSection): ?>
+                        <?php if ($isRotcFacilitator): ?>
+                        <div class="section-info">
+                            <i class="fas fa-layer-group mr-2"></i>
+                            <strong>ROTC Access:</strong>
+                            <span class="badge badge-primary section-badge-large">
+                                <i class="fas fa-users mr-1"></i>
+                                All ROTC Students
+                            </span>
+                        </div>
+                        <?php elseif ($assignedSection): ?>
                         <div class="section-info">
                             <i class="fas fa-folder mr-2"></i>
                             <strong>Your Admin Folder:</strong>
@@ -1693,7 +1749,20 @@ if ($user_role === 'super_admin') {
                 <!-- ==================== -->
                 <?php elseif ($user_role === 'facilitator'): ?>
                 
-                <?php if (!empty($assignedSection)): ?>
+                <?php if ($isRotcFacilitator): ?>
+                    <div class="alert alert-info">
+                        <i class="fas fa-file-export mr-2"></i>
+                        <strong>ROTC access:</strong> All ROTC facilitators can view the full ROTC student list.
+                    </div>
+                    <div class="folder-grid">
+                        <a class="folder-box" href="folder-students.php?scope=rotc_all">
+                            <span class="folder-box-icon"><i class="fas fa-users"></i></span>
+                            <span class="folder-box-title">All ROTC Students</span>
+                            <span class="folder-box-meta">Open the complete ROTC student list.</span>
+                            <span class="folder-box-count"><i class="fas fa-users"></i><?php echo $total_students; ?> students</span>
+                        </a>
+                    </div>
+                <?php elseif (!empty($assignedSection)): ?>
                     <div class="alert alert-info">
                         <i class="fas fa-file-export mr-2"></i>
                         <strong>View and export access:</strong> Your folder is shown below. Open it to review students before exporting.

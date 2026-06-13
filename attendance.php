@@ -19,6 +19,12 @@ if (!canAccessStaffTools($admin_role)) {
     header("Location: profile.php");
     exit();
 }
+$currentUser = getCurrentUserRecord($conn);
+$isRotcFacilitator = $admin_role === 'facilitator'
+    && normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null)) === 'ROTC';
+$facilitatorStudentAccessCondition = "(s.created_by = ? OR ads.user_id = ?"
+    . ($isRotcFacilitator ? " OR " . rotcStudentSqlCondition('s') : "")
+    . ")";
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $admin_role === 'super_admin'
     || ($admin_role === 'facilitator' && !$facilitatorScanRestrictionEnabled);
@@ -597,7 +603,7 @@ if ($admin_role === 'super_admin') {
                                     INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
                                     LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
-                                    AND (s.created_by = ? OR ads.user_id = ?)
+                                    AND {$facilitatorStudentAccessCondition}
                                 ");
                                 $stmt->execute([$admin_id, $admin_id]);
                             }
@@ -633,7 +639,7 @@ if ($admin_role === 'super_admin') {
                                     LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
                                     AND (a.status IS NULL OR a.status = '' OR a.status LIKE 'On Time%')
-                                    AND (s.created_by = ? OR ads.user_id = ?)
+                                    AND {$facilitatorStudentAccessCondition}
                                 ");
                                 $stmt->execute([$admin_id, $admin_id]);
                             }
@@ -669,7 +675,7 @@ if ($admin_role === 'super_admin') {
                                     LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
                                     AND a.status LIKE 'Late%'
-                                    AND (s.created_by = ? OR ads.user_id = ?)
+                                    AND {$facilitatorStudentAccessCondition}
                                 ");
                                 $stmt->execute([$admin_id, $admin_id]);
                             }
@@ -835,7 +841,7 @@ if ($admin_role === 'super_admin') {
                 INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
                 LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                 WHERE DATE(a.time_in) = CURDATE() 
-                AND (s.created_by = ? OR ads.user_id = ?)
+                AND {$facilitatorStudentAccessCondition}
                 ORDER BY a.time_in DESC
             ");
             $stmt->execute([$admin_id, $admin_id]);
@@ -956,8 +962,7 @@ if ($admin_role === 'super_admin') {
                                     SELECT DISTINCT s.tbl_student_id, s.student_name, s.course_section 
                                     FROM tbl_student s
                                     LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
-                                    WHERE s.created_by = ? 
-                                    OR ads.user_id = ?
+                                    WHERE {$facilitatorStudentAccessCondition}
                                     ORDER BY s.student_name
                                 ");
                                 $stmt->execute([$admin_id, $admin_id]);

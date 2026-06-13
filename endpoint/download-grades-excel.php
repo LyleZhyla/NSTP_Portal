@@ -230,20 +230,31 @@ $studentWhere = [];
 $studentParams = [];
 if ($role === 'super_admin') {
     if ($currentProgram) {
-        $studentWhere[] = "(creator.program = ? OR s.course_section = ?)";
-        $studentParams[] = $currentProgram;
-        $studentParams[] = $currentProgram;
+        if ($currentProgram === 'ROTC') {
+            $studentWhere[] = rotcStudentSqlCondition('s');
+        } else {
+            $studentWhere[] = "(creator.program = ? OR s.course_section = ?)";
+            $studentParams[] = $currentProgram;
+            $studentParams[] = $currentProgram;
+        }
     }
 } elseif ($role === 'coordinator') {
-    $studentWhere[] = "(creator.program = ? OR s.course_section = ?)";
-    $studentParams[] = $program;
-    $studentParams[] = $program;
+    if ($program === 'ROTC') {
+        $studentWhere[] = rotcStudentSqlCondition('s');
+    } else {
+        $studentWhere[] = "(creator.program = ? OR s.course_section = ?)";
+        $studentParams[] = $program;
+        $studentParams[] = $program;
+    }
+} elseif ($currentProgram === 'ROTC') {
+    $studentWhere[] = rotcStudentSqlCondition('s');
+    $selectedFolderLabel = 'All ROTC Students';
 } else {
     $studentWhere[] = "s.created_by = ?";
     $studentParams[] = $userId;
 }
 
-if ($selectedFacilitatorId && $selectedFolder !== '') {
+if ($selectedFacilitatorId && $selectedFolder !== '' && !($currentProgram === 'ROTC' && $selectedFolder === 'rotc_all')) {
     $studentWhere[] = "s.created_by = ? AND s.course_section = ?";
     $studentParams[] = $selectedFacilitatorId;
     $studentParams[] = $selectedFolder;
