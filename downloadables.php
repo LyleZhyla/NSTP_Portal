@@ -529,10 +529,10 @@ if ($role === 'super_admin') {
             font-size: 0.9rem;
         }
         .chart-panel {
-            border: 1px solid rgba(0,0,0,0.08);
+            border: 1px solid #dce3ec;
             border-radius: 8px;
             padding: 16px;
-            background: #fff;
+            background: #ffffff;
         }
         .chart-panel canvas {
             height: 310px !important;
@@ -549,29 +549,30 @@ if ($role === 'super_admin') {
             margin-bottom: 16px;
         }
         .graph-view-option {
-            border: 1px solid #d9e2ef;
+            border: 1px solid #dce3ec;
             border-radius: 8px;
             padding: 10px 12px;
-            color: #2f3a4a;
-            background: #fff;
+            color: #364152;
+            background: #f8fafc;
             display: flex;
             align-items: center;
             gap: 8px;
         }
         .graph-view-option:hover {
-            color: #0d6efd;
-            border-color: #8bbcff;
+            color: #1f5f8b;
+            border-color: #9cb8d8;
+            background: #f2f6fb;
             text-decoration: none;
         }
         .graph-view-option.active {
-            background: #0d6efd;
-            border-color: #0d6efd;
-            color: #fff;
+            background: #e8f0f8;
+            border-color: #7ea3c8;
+            color: #183b5b;
             font-weight: 600;
         }
         .graph-help {
-            border-left: 4px solid #0d6efd;
-            background: #f5f9ff;
+            border-left: 4px solid #7ea3c8;
+            background: #f7f9fc;
             padding: 12px 14px;
             border-radius: 6px;
             margin-bottom: 16px;
@@ -583,10 +584,10 @@ if ($role === 'super_admin') {
             margin-bottom: 16px;
         }
         .graph-summary-item {
-            border: 1px solid #e5e8ef;
+            border: 1px solid #dce3ec;
             border-radius: 8px;
             padding: 12px;
-            background: #fbfcfe;
+            background: #f9fbfd;
         }
         .graph-summary-item span {
             display: block;
@@ -605,8 +606,8 @@ if ($role === 'super_admin') {
             margin-top: 8px;
         }
         .active-filter-list span {
-            border: 1px solid #d9e2ef;
-            background: #fff;
+            border: 1px solid #dce3ec;
+            background: #f8fafc;
             border-radius: 999px;
             padding: 4px 9px;
             font-size: 0.85rem;
@@ -1280,7 +1281,7 @@ if ($role === 'super_admin') {
 const sectionsByFacilitator = <?php echo json_encode($sectionsByFacilitator); ?>;
 const enrollmentCharts = <?php echo json_encode($chartData); ?>;
 const selectedEnrollmentGraph = <?php echo json_encode($selectedGraph); ?>;
-const chartPalette = ['#0d6efd', '#198754', '#dc3545', '#ffc107', '#6f42c1', '#20c997', '#fd7e14', '#0dcaf0', '#6c757d', '#d63384', '#2f6f7e', '#495057'];
+const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5e9aa6', '#b97883', '#78906d', '#9b8a78', '#6f7f98', '#a284a6', '#8793a1'];
 
 function updateAttendancePeriodFields() {
     const periodSelect = document.getElementById('attendancePeriod');
