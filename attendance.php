@@ -307,6 +307,59 @@ if ($admin_role === 'super_admin') {
         .card-header .card-title i {
             color: #198754;
         }
+
+        .attendance-records-card .card-header {
+            background: #f8fafc;
+            border-bottom: 1px solid #dce8e0;
+        }
+
+        .attendance-records-card .card-title {
+            color: #0f5132 !important;
+        }
+
+        .attendance-records-card .btn-group-custom {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .attendance-records-card .btn-group-custom .btn {
+            border-radius: 6px;
+            color: #fff !important;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        .attendance-records-card .btn-export {
+            background: #198754 !important;
+            border-color: #198754 !important;
+        }
+
+        .attendance-records-card .btn-refresh {
+            background: #0f766e !important;
+            border-color: #0f766e !important;
+        }
+
+        .attendance-records-card .btn-archive {
+            background: #475569 !important;
+            border-color: #475569 !important;
+        }
+
+        .attendance-records-card .btn-export:hover {
+            background: #0f5132 !important;
+            border-color: #0f5132 !important;
+        }
+
+        .attendance-records-card .btn-refresh:hover {
+            background: #115e59 !important;
+            border-color: #115e59 !important;
+        }
+
+        .attendance-records-card .btn-archive:hover {
+            background: #334155 !important;
+            border-color: #334155 !important;
+        }
         
         .card-body {
             padding: 20px;
@@ -788,20 +841,20 @@ if ($admin_role === 'super_admin') {
 
             <!-- Right Column: Attendance List -->
             <div class="col-lg-8">
-                <div class="card">
+                <div class="card attendance-records-card">
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="fas fa-list-check mr-2"></i>Today's Attendance Records
                         </h3>
                         <div class="card-tools">
                             <div class="btn-group-custom">
-                                <a href="./endpoint/download-attendance-excel.php" class="btn btn-sm btn-success" title="Export to Excel">
+                                <a href="./endpoint/download-attendance-excel.php" class="btn btn-sm btn-export" title="Export to Excel">
                                     <i class="fas fa-file-excel mr-1"></i>Export
                                 </a>
-                                <button type="button" class="btn btn-sm btn-info" onclick="refreshTable()" title="Refresh">
+                                <button type="button" class="btn btn-sm btn-refresh" onclick="refreshTable()" title="Refresh">
                                     <i class="fas fa-sync-alt mr-1"></i>Refresh
                                 </button>
-                                <a href="archive-manager.php" class="btn btn-sm btn-secondary" title="View Archive">
+                                <a href="archive-manager.php" class="btn btn-sm btn-archive" title="View Archive">
                                     <i class="fas fa-archive mr-1"></i>Archive
                                 </a>
                             </div>

@@ -891,3 +891,148 @@ body.dark-mode .small-box > .small-box-footer i,
 body.dark-mode .small-box > a.small-box-footer i {
     color: #7bd88f !important;
 }
+
+/* Facilitator/staff content readability: keep menu bars as-is, make dark-mode pages light. */
+body.dark-mode .content-wrapper {
+    background-color: #f4f6f9 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .content-header {
+    background-color: #f4f6f9 !important;
+    border-bottom-color: #dce8e0 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .content-header h1,
+body.dark-mode .content-wrapper .content-header h2,
+body.dark-mode .content-wrapper .content-header h3,
+body.dark-mode .content-wrapper .content-header h4,
+body.dark-mode .content-wrapper .content-header h5,
+body.dark-mode .content-wrapper .content-header h6,
+body.dark-mode .content-wrapper label,
+body.dark-mode .content-wrapper .card-title,
+body.dark-mode .content-wrapper .info-title,
+body.dark-mode .content-wrapper .info-value,
+body.dark-mode .content-wrapper .table,
+body.dark-mode .content-wrapper .table td,
+body.dark-mode .content-wrapper .table th {
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .card,
+body.dark-mode .content-wrapper .card-body,
+body.dark-mode .content-wrapper .stat-card,
+body.dark-mode .content-wrapper .download-card,
+body.dark-mode .content-wrapper .profile-card,
+body.dark-mode .content-wrapper .section-folder-body,
+body.dark-mode .content-wrapper .admin-folder-body,
+body.dark-mode .content-wrapper .multiple-sections-container {
+    background-color: #ffffff !important;
+    border-color: #dce8e0 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .card-header,
+body.dark-mode .content-wrapper .card-footer,
+body.dark-mode .content-wrapper .activity-header,
+body.dark-mode .content-wrapper .export-preview-card,
+body.dark-mode .content-wrapper .export-preview-body {
+    background-color: #f8fafc !important;
+    border-color: #dce8e0 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .table thead th,
+body.dark-mode .content-wrapper .folder-table thead,
+body.dark-mode .content-wrapper .student-detail-table thead th {
+    background-color: #f3faf6 !important;
+    border-color: #dce8e0 !important;
+    color: #0f5132 !important;
+}
+
+body.dark-mode .content-wrapper .table td,
+body.dark-mode .content-wrapper .table th {
+    border-color: #e5efe9 !important;
+}
+
+body.dark-mode .content-wrapper .table-hover tbody tr:hover {
+    background-color: #ecfdf3 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .form-control,
+body.dark-mode .content-wrapper .custom-select,
+body.dark-mode .content-wrapper .select2-container--bootstrap4 .select2-selection,
+body.dark-mode .content-wrapper .input-group-text,
+body.dark-mode .content-wrapper .custom-file-label {
+    background-color: #ffffff !important;
+    border-color: #cfded5 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .form-control:focus,
+body.dark-mode .content-wrapper .custom-select:focus {
+    background-color: #ffffff !important;
+    border-color: var(--nstp-green) !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .text-muted,
+body.dark-mode .content-wrapper .info-label,
+body.dark-mode .content-wrapper .empty-state,
+body.dark-mode .content-wrapper .dataTables_wrapper .dataTables_length,
+body.dark-mode .content-wrapper .dataTables_wrapper .dataTables_filter,
+body.dark-mode .content-wrapper .dataTables_wrapper .dataTables_info,
+body.dark-mode .content-wrapper .dataTables_wrapper .dataTables_paginate {
+    color: #5f7168 !important;
+}
+
+body.dark-mode .content-wrapper .breadcrumb-item.active {
+    color: #0f5132 !important;
+}
+
+body.dark-mode .content-wrapper .small-box,
+body.dark-mode .content-wrapper .small-box.bg-info,
+body.dark-mode .content-wrapper .small-box.bg-success,
+body.dark-mode .content-wrapper .small-box.bg-primary,
+body.dark-mode .content-wrapper .small-box.bg-warning,
+body.dark-mode .content-wrapper .small-box.bg-danger,
+body.dark-mode .content-wrapper .small-box.bg-secondary,
+body.dark-mode .content-wrapper .small-box.bg-gradient-secondary,
+body.dark-mode .content-wrapper .info-box,
+body.dark-mode .content-wrapper .info-box.bg-gradient-info,
+body.dark-mode .content-wrapper .info-box.bg-gradient-success,
+body.dark-mode .content-wrapper .info-box.bg-gradient-warning {
+    background: #ffffff !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .content-wrapper .small-box .inner,
+body.dark-mode .content-wrapper .small-box .inner h3,
+body.dark-mode .content-wrapper .small-box .inner p,
+body.dark-mode .content-wrapper .info-box-text,
+body.dark-mode .content-wrapper .info-box-number {
+    color: #1f2937 !important;
+}
+
+body.dark-mode .modal-content,
+body.dark-mode .select2-dropdown {
+    background-color: #ffffff !important;
+    border-color: #dce8e0 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .modal-header:not(.bg-primary):not(.bg-info):not(.bg-success):not(.bg-warning):not(.bg-danger),
+body.dark-mode .modal-footer {
+    background-color: #f8fafc !important;
+    border-color: #dce8e0 !important;
+    color: #1f2937 !important;
+}
+
+body.dark-mode .modal-body,
+body.dark-mode .modal-body label,
+body.dark-mode .modal-body .text-muted,
+body.dark-mode .select2-results__option {
+    color: #1f2937 !important;
+}

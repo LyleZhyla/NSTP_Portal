@@ -232,6 +232,15 @@ function arrayTextValue($array, $index, $fallback = '', $maxLength = 255) {
     return cleanLandingContentText($array[$index] ?? $fallback, $maxLength);
 }
 
+function landingPostedArrayHasIndex(array $array, $index) {
+    return array_key_exists($index, $array);
+}
+
+function landingHasUploadedFileAtIndex(array $file, $index) {
+    return !empty($file['name'][$index])
+        && (($file['error'][$index] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE);
+}
+
 function buildLandingSectionPayload($sectionKey, array $post, array $files, array $existingSection, $baseDir) {
     $payload = is_array($existingSection['payload'] ?? null) ? $existingSection['payload'] : [];
 
@@ -239,16 +248,21 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
         $images = [];
         $heroExisting = $post['hero_image_existing'] ?? [];
         $heroAlt = $post['hero_image_alt'] ?? [];
+        $heroReplace = $post['hero_image_replace'] ?? [];
         $heroUploadNames = $files['hero_image_upload']['name'] ?? [];
-        $heroImageCount = max(count($heroExisting), count($heroAlt), count($heroUploadNames));
+        $heroImageCount = max(count($heroExisting), count($heroAlt), count($heroReplace), count($heroUploadNames));
 
         for ($index = 0; $index < $heroImageCount; $index++) {
             $image = arrayTextValue($post['hero_image_existing'] ?? [], $index, '', 255);
-            if (!empty($files['hero_image_upload'])) {
+            $isReplacingImage = !empty($heroReplace[$index]);
+
+            if (!empty($files['hero_image_upload']) && landingHasUploadedFileAtIndex($files['hero_image_upload'], $index)) {
                 $uploadedImage = uploadLandingSectionImage($files['hero_image_upload'], $index, $baseDir);
                 if ($uploadedImage) {
                     $image = $uploadedImage;
                 }
+            } elseif ($isReplacingImage) {
+                throw new RuntimeException('The selected hero image was not received. Please choose the image again and save.');
             }
 
             if ($image !== '') {
@@ -281,7 +295,10 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
     if ($sectionKey === 'programs') {
         $items = [];
         foreach (($post['program_name'] ?? []) as $index => $name) {
-            $image = arrayTextValue($post['program_image_existing'] ?? [], $index, $payload[$index]['image'] ?? '', 255);
+            $existingImages = $post['program_image_existing'] ?? [];
+            $image = landingPostedArrayHasIndex($existingImages, $index)
+                ? arrayTextValue($existingImages, $index, '', 255)
+                : cleanLandingContentText($payload[$index]['image'] ?? '', 255);
             if (!empty($files['program_image_upload'])) {
                 $uploadedImage = uploadLandingSectionImage($files['program_image_upload'], $index, $baseDir);
                 if ($uploadedImage) {
@@ -318,7 +335,10 @@ function buildLandingSectionPayload($sectionKey, array $post, array $files, arra
     if ($sectionKey === 'activities') {
         $items = [];
         foreach (($post['activity_title'] ?? []) as $index => $title) {
-            $image = arrayTextValue($post['activity_image_existing'] ?? [], $index, $payload[$index]['image'] ?? '', 255);
+            $existingImages = $post['activity_image_existing'] ?? [];
+            $image = landingPostedArrayHasIndex($existingImages, $index)
+                ? arrayTextValue($existingImages, $index, '', 255)
+                : cleanLandingContentText($payload[$index]['image'] ?? '', 255);
             if (!empty($files['activity_image_upload'])) {
                 $uploadedImage = uploadLandingSectionImage($files['activity_image_upload'], $index, $baseDir);
                 if ($uploadedImage) {
@@ -1473,20 +1493,52 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         }
 
         .landing-alert {
-            margin: 0 0 22px;
-            padding: 12px 14px;
+            position: fixed;
+            top: 22px;
+            right: 22px;
+            z-index: 90;
+            max-width: min(360px, calc(100vw - 32px));
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 15px;
             border-radius: 8px;
+            box-shadow: 0 18px 42px rgba(15, 47, 34, 0.18);
             font-weight: 800;
+            animation: toastSlideIn 0.22s ease-out;
         }
 
         .landing-alert.success {
             background: #e7f7ef;
             color: #146c43;
+            border: 1px solid #b7e4ca;
         }
 
         .landing-alert.error {
             background: #fde8e8;
             color: #a12626;
+            border: 1px solid #fecaca;
+        }
+
+        .landing-alert.is-hiding {
+            opacity: 0;
+            transform: translateX(20px);
+            transition: opacity 0.24s ease, transform 0.24s ease;
+        }
+
+        .landing-alert i {
+            font-size: 1rem;
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(18px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
 
         .modal-backdrop {
@@ -1613,6 +1665,34 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
             background: #fff1f2;
             color: #b91c1c;
             border: 1px solid #fecdd3;
+        }
+
+        .remove-image-btn {
+            width: auto;
+            min-height: 34px;
+            margin-top: 8px;
+            padding: 0 10px;
+            background: #fff1f2;
+            color: #b91c1c;
+            border: 1px solid #fecdd3;
+        }
+
+        .upload-status {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            color: #0f766e;
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+
+        .upload-status.is-active {
+            display: flex;
+        }
+
+        .upload-status i {
+            font-size: 0.85rem;
         }
 
         .payload-preview {
@@ -2796,13 +2876,15 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
             </div>
         </section>
 
+        <?php if ($landingMessage): ?>
+            <div class="landing-alert <?php echo e($landingMessageType); ?>" id="landingToast" role="status" aria-live="polite">
+                <i class="fas <?php echo $landingMessageType === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'; ?>"></i>
+                <span><?php echo e($landingMessage); ?></span>
+            </div>
+        <?php endif; ?>
+
         <section class="staff-section" id="staff">
             <div class="section-inner">
-                <?php if ($landingMessage): ?>
-                    <div class="landing-alert <?php echo e($landingMessageType); ?>">
-                        <?php echo e($landingMessage); ?>
-                    </div>
-                <?php endif; ?>
 
                 <div class="section-head">
                     <?php renderSectionEditButton('org_chart', $landingSections['org_chart'], $canEditLanding); ?>
@@ -2928,6 +3010,13 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                                                     <label>Upload Picture</label>
                                                     <input type="file" name="program_image_upload[]" accept="image/*">
                                                     <input type="hidden" name="program_image_existing[]" data-payload-field="program_image" data-index="<?php echo $index; ?>">
+                                                    <button type="button" class="modal-action remove-image-btn" data-clear-image="program_image" data-index="<?php echo $index; ?>">
+                                                        <i class="fas fa-trash"></i> Remove Image
+                                                    </button>
+                                                    <div class="upload-status" aria-live="polite">
+                                                        <i class="fas fa-spinner fa-spin"></i>
+                                                        <span>Image ready to upload</span>
+                                                    </div>
                                                 </div>
                                                 <div class="field full">
                                                     <img class="payload-preview" data-preview="program_image" data-index="<?php echo $index; ?>" alt="">
@@ -2992,6 +3081,13 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                                                     <label>Upload Picture</label>
                                                     <input type="file" name="activity_image_upload[]" accept="image/*">
                                                     <input type="hidden" name="activity_image_existing[]" data-payload-field="activity_image" data-index="<?php echo $index; ?>">
+                                                    <button type="button" class="modal-action remove-image-btn" data-clear-image="activity_image" data-index="<?php echo $index; ?>">
+                                                        <i class="fas fa-trash"></i> Remove Image
+                                                    </button>
+                                                    <div class="upload-status" aria-live="polite">
+                                                        <i class="fas fa-spinner fa-spin"></i>
+                                                        <span>Image ready to upload</span>
+                                                    </div>
                                                 </div>
                                                 <div class="field">
                                                     <img class="payload-preview" data-preview="activity_image" data-index="<?php echo $index; ?>" alt="">
@@ -3064,10 +3160,17 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                                 <div class="field">
                                     <label for="landingPhotoUpload">Upload Photo</label>
                                     <input type="file" name="photo_upload" id="landingPhotoUpload" accept="image/*">
+                                    <div class="upload-status" aria-live="polite">
+                                        <i class="fas fa-spinner fa-spin"></i>
+                                        <span>Photo ready to upload</span>
+                                    </div>
                                 </div>
                                 <div class="field full">
                                     <label for="landingPhotoPath">Photo Path</label>
                                     <input type="text" name="photo_path" id="landingPhotoPath" placeholder="uploads/landing_staff/photo.png">
+                                    <button type="button" class="modal-action remove-image-btn" id="clearLandingPhotoBtn">
+                                        <i class="fas fa-trash"></i> Remove Photo
+                                    </button>
                                 </div>
                                 <div class="field full">
                                     <label class="check-field" for="landingIsVisible">
@@ -3120,6 +3223,20 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         </div>
     </footer>
     <script>
+        (function () {
+            const landingToast = document.getElementById('landingToast');
+            if (!landingToast) {
+                return;
+            }
+
+            window.setTimeout(function () {
+                landingToast.classList.add('is-hiding');
+                window.setTimeout(function () {
+                    landingToast.remove();
+                }, 260);
+            }, 4200);
+        })();
+
         (function () {
             const slides = Array.from(document.querySelectorAll('.hero-slide'));
             if (slides.length <= 1) {
@@ -3205,6 +3322,87 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                     }
                 }
 
+                function setImageUploadStatus(fileInput, message, isActive) {
+                    const status = fileInput.closest('.field')?.querySelector('.upload-status');
+                    if (!status) {
+                        return;
+                    }
+
+                    const messageNode = status.querySelector('span');
+                    if (messageNode) {
+                        messageNode.textContent = message;
+                    }
+                    status.classList.toggle('is-active', Boolean(isActive));
+                }
+
+                function showReadyUploadStatus(fileInput, label) {
+                    if (fileInput.files && fileInput.files[0]) {
+                        setImageUploadStatus(fileInput, label + ' ready to upload', true);
+                    } else {
+                        setImageUploadStatus(fileInput, '', false);
+                    }
+                }
+
+                function showUploadingStatuses(formElement) {
+                    let hasUploads = false;
+                    formElement.querySelectorAll('input[type="file"]').forEach(function (fileInput) {
+                        if (fileInput.files && fileInput.files.length) {
+                            hasUploads = true;
+                            setImageUploadStatus(fileInput, 'Uploading...', true);
+                        }
+                    });
+
+                    return hasUploads;
+                }
+
+                function clearPayloadImage(fieldName, index) {
+                    setPayloadInput(fieldName, index, '');
+                    setPayloadPreview(fieldName, index, '');
+
+                    const existingInput = document.querySelector(`[data-payload-field="${fieldName}"][data-index="${index}"]`);
+                    const fileInput = existingInput?.closest('.field')?.querySelector('input[type="file"]');
+                    if (fileInput) {
+                        fileInput.value = '';
+                        setImageUploadStatus(fileInput, '', false);
+                    }
+                }
+
+                function previewPayloadUpload(fileInput) {
+                    const existingInput = fileInput.closest('.field')?.querySelector('input[type="hidden"][data-payload-field]');
+                    if (!existingInput || !fileInput.files || !fileInput.files[0]) {
+                        return;
+                    }
+
+                    const fieldName = existingInput.dataset.payloadField;
+                    const index = existingInput.dataset.index;
+                    const preview = document.querySelector(`[data-preview="${fieldName}"][data-index="${index}"]`);
+                    if (!preview) {
+                        return;
+                    }
+
+                    preview.src = URL.createObjectURL(fileInput.files[0]);
+                    preview.style.display = 'block';
+                }
+
+                function previewHeroUpload(fileInput) {
+                    if (!fileInput.files || !fileInput.files[0]) {
+                        return;
+                    }
+
+                    const row = fileInput.closest('.payload-item');
+                    const preview = row?.querySelector('.payload-preview');
+                    const replaceInput = row?.querySelector('input[name="hero_image_replace[]"]');
+                    if (!preview) {
+                        return;
+                    }
+
+                    if (replaceInput) {
+                        replaceInput.value = '1';
+                    }
+                    preview.src = URL.createObjectURL(fileInput.files[0]);
+                    preview.style.display = 'block';
+                }
+
                 function renumberHeroImageRows() {
                     document.querySelectorAll('#heroImageList .payload-item').forEach(function (item, index) {
                         item.querySelector('h4').textContent = 'Hero Image ' + (index + 1);
@@ -3230,6 +3428,11 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                             <label>Upload Picture</label>
                             <input type="file" name="hero_image_upload[]" accept="image/*">
                             <input type="hidden" name="hero_image_existing[]" value="">
+                            <input type="hidden" name="hero_image_replace[]" value="0">
+                            <div class="upload-status" aria-live="polite">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <span>Image ready to upload</span>
+                            </div>
                         </div>
                         <div class="field">
                             <label>Alt Text</label>
@@ -3386,6 +3589,47 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
 
                 document.getElementById('addHeroImageBtn')?.addEventListener('click', function () {
                     addHeroImageRow({});
+                });
+
+                document.querySelectorAll('[data-clear-image]').forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        clearPayloadImage(button.dataset.clearImage, button.dataset.index);
+                    });
+                });
+
+                document.querySelectorAll('input[type="file"][name="program_image_upload[]"], input[type="file"][name="activity_image_upload[]"]').forEach(function (input) {
+                    input.addEventListener('change', function () {
+                        previewPayloadUpload(input);
+                        showReadyUploadStatus(input, 'Image');
+                    });
+                });
+
+                document.getElementById('sectionEditorForm')?.addEventListener('change', function (event) {
+                    if (event.target.matches('input[type="file"][name="hero_image_upload[]"]')) {
+                        previewHeroUpload(event.target);
+                        showReadyUploadStatus(event.target, 'Image');
+                    }
+                });
+
+                document.getElementById('sectionEditorForm')?.addEventListener('submit', function (event) {
+                    const hasUploads = showUploadingStatuses(event.currentTarget);
+                    if (hasUploads) {
+                        event.currentTarget.querySelector('.modal-save')?.setAttribute('disabled', 'disabled');
+                    }
+                });
+
+                fields.photoUpload.addEventListener('change', function () {
+                    showReadyUploadStatus(fields.photoUpload, 'Photo');
+                });
+
+                form.addEventListener('submit', function () {
+                    showUploadingStatuses(form);
+                });
+
+                document.getElementById('clearLandingPhotoBtn')?.addEventListener('click', function () {
+                    fields.photoPath.value = '';
+                    fields.photoUpload.value = '';
+                    setImageUploadStatus(fields.photoUpload, '', false);
                 });
 
                 document.querySelectorAll('.section-edit-btn').forEach(function (button) {
