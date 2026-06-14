@@ -171,6 +171,18 @@ $chartData = [
     'college' => downloadablesGroupedData($conn, 'r.college', $chartWhere, $chartParams),
     'province' => downloadablesGroupedData($conn, 'r.province', $chartWhere, $chartParams),
 ];
+$selectedChartDataKey = $selectedGraph === 'component' ? 'components' : $selectedGraph;
+$selectedChartRows = $chartData[$selectedChartDataKey] ?? [];
+$topChartRow = $selectedChartRows[0] ?? null;
+$activeFilterLabels = [];
+if (!empty($selectedFilters['component'])) {
+    $activeFilterLabels[] = 'Component: ' . $selectedFilters['component'];
+}
+foreach (['gender' => 'Gender', 'college' => 'College', 'course' => 'Course', 'province' => 'Province'] as $filterKey => $filterLabel) {
+    if (!empty($selectedFilters[$filterKey])) {
+        $activeFilterLabels[] = $filterLabel . ': ' . $selectedFilters[$filterKey];
+    }
+}
 
 $filterOptions = [
     'components' => downloadablesFilterOptions($conn, 'component', $publicScopeWhere, $publicScopeParams),
@@ -517,24 +529,121 @@ if ($role === 'super_admin') {
             font-size: 0.9rem;
         }
         .chart-panel {
-            min-height: 360px;
             border: 1px solid rgba(0,0,0,0.08);
             border-radius: 8px;
-            padding: 14px;
+            padding: 16px;
             background: #fff;
         }
         .chart-panel canvas {
-            height: 260px !important;
-            min-height: 260px;
+            height: 310px !important;
+            min-height: 310px;
         }
         .chart-panel-title {
             font-weight: 600;
-            margin-bottom: 10px;
+            margin-bottom: 4px;
+        }
+        .graph-view-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .graph-view-option {
+            border: 1px solid #d9e2ef;
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #2f3a4a;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .graph-view-option:hover {
+            color: #0d6efd;
+            border-color: #8bbcff;
+            text-decoration: none;
+        }
+        .graph-view-option.active {
+            background: #0d6efd;
+            border-color: #0d6efd;
+            color: #fff;
+            font-weight: 600;
+        }
+        .graph-help {
+            border-left: 4px solid #0d6efd;
+            background: #f5f9ff;
+            padding: 12px 14px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        .graph-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .graph-summary-item {
+            border: 1px solid #e5e8ef;
+            border-radius: 8px;
+            padding: 12px;
+            background: #fbfcfe;
+        }
+        .graph-summary-item span {
+            display: block;
+            color: #6c757d;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+        .graph-summary-item strong {
+            font-size: 1.15rem;
+            line-height: 1.2;
+        }
+        .active-filter-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .active-filter-list span {
+            border: 1px solid #d9e2ef;
+            background: #fff;
+            border-radius: 999px;
+            padding: 4px 9px;
+            font-size: 0.85rem;
+            color: #495057;
+        }
+        .chart-ranking {
+            max-height: 360px;
+            overflow: auto;
+        }
+        .chart-ranking table {
+            margin-bottom: 0;
+        }
+        .chart-ranking .rank-number {
+            width: 36px;
+            color: #6c757d;
+            font-weight: 600;
+        }
+        .chart-percent {
+            color: #6c757d;
+            font-size: 0.85rem;
+            white-space: nowrap;
         }
         .filter-actions {
             display: flex;
             gap: 8px;
             align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        @media (max-width: 767.98px) {
+            .chart-panel canvas {
+                height: 260px !important;
+                min-height: 260px;
+            }
+            .filter-actions .muted-note {
+                width: 100%;
+                margin-left: 0 !important;
+            }
         }
     </style>
 </head>
@@ -605,18 +714,27 @@ if ($role === 'super_admin') {
                         <h3 class="card-title"><i class="fas fa-chart-column mr-2"></i>Enrollment Graphs</h3>
                     </div>
                     <div class="card-body">
+                        <div class="graph-help">
+                            <strong>How to read this graph:</strong>
+                            Choose what you want to compare, then use filters to narrow the list. The bars show how many enrollees belong to each group; the table beside it shows the exact count and percentage.
+                        </div>
+
+                        <div class="graph-view-grid" aria-label="Enrollment graph views">
+                            <?php foreach ($availableGraphTypes as $graphKey => $graphLabel): ?>
+                                <?php
+                                    $graphQuery = array_merge($_GET, ['graph' => $graphKey]);
+                                    $graphUrl = 'downloadables.php?' . http_build_query($graphQuery);
+                                ?>
+                                <a class="graph-view-option <?php echo $selectedGraph === $graphKey ? 'active' : ''; ?>" href="<?php echo htmlspecialchars($graphUrl); ?>">
+                                    <i class="fas <?php echo $graphKey === 'component' ? 'fa-layer-group' : ($graphKey === 'gender' ? 'fa-venus-mars' : ($graphKey === 'course' ? 'fa-graduation-cap' : ($graphKey === 'college' ? 'fa-university' : 'fa-map-marked-alt'))); ?>"></i>
+                                    <span><?php echo htmlspecialchars($graphLabel); ?></span>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+
                         <form method="get" class="mb-3">
+                            <input type="hidden" name="graph" value="<?php echo htmlspecialchars($selectedGraph); ?>">
                             <div class="form-row">
-                                <div class="form-group col-md-3">
-                                    <label for="graphFilter">Graph to Show</label>
-                                    <select class="form-control" id="graphFilter" name="graph">
-                                        <?php foreach ($availableGraphTypes as $graphKey => $graphLabel): ?>
-                                        <option value="<?php echo htmlspecialchars($graphKey); ?>" <?php echo $selectedGraph === $graphKey ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($graphLabel); ?>
-                                        </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
                                 <?php if ($role === 'super_admin' || $role === 'facilitator'): ?>
                                 <div class="form-group col-md-2">
                                     <label for="componentFilter">Component</label>
@@ -690,11 +808,73 @@ if ($role === 'super_admin') {
                             </div>
                         </form>
 
+                        <div class="graph-summary">
+                            <div class="graph-summary-item">
+                                <span>Total in Current View</span>
+                                <strong><?php echo number_format($filteredEnrollmentTotal); ?> enrollees</strong>
+                            </div>
+                            <div class="graph-summary-item">
+                                <span>Highest Group</span>
+                                <strong><?php echo $topChartRow ? htmlspecialchars($topChartRow['label']) . ' (' . number_format((int) $topChartRow['total']) . ')' : 'No data'; ?></strong>
+                            </div>
+                            <div class="graph-summary-item">
+                                <span>Active Filters</span>
+                                <strong><?php echo count($activeFilterLabels) ? count($activeFilterLabels) . ' applied' : 'None'; ?></strong>
+                                <?php if (count($activeFilterLabels)): ?>
+                                <div class="active-filter-list">
+                                    <?php foreach ($activeFilterLabels as $activeFilterLabel): ?>
+                                    <span><?php echo htmlspecialchars($activeFilterLabel); ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <div class="col-lg-8 mb-3">
                                 <div class="chart-panel">
                                     <div class="chart-panel-title"><?php echo htmlspecialchars($availableGraphTypes[$selectedGraph]); ?></div>
+                                    <div class="muted-note mb-2">Each value represents enrolled students that match the selected filters.</div>
                                     <canvas id="selectedEnrollmentChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-lg-4 mb-3">
+                                <div class="chart-panel">
+                                    <div class="chart-panel-title">Exact Counts</div>
+                                    <div class="muted-note mb-2">Use this list when you need the numbers behind the graph.</div>
+                                    <div class="chart-ranking">
+                                        <table class="table table-sm table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Group</th>
+                                                    <th class="text-right">Enrollees</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php if (count($selectedChartRows)): ?>
+                                                    <?php foreach ($selectedChartRows as $rowIndex => $chartRow): ?>
+                                                        <?php
+                                                            $rowTotal = (int) $chartRow['total'];
+                                                            $rowPercent = $filteredEnrollmentTotal > 0 ? round(($rowTotal / $filteredEnrollmentTotal) * 100, 1) : 0;
+                                                        ?>
+                                                        <tr>
+                                                            <td class="rank-number"><?php echo $rowIndex + 1; ?></td>
+                                                            <td><?php echo htmlspecialchars($chartRow['label']); ?></td>
+                                                            <td class="text-right">
+                                                                <strong><?php echo number_format($rowTotal); ?></strong>
+                                                                <div class="chart-percent"><?php echo number_format($rowPercent, 1); ?>%</div>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                <?php else: ?>
+                                                    <tr>
+                                                        <td colspan="3" class="text-center text-muted py-4">No enrollment data for the selected filters.</td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         </div>
