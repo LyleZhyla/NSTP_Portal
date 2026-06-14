@@ -439,6 +439,14 @@ if ($admin_role === 'super_admin') {
             border-radius: 10px;
             border: none;
         }
+
+        .modal {
+            z-index: 10650 !important;
+        }
+
+        .modal-backdrop {
+            z-index: 10640 !important;
+        }
         
         .modal-header {
             border-radius: 10px 10px 0 0;
@@ -848,9 +856,9 @@ if ($admin_role === 'super_admin') {
                         </h3>
                         <div class="card-tools">
                             <div class="btn-group-custom">
-                                <a href="./endpoint/download-attendance-excel.php" class="btn btn-sm btn-export" title="Export to Excel">
+                                <button type="button" class="btn btn-sm btn-export" data-toggle="modal" data-target="#exportAttendanceModal" title="Export to Excel">
                                     <i class="fas fa-file-excel mr-1"></i>Export
-                                </a>
+                                </button>
                                 <button type="button" class="btn btn-sm btn-refresh" onclick="refreshTable()" title="Refresh">
                                     <i class="fas fa-sync-alt mr-1"></i>Refresh
                                 </button>
@@ -982,6 +990,65 @@ if ($admin_role === 'super_admin') {
     <!-- Footer -->
         <!-- Footer -->
     <?php include 'footer.php'; ?>
+</div>
+
+<!-- Export Attendance Modal -->
+<div class="modal fade" id="exportAttendanceModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-primary">
+                <h5 class="modal-title text-white">
+                    <i class="fas fa-file-excel mr-2"></i>Download Attendance
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <form action="./endpoint/download-attendance-excel.php" method="GET" id="exportAttendanceForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="exportPeriod">Coverage:</label>
+                        <select class="form-control" id="exportPeriod" name="period">
+                            <option value="day">Today / Specific Day</option>
+                            <option value="month">Whole Month</option>
+                            <option value="semester">Whole Semester / Date Range</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group export-period-field" id="exportDayField">
+                        <label for="exportDate">Date:</label>
+                        <input type="date" class="form-control" id="exportDate" name="date" value="<?php echo date('Y-m-d'); ?>">
+                    </div>
+
+                    <div class="form-group export-period-field d-none" id="exportMonthField">
+                        <label for="exportMonth">Month:</label>
+                        <input type="month" class="form-control" id="exportMonth" name="month" value="<?php echo date('Y-m'); ?>">
+                    </div>
+
+                    <div class="export-period-field d-none" id="exportSemesterField">
+                        <div class="form-group">
+                            <label for="exportStartDate">Start Date:</label>
+                            <input type="date" class="form-control" id="exportStartDate" name="start_date" value="<?php echo date('Y-06-01'); ?>">
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="exportEndDate">End Date:</label>
+                            <input type="date" class="form-control" id="exportEndDate" name="end_date" value="<?php echo date('Y-12-31'); ?>">
+                        </div>
+                    </div>
+
+                    <div class="mt-3 small text-muted">
+                        Only dates with facilitator scans will appear. Cells are colored by attendance status: Absent red, Present green, Late yellow.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-download mr-2"></i>Download Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- Manual Entry Modal -->
@@ -1130,6 +1197,8 @@ if ($admin_role === 'super_admin') {
         $('#stopBtn').hide();
         $('#qrDetectedSection').hide();
         $('#attendanceSuccessSection').hide();
+        updateExportPeriodFields();
+        $('#exportPeriod').on('change', updateExportPeriodFields);
         
         // Check if library is loaded
         if (typeof Html5QrcodeScanner === 'undefined') {
@@ -1150,6 +1219,19 @@ if ($admin_role === 'super_admin') {
         const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
         
         $('#current-time').text(`${formattedHours}:${minutes} ${ampm}`);
+    }
+
+    function updateExportPeriodFields() {
+        const period = $('#exportPeriod').val();
+        $('.export-period-field').addClass('d-none');
+
+        if (period === 'month') {
+            $('#exportMonthField').removeClass('d-none');
+        } else if (period === 'semester') {
+            $('#exportSemesterField').removeClass('d-none');
+        } else {
+            $('#exportDayField').removeClass('d-none');
+        }
     }
     
     // Start scanner

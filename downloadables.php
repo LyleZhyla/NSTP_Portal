@@ -714,45 +714,38 @@ if ($role === 'super_admin') {
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
-                                    <label for="attendanceDate">Attendance Date</label>
-                                    <input type="date" class="form-control" id="attendanceDate" name="date" value="<?php echo htmlspecialchars($today); ?>">
-                                </div>
-                                <div class="form-group">
-                                    <label for="attendanceStatusFilter">Records to Download</label>
-                                    <select class="form-control" id="attendanceStatusFilter" name="status_filter">
-                                        <option value="all">All Students</option>
-                                        <option value="present">Present Only</option>
-                                        <option value="on_time">On Time Only</option>
-                                        <option value="late">Late Only</option>
-                                        <option value="absent">Absent Only</option>
+                                    <label for="attendancePeriod">Coverage</label>
+                                    <select class="form-control" id="attendancePeriod" name="period">
+                                        <option value="day">Today / Specific Day</option>
+                                        <option value="month">Whole Month</option>
+                                        <option value="semester">Whole Semester / Date Range</option>
                                     </select>
                                 </div>
-                                <div class="form-group">
-                                    <label>Data to Include</label>
-                                    <div class="row">
-                                        <?php
-                                        $attendanceColumns = [
-                                            'number' => '#',
-                                            'student_number' => 'Student No.',
-                                            'student_name' => 'Name',
-                                            'course_section' => 'Section',
-                                            'facilitator' => 'Facilitator',
-                                            'status' => 'Status',
-                                            'time_in' => 'Time In',
-                                        ];
-                                        $attendanceDefaults = ['number', 'student_number', 'student_name', 'course_section', 'status', 'time_in'];
-                                        foreach ($attendanceColumns as $columnKey => $columnLabel):
-                                        ?>
-                                        <div class="col-6">
-                                            <div class="custom-control custom-checkbox">
-                                                <input type="checkbox" class="custom-control-input" id="attendanceColumn_<?php echo htmlspecialchars($columnKey); ?>" name="columns[]" value="<?php echo htmlspecialchars($columnKey); ?>" <?php echo in_array($columnKey, $attendanceDefaults, true) ? 'checked' : ''; ?>>
-                                                <label class="custom-control-label" for="attendanceColumn_<?php echo htmlspecialchars($columnKey); ?>"><?php echo htmlspecialchars($columnLabel); ?></label>
-                                            </div>
+
+                                <div class="form-group attendance-period-field" id="attendanceDayField">
+                                    <label for="attendanceDate">Date</label>
+                                    <input type="date" class="form-control" id="attendanceDate" name="date" value="<?php echo htmlspecialchars($today); ?>">
+                                </div>
+
+                                <div class="form-group attendance-period-field d-none" id="attendanceMonthField">
+                                    <label for="attendanceMonth">Month</label>
+                                    <input type="month" class="form-control" id="attendanceMonth" name="month" value="<?php echo htmlspecialchars(date('Y-m')); ?>">
+                                </div>
+
+                                <div class="attendance-period-field d-none" id="attendanceSemesterField">
+                                    <div class="form-row">
+                                        <div class="form-group col-md-6">
+                                            <label for="attendanceStartDate">Start Date</label>
+                                            <input type="date" class="form-control" id="attendanceStartDate" name="start_date" value="<?php echo htmlspecialchars(date('Y-06-01')); ?>">
                                         </div>
-                                        <?php endforeach; ?>
+                                        <div class="form-group col-md-6">
+                                            <label for="attendanceEndDate">End Date</label>
+                                            <input type="date" class="form-control" id="attendanceEndDate" name="end_date" value="<?php echo htmlspecialchars(date('Y-12-31')); ?>">
+                                        </div>
                                     </div>
                                 </div>
-                                <p class="muted-note">Exports filtered attendance as an Excel .xlsx file.</p>
+
+                                <p class="muted-note">Exports an attendance matrix. Only dates with facilitator scans will appear; absent, present, and late cells are color coded.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download Attendance
                                 </button>
@@ -1108,6 +1101,29 @@ const sectionsByFacilitator = <?php echo json_encode($sectionsByFacilitator); ?>
 const enrollmentCharts = <?php echo json_encode($chartData); ?>;
 const selectedEnrollmentGraph = <?php echo json_encode($selectedGraph); ?>;
 const chartPalette = ['#0d6efd', '#198754', '#dc3545', '#ffc107', '#6f42c1', '#20c997', '#fd7e14', '#0dcaf0', '#6c757d', '#d63384', '#2f6f7e', '#495057'];
+
+function updateAttendancePeriodFields() {
+    const periodSelect = document.getElementById('attendancePeriod');
+    if (!periodSelect) {
+        return;
+    }
+
+    document.querySelectorAll('.attendance-period-field').forEach(field => field.classList.add('d-none'));
+
+    if (periodSelect.value === 'month') {
+        document.getElementById('attendanceMonthField').classList.remove('d-none');
+    } else if (periodSelect.value === 'semester') {
+        document.getElementById('attendanceSemesterField').classList.remove('d-none');
+    } else {
+        document.getElementById('attendanceDayField').classList.remove('d-none');
+    }
+}
+
+const attendancePeriod = document.getElementById('attendancePeriod');
+if (attendancePeriod) {
+    updateAttendancePeriodFields();
+    attendancePeriod.addEventListener('change', updateAttendancePeriodFields);
+}
 
 function escapeHtml(text) {
     const div = document.createElement('div');
