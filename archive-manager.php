@@ -203,7 +203,7 @@ if (!canAccessStaffTools($user_role)) {
                     <div class="col-lg-3 col-md-6">
                         <div class="archive-stats-card bg-gradient-info">
                             <div class="archive-stats-icon">
-                                <i class="fas fa-calendar-range"></i>
+                                <i class="fas fa-calendar-day"></i>
                             </div>
                             <div class="archive-stats-number" id="uniqueDays">0</div>
                             <div>Unique Days</div>
@@ -213,7 +213,7 @@ if (!canAccessStaffTools($user_role)) {
                     <div class="col-lg-3 col-md-6">
                         <div class="archive-stats-card bg-gradient-warning">
                             <div class="archive-stats-icon">
-                                <i class="fas fa-arrow-down-up"></i>
+                                <i class="fas fa-history"></i>
                             </div>
                             <div class="archive-stats-number" id="latestDate">-</div>
                             <div>Latest Archive</div>
