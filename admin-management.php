@@ -212,7 +212,7 @@ date_default_timezone_set('Asia/Manila');
                             <div class="card-body">
                                 <?php if (!empty($sectionFolders)): ?>
                                     <div class="table-responsive">
-                                        <table class="table table-bordered table-hover mb-0">
+                                        <table class="table table-bordered table-hover mb-0" id="sectionFoldersTable">
                                             <thead>
                                                 <tr>
                                                     <th>Program</th>
@@ -800,6 +800,19 @@ $(document).ready(function() {
     bsCustomFileInput.init();
     
     // Initialize DataTable
+    if ($('#sectionFoldersTable').length) {
+        $('#sectionFoldersTable').DataTable({
+            "paging": true,
+            "lengthChange": true,
+            "searching": true,
+            "ordering": true,
+            "info": true,
+            "autoWidth": false,
+            "responsive": true,
+            "order": [[1, 'asc']]
+        });
+    }
+
     $('#adminsTable').DataTable({
         "paging": true,
         "lengthChange": true,
@@ -808,10 +821,7 @@ $(document).ready(function() {
         "info": true,
         "autoWidth": false,
         "responsive": true,
-        "order": [[0, 'desc']],
-        "columnDefs": [
-            { "orderable": false, "targets": [1, 8] }
-        ]
+        "order": [[0, 'desc']]
     });
     
     // Profile picture preview for add modal

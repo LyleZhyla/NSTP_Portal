@@ -1381,7 +1381,7 @@ if ($user_role === 'super_admin') {
                                 </button>
                             </div>
                             <div class="table-responsive">
-                                <table class="table table-bordered table-hover mb-0">
+                                <table class="table table-bordered table-hover mb-0" id="studentFoldersTable">
                                     <thead>
                                         <tr>
                                             <th style="width: 42px;" class="text-center">
@@ -1529,7 +1529,7 @@ if ($user_role === 'super_admin') {
                                 </div>
                             </div>
                             <div class="table-responsive">
-                                <table class="table table-hover mb-0 student-detail-table">
+                                <table class="table table-hover mb-0 student-detail-table" id="coordinatorPendingStudentsTable">
                                     <thead>
                                         <tr>
                                             <th style="width: 70px;">No.</th>
@@ -3498,6 +3498,32 @@ $(document).ready(function() {
     });
     
     // Initialize DataTable for regular admin with single section
+    if ($('#studentFoldersTable').length) {
+        $('#studentFoldersTable').DataTable({
+            "pageLength": 10,
+            "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
+            "responsive": true,
+            "ordering": true,
+            "order": [[2, 'asc']]
+        });
+    }
+
+    if ($('#coordinatorPendingStudentsTable').length) {
+        const coordinatorPendingStudentsTable = $('#coordinatorPendingStudentsTable').DataTable({
+            "pageLength": 25,
+            "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
+            "responsive": false,
+            "ordering": true,
+            "order": [[1, 'asc']]
+        });
+
+        const originalSetCoordinatorColumnVisible = setCoordinatorColumnVisible;
+        setCoordinatorColumnVisible = function(columnKey, visible) {
+            originalSetCoordinatorColumnVisible(columnKey, visible);
+            coordinatorPendingStudentsTable.columns.adjust();
+        };
+    }
+
     <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>
     $('#studentTable').DataTable({
         "pageLength": 10,

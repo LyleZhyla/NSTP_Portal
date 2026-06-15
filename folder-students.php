@@ -419,6 +419,7 @@ $detailColumns = [
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
     <link rel="stylesheet" href="include/theme.css">
     <style>
         .folder-hero {
@@ -688,20 +689,7 @@ $detailColumns = [
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php $currentFolderGroup = null; ?>
                                         <?php foreach ($students as $index => $student): ?>
-                                            <?php
-                                                $studentFolderGroup = displayDetailValue($student['course_section'] ?? '');
-                                                if ($scope === 'coordinator_facilitator' && $studentFolderGroup !== $currentFolderGroup):
-                                                    $currentFolderGroup = $studentFolderGroup;
-                                            ?>
-                                                <tr class="folder-group-row">
-                                                    <td colspan="<?php echo count($detailColumns) + 1; ?>">
-                                                        <i class="fas fa-folder mr-1"></i>
-                                                        <?php echo htmlspecialchars($currentFolderGroup); ?>
-                                                    </td>
-                                                </tr>
-                                            <?php endif; ?>
                                             <tr>
                                                 <td><?php echo $index + 1; ?></td>
                                                 <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
@@ -788,12 +776,30 @@ $detailColumns = [
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
 $(function() {
     const basicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'course_section', 'generated_code']);
+    const studentDetailTable = $('.student-detail-table').length
+        ? $('.student-detail-table').DataTable({
+            paging: true,
+            lengthChange: true,
+            searching: true,
+            ordering: true,
+            info: true,
+            autoWidth: false,
+            responsive: false,
+            pageLength: 25,
+            order: [[1, 'asc']]
+        })
+        : null;
 
     function setColumnVisible(columnKey, visible) {
         $('.detail-col-' + columnKey).toggle(visible);
+        if (studentDetailTable) {
+            studentDetailTable.columns.adjust();
+        }
     }
 
     $('.detail-column-toggle').on('change', function() {

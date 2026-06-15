@@ -231,6 +231,13 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
             padding-top: 12px;
             margin-top: 4px;
         }
+        .public-qr-btn,
+        .public-qr-btn:hover,
+        .public-qr-btn:focus,
+        .public-qr-btn:active,
+        .public-qr-btn i {
+            color: #fff !important;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
@@ -376,7 +383,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 <button type="button" class="btn btn-sm btn-warning" data-toggle="modal" data-target="#formModal<?php echo (int) $formRow['form_id']; ?>">
                                                     <i class="fas fa-edit mr-1"></i> Edit
                                                 </button>
-                                                <a class="btn btn-sm btn-info" href="endpoint/download-public-registration-qr.php?form=<?php echo urlencode($formRow['form_slug']); ?>">
+                                                <a class="btn btn-sm btn-info public-qr-btn" href="endpoint/download-public-registration-qr.php?form=<?php echo urlencode($formRow['form_slug']); ?>">
                                                     <i class="fas fa-download mr-1"></i> Download QR
                                                 </a>
                                                 <button type="button"
@@ -452,7 +459,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     <input type="date" class="form-control" id="publicAttendanceDate" value="<?php echo date('Y-m-d'); ?>">
                                 </div>
                                 <div class="col-md-2 mt-3 mt-md-0 text-md-right">
-                                    <a class="btn btn-success mb-2" id="downloadPublicAttendance" href="endpoint/download-public-registration-attendance.php?date=<?php echo date('Y-m-d'); ?>">
+                                    <a class="btn btn-success mb-2 public-qr-btn" id="downloadPublicAttendance" href="endpoint/download-public-registration-attendance.php?date=<?php echo date('Y-m-d'); ?>">
                                         <i class="fas fa-file-excel mr-1"></i> Download Attendance
                                     </a>
                                     <button type="button" class="btn btn-outline-secondary" id="clearFormTitleFilter">
