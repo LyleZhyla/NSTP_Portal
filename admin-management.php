@@ -783,6 +783,18 @@ date_default_timezone_set('Asia/Manila');
 <script src="https://cdn.jsdelivr.net/npm/bs-custom-file-input/dist/bs-custom-file-input.min.js"></script>
 
 <script>
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, function(char) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        }[char];
+    });
+}
+
 $(document).ready(function() {
     // Initialize bs-custom-file-input for file upload styling
     bsCustomFileInput.init();
@@ -1230,13 +1242,49 @@ $(document).ready(function() {
                 submitBtn.html(originalText).prop('disabled', false);
                 
                 if (response.success) {
-                    Swal.fire('Success', response.message, 'success');
+                    const temporaryPassword = escapeHtml(response.temporary_password || '');
+                    const createdUsername = escapeHtml(response.username || $('#add_username').val());
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'User Account Created',
+                        html: `
+                            <div class="text-left">
+                                <p>${escapeHtml(response.message)}</p>
+                                <div class="alert alert-success">
+                                    <div class="mb-2">
+                                        <small class="text-muted d-block">Username</small>
+                                        <strong>${createdUsername}</strong>
+                                    </div>
+                                    <div>
+                                        <small class="text-muted d-block">Temporary Password</small>
+                                        <div class="input-group mt-1">
+                                            <input type="text" class="form-control font-weight-bold" value="${temporaryPassword}" readonly>
+                                            <div class="input-group-append">
+                                                <button type="button" class="btn btn-success" id="copyTempPassword">
+                                                    <i class="fas fa-copy mr-1"></i>Copy
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="text-muted">This is the plain temporary password. The database still stores the hashed version.</small>
+                            </div>
+                        `,
+                        confirmButtonText: 'OK',
+                        didOpen: function() {
+                            $('#copyTempPassword').on('click', function() {
+                                navigator.clipboard.writeText(response.temporary_password || '');
+                            });
+                        }
+                    }).then(function() {
+                        location.reload();
+                    });
                     $('#addAdminModal').modal('hide');
                     $('#addAdminForm')[0].reset();
                     $('#addProfilePreviewContainer').addClass('d-none');
                     $('#addProfileInitialsContainer').removeClass('d-none');
                     $('.custom-file-label').html('Choose file');
-                    setTimeout(() => location.reload(), 1500);
                 } else {
                     Swal.fire('Error', response.message, 'error');
                 }
