@@ -168,6 +168,17 @@ $religionOptions = philippinesReligionOptions();
                         <input type="email" class="form-control" id="email" name="email" <?php echo $studentNumberBased ? '' : 'required'; ?>>
                     </div>
                     <?php endif; ?>
+                    <?php if ($isFacilitatorForm): ?>
+                    <div class="col-md-3">
+                        <label class="form-label" for="component">NSTP Component <span class="required">*</span></label>
+                        <select class="form-select" id="component" name="component" required>
+                            <option value="">Select Component</option>
+                            <option value="ROTC">ROTC</option>
+                            <option value="LTS">LTS</option>
+                            <option value="CWTS">CWTS</option>
+                        </select>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endif; ?>

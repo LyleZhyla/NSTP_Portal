@@ -287,7 +287,7 @@ function createFacilitatorAccountFromPublicRegistration(PDO $conn, array $regist
             $email,
             password_hash($password, PASSWORD_DEFAULT),
             $fullName,
-            null,
+            normalizeProgram($registration['component'] ?? null),
             $registration['formal_picture'] ?? null,
         ]);
         $userId = (int) $conn->lastInsertId();
@@ -320,7 +320,7 @@ function createFacilitatorAccountFromPublicRegistration(PDO $conn, array $regist
             $registration['course'],
             $registration['major'],
             $registration['year_section'],
-            null,
+            normalizeProgram($registration['component'] ?? null),
             $registration['formal_picture'],
             'facilitator_account',
         ]);
@@ -578,7 +578,7 @@ try {
     $course = $enabledFields['course_section'] ? cleanText($_POST['course'] ?? '') : 'N/A';
     $major = $enabledFields['course_section'] ? cleanText($_POST['major'] ?? '') : 'N/A';
     $yearSection = $enabledFields['course_section'] ? cleanText($_POST['year_section'] ?? '') : 'N/A';
-    $component = null;
+    $component = $isFacilitatorRegistration ? normalizeProgram($_POST['component'] ?? null) : null;
 
     if (!$enabledFields['extension_name']) {
         $extensionName = 'N/A';
@@ -618,6 +618,10 @@ try {
     }
 
     if ($isFacilitatorRegistration) {
+        if (!$component) {
+            failRegistration('Please select an NSTP component.');
+        }
+
         if ($fullName === '' && $showNameFields) {
             $fullName = trim($firstName . ' ' . $lastName);
         }
@@ -855,7 +859,7 @@ try {
             'course' => $course,
             'major' => $major,
             'year_section' => $yearSection,
-            'component' => null,
+            'component' => $component,
             'formal_picture' => $dbPicturePath,
         ]);
 
