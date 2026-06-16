@@ -658,6 +658,35 @@ body.dark-mode .page-item.active .page-link {
     color: #fff !important;
 }
 
+.pagination .page-link,
+.dataTables_wrapper .dataTables_paginate .page-link {
+    background-color: #f3faf6 !important;
+    border-color: #cce8d6 !important;
+    color: #0f5132 !important;
+    font-weight: 700;
+}
+
+.pagination .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .page-link:hover {
+    background-color: #dff3e7 !important;
+    border-color: #8bc4a4 !important;
+    color: #063f28 !important;
+}
+
+.pagination .page-item.active .page-link,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
+    background-color: #f59e0b !important;
+    border-color: #d97706 !important;
+    color: #111827 !important;
+}
+
+.pagination .page-item.disabled .page-link,
+.dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
+    background-color: #f8fafc !important;
+    border-color: #e5e7eb !important;
+    color: #94a3b8 !important;
+}
+
 .btn-primary,
 .btn-info,
 .btn-success,

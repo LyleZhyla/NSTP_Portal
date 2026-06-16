@@ -1204,6 +1204,8 @@ if ($admin_role === 'super_admin') {
         if (typeof Html5QrcodeScanner === 'undefined') {
             console.error('Html5QrcodeScanner is not defined! Library failed to load.');
             showStatus('danger', 'QR Scanner library failed to load. Please refresh the page.');
+        } else if (!window.isSecureContext) {
+            showStatus('danger', 'Camera access requires HTTPS. Please open this page using your secure https:// domain.');
         } else {
             console.log('Html5QrcodeScanner library loaded successfully!');
             showStatus('info', 'Scanner ready. Click "Start Scanner" to begin.');
@@ -1240,6 +1242,11 @@ if ($admin_role === 'super_admin') {
         
         if (typeof Html5QrcodeScanner === 'undefined') {
             showStatus('danger', 'QR Scanner library not loaded. Please refresh the page.');
+            return;
+        }
+
+        if (!window.isSecureContext) {
+            showStatus('danger', 'Camera access requires HTTPS. Please open this page using your secure https:// domain.');
             return;
         }
         

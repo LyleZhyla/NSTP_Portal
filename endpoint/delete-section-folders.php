@@ -55,25 +55,37 @@ try {
 
     $conn->beginTransaction();
 
+    $moveStmt = $conn->prepare("
+        UPDATE tbl_student
+        SET course_section = ?, created_by = NULL
+        WHERE course_section = ?
+    ");
+    $assignmentStmt = $conn->prepare("
+        DELETE ads
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        WHERE ads.course_section = ?
+          AND u.role = 'facilitator'
+          AND u.program = ?
+    ");
+    $deleteStmt = $conn->prepare("DELETE FROM tbl_section_folders WHERE folder_id = ?");
+
     $deleted = 0;
     $releasedStudents = 0;
     foreach ($folders as $folder) {
         $program = normalizeProgram($folder['program']);
 
-        $moveStmt = $conn->prepare("
-            UPDATE tbl_student
-            SET course_section = ?, created_by = NULL
-            WHERE course_section = ?
-        ");
         $moveStmt->execute([$program, $folder['course_section']]);
         $releasedStudents += $moveStmt->rowCount();
 
-        $assignmentStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE course_section = ?");
-        $assignmentStmt->execute([$folder['course_section']]);
+        $assignmentStmt->execute([$folder['course_section'], $program]);
 
-        $deleteStmt = $conn->prepare("DELETE FROM tbl_section_folders WHERE folder_id = ?");
         $deleteStmt->execute([(int) $folder['folder_id']]);
         $deleted += $deleteStmt->rowCount();
+    }
+
+    if ($deleted === 0) {
+        throw new RuntimeException('Selected folders were not deleted. They may have already been removed.');
     }
 
     $conn->commit();

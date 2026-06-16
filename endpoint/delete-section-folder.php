@@ -27,6 +27,7 @@ try {
     if (empty($folderIds) && $singleFolderId > 0) {
         $folderIds = [$singleFolderId];
     }
+    $folderIds = array_values(array_filter($folderIds, fn($id) => $id > 0));
 
     if (empty($folderIds)) {
         throw new RuntimeException('Folder is required.');
@@ -64,7 +65,14 @@ try {
         SET course_section = ?, created_by = NULL
         WHERE course_section = ?
     ");
-    $assignmentStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE course_section = ?");
+    $assignmentStmt = $conn->prepare("
+        DELETE ads
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        WHERE ads.course_section = ?
+          AND u.role = 'facilitator'
+          AND u.program = ?
+    ");
     $deleteStmt = $conn->prepare("DELETE FROM tbl_section_folders WHERE folder_id = ?");
 
     $releasedStudents = 0;
@@ -78,11 +86,17 @@ try {
         $moveStmt->execute([$program, $courseSection]);
         $releasedStudents += $moveStmt->rowCount();
 
-        $assignmentStmt->execute([$courseSection]);
+        $assignmentStmt->execute([$courseSection, $program]);
         $deleteStmt->execute([(int) $folder['folder_id']]);
 
-        $deletedFolders++;
-        $deletedFolderNames[] = $courseSection;
+        if ($deleteStmt->rowCount() > 0) {
+            $deletedFolders++;
+            $deletedFolderNames[] = $courseSection;
+        }
+    }
+
+    if ($deletedFolders === 0) {
+        throw new RuntimeException('Folder was not deleted. It may have already been removed.');
     }
 
     $conn->commit();

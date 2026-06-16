@@ -433,8 +433,13 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
             assigned.username AS facilitator_username,
             COUNT(DISTINCT s.tbl_student_id) AS student_count
         FROM tbl_section_folders f
-        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
-        LEFT JOIN tbl_users assigned ON assigned.user_id = ads.user_id AND assigned.role = 'facilitator'
+        LEFT JOIN (
+            tbl_admin_sections ads
+            INNER JOIN tbl_users assigned
+                ON assigned.user_id = ads.user_id
+               AND assigned.role = 'facilitator'
+        ) ON ads.course_section = f.course_section
+           AND assigned.program = f.program
         LEFT JOIN tbl_student s ON s.course_section = f.course_section
         WHERE f.program = ?
         GROUP BY f.folder_id, f.program, f.course_section, f.created_at, assigned.user_id, assigned.full_name, assigned.username
@@ -454,8 +459,13 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
             assigned.username AS facilitator_username,
             COUNT(DISTINCT s.tbl_student_id) AS student_count
         FROM tbl_section_folders f
-        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
-        LEFT JOIN tbl_users assigned ON assigned.user_id = ads.user_id AND assigned.role = 'facilitator'
+        LEFT JOIN (
+            tbl_admin_sections ads
+            INNER JOIN tbl_users assigned
+                ON assigned.user_id = ads.user_id
+               AND assigned.role = 'facilitator'
+        ) ON ads.course_section = f.course_section
+           AND assigned.program = f.program
         LEFT JOIN tbl_student s ON s.course_section = f.course_section
         GROUP BY f.folder_id, f.program, f.course_section, f.created_at, assigned.user_id, assigned.full_name, assigned.username
         ORDER BY FIELD(f.program, 'CWTS', 'LTS', 'ROTC'), f.course_section ASC

@@ -2,10 +2,11 @@
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../include/nstp-component-content.php';
+require_once __DIR__ . '/../conn/conn.php';
 
 $limit = max(1, min(8, (int) ($_GET['limit'] ?? 4)));
 $offset = max(0, (int) ($_GET['offset'] ?? 0));
-$items = getNstpFeaturedActivities();
+$items = getNstpFeaturedActivities($conn ?? null);
 $total = count($items);
 
 if ($offset >= $total) {

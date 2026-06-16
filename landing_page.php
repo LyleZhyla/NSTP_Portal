@@ -447,7 +447,7 @@ $gallery = [
     ],
 ];
 
-$componentDetails = getNstpComponentDetails();
+$componentDetails = getNstpComponentDetails($conn ?? null);
 $componentGallery = [];
 foreach ($componentDetails as $componentCode => $details) {
     foreach (($details['activities'] ?? []) as $activity) {
@@ -476,10 +476,18 @@ if (!empty($landingSections['programs']['payload']) && is_array($landingSections
 if (!empty($landingSections['activities']['payload']) && is_array($landingSections['activities']['payload'])) {
     $gallery = $landingSections['activities']['payload'];
 }
-$gallery = array_merge($gallery, $componentGallery);
+$gallery = array_merge($componentGallery, $gallery);
 $uniqueGallery = [];
 foreach ($gallery as $galleryItem) {
-    $galleryKey = trim((string) ($galleryItem['image'] ?? '')) . '|' . trim((string) ($galleryItem['title'] ?? ''));
+    $galleryTitle = strtolower(trim((string) ($galleryItem['title'] ?? '')));
+    $galleryComponent = strtolower(trim((string) ($galleryItem['component'] ?? '')));
+    $galleryImage = trim((string) ($galleryItem['image'] ?? ''));
+    $galleryKey = ($galleryComponent !== '' ? $galleryComponent . '|' : '') . $galleryTitle;
+
+    if ($galleryKey === '' || ($galleryTitle === '' && $galleryImage === '')) {
+        $galleryKey = $galleryImage . '|' . $galleryTitle;
+    }
+
     if ($galleryKey === '|') {
         continue;
     }
@@ -1823,6 +1831,50 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
             font-weight: 700;
         }
 
+        .footer-contact {
+            display: grid;
+            gap: 6px;
+        }
+
+        .footer-contact h2 {
+            margin: 0;
+            color: #fff;
+            font-size: 1.1rem;
+            line-height: 1.2;
+        }
+
+        .footer-contact span {
+            color: rgba(255, 255, 255, 0.68);
+        }
+
+        .footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .footer-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 38px;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            text-decoration: none;
+            background: rgba(255, 255, 255, 0.08);
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .footer-link:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.14);
+            border-color: rgba(255, 255, 255, 0.34);
+            transform: translateY(-1px);
+        }
+
         @media (max-width: 980px) {
             .org-chart {
                 overflow-x: auto;
@@ -1902,6 +1954,11 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
             .footer-inner {
                 flex-direction: column;
                 align-items: flex-start;
+            }
+
+            .footer-links {
+                justify-content: flex-start;
+                width: 100%;
             }
         }
 
@@ -2859,7 +2916,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                 <div class="activity-picture-grid">
                     <?php foreach ($gallery as $activity): ?>
                         <article class="activity-picture-card">
-                            <img src="<?php echo e($activity['image'] ?? ''); ?>" alt="<?php echo e($activity['title'] ?? 'NSTP activity'); ?>">
+                            <img src="<?php echo e(nstpComponentImageUrl($activity['image'] ?? '', __DIR__)); ?>" alt="<?php echo e($activity['title'] ?? 'NSTP activity'); ?>">
                             <div class="activity-picture-body">
                                 <span><?php echo e($activity['label'] ?? 'NSTP'); ?></span>
                                 <h3><?php echo e($activity['title'] ?? 'NSTP Activity'); ?></h3>
@@ -3202,24 +3259,24 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
             </div>
         <?php endif; ?>
 
-        <section class="cta">
-            <div class="cta-inner">
-                <div>
-                    <?php renderSectionEditButton('cta', $landingSections['cta'], $canEditLanding); ?>
-                    <h2><?php echo e($landingSections['cta']['title']); ?></h2>
-                    <p><?php echo e($landingSections['cta']['body']); ?></p>
-                </div>
-                <a class="btn btn-primary" href="<?php echo $isLoggedIn ? 'index.php' : 'login.php'; ?>">
-                    <i class="fas fa-arrow-right"></i> <?php echo e($isLoggedIn ? ($ctaPayload['logged_in_label'] ?? 'Open Dashboard') : ($ctaPayload['guest_label'] ?? 'Open NSTP System')); ?>
-                </a>
-            </div>
-        </section>
     </main>
 
     <footer class="site-footer">
         <div class="footer-inner">
-            <span>National Service Training Program</span>
-            <span>CWTS · LTS · ROTC</span>
+            <div class="footer-contact">
+                <h2>Contact Us</h2>
+                <span>Connect with the TAU NSTP community through our official Facebook pages.</span>
+            </div>
+            <div class="footer-links" aria-label="Official Facebook pages">
+                <a class="footer-link" href="https://www.facebook.com/tau.nstp.2023" target="_blank" rel="noopener noreferrer">
+                    <i class="fab fa-facebook-f" aria-hidden="true"></i>
+                    <span>TAU National Service Training Program</span>
+                </a>
+                <a class="footer-link" href="https://www.facebook.com/taurotcunit" target="_blank" rel="noopener noreferrer">
+                    <i class="fab fa-facebook-f" aria-hidden="true"></i>
+                    <span>TAU ROTC Unit</span>
+                </a>
+            </div>
         </div>
     </footer>
     <script>

@@ -3,9 +3,35 @@ session_start();
 
 require_once 'include/logo-functions.php';
 require_once 'include/nstp-component-content.php';
+require_once 'include/user-permissions.php';
+
+$conn = null;
+$currentUser = null;
+$canEditComponent = false;
+$componentMessage = '';
+$componentMessageType = 'success';
+
+try {
+    require_once 'conn/conn.php';
+    if (isset($conn)) {
+        $currentUser = getCurrentUserRecord($conn);
+        $canEditComponent = $currentUser && ($currentUser['role'] ?? '') === 'super_admin';
+
+        if ($canEditComponent && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['component_content_action'])) {
+            $componentData = applyNstpComponentImageUploads($_POST, $_FILES, __DIR__);
+            saveNstpComponentDetails($conn, $componentData, $currentUser['user_id'] ?? null);
+            $componentMessage = 'Component content saved.';
+        }
+    }
+} catch (Throwable $error) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $componentMessage = $error->getMessage();
+        $componentMessageType = 'error';
+    }
+}
 
 $componentKey = normalizeNstpComponentKey($_GET['component'] ?? 'CWTS') ?: 'CWTS';
-$components = getNstpComponentDetails();
+$components = getNstpComponentDetails($conn);
 $component = $components[$componentKey];
 
 function e($value) {
@@ -107,7 +133,7 @@ function e($value) {
             color: #fff;
             background:
                 linear-gradient(90deg, rgba(5, 46, 22, 0.9), rgba(15, 81, 50, 0.62) 58%, rgba(21, 128, 61, 0.22)),
-                url('<?php echo e($component['hero_image']); ?>') center/cover;
+                url('<?php echo e(nstpComponentImageUrl($component['hero_image'], __DIR__)); ?>') center/cover;
         }
 
         .hero-inner,
@@ -303,9 +329,150 @@ function e($value) {
             font-weight: 700;
         }
 
+        .admin-editor {
+            background: #fff;
+            border-top: 1px solid var(--line);
+        }
+
+        .admin-editor .section-inner {
+            display: grid;
+            gap: 18px;
+        }
+
+        .editor-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .editor-head h2 {
+            margin: 0;
+            line-height: 1.15;
+        }
+
+        .editor-form {
+            display: grid;
+            gap: 18px;
+        }
+
+        .editor-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .field {
+            display: grid;
+            gap: 7px;
+        }
+
+        .field.full {
+            grid-column: 1 / -1;
+        }
+
+        .field label {
+            color: #20324a;
+            font-size: 0.84rem;
+            font-weight: 850;
+        }
+
+        .field input,
+        .field textarea,
+        .field select {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 11px 12px;
+            color: var(--ink);
+            font: inherit;
+            font-weight: 650;
+            background: #fff;
+        }
+
+        .field textarea {
+            min-height: 110px;
+            resize: vertical;
+        }
+
+        .repeat-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .repeat-row,
+        .activity-editor-row {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px;
+            background: #f8fafc;
+        }
+
+        .activity-editor-row {
+            display: grid;
+            gap: 12px;
+        }
+
+        .activity-editor-fields {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 150px;
+            gap: 12px;
+        }
+
+        .remove-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #7f1d1d;
+            font-weight: 800;
+        }
+
+        .editor-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .save-button,
+        .add-button {
+            min-height: 42px;
+            border: 0;
+            border-radius: 6px;
+            padding: 0 16px;
+            color: #fff;
+            background: var(--blue);
+            font: inherit;
+            font-weight: 850;
+            cursor: pointer;
+        }
+
+        .add-button {
+            background: #14213d;
+        }
+
+        .admin-alert {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            border-radius: 8px;
+            padding: 12px 14px;
+            color: #14532d;
+            background: #dcfce7;
+            font-weight: 800;
+        }
+
+        .admin-alert.error {
+            color: #7f1d1d;
+            background: #fee2e2;
+        }
+
         @media (max-width: 860px) {
             .detail-grid,
-            .activity-grid {
+            .activity-grid,
+            .editor-grid,
+            .activity-editor-fields {
                 grid-template-columns: 1fr;
             }
 
@@ -376,7 +543,7 @@ function e($value) {
                 <div class="activity-grid">
                     <?php foreach ($component['activities'] as $activity): ?>
                         <article class="activity-card" tabindex="0">
-                            <img src="<?php echo e($activity['image']); ?>" alt="<?php echo e($activity['title']); ?>">
+                            <img src="<?php echo e(nstpComponentImageUrl($activity['image'], __DIR__)); ?>" alt="<?php echo e($activity['title']); ?>">
                             <div class="activity-copy">
                                 <span><?php echo e($activity['label']); ?></span>
                                 <strong><?php echo e($activity['title']); ?></strong>
@@ -387,10 +554,205 @@ function e($value) {
                 </div>
             </div>
         </section>
+
+        <?php if ($canEditComponent): ?>
+            <section class="admin-editor" id="component-editor">
+                <div class="section-inner">
+                    <div class="editor-head">
+                        <div>
+                            <span class="component-pill" style="background:#0f5132;color:#fff;">Super Admin</span>
+                            <h2>Edit <?php echo e($component['name']); ?> Content</h2>
+                        </div>
+                        <?php if ($componentMessage): ?>
+                            <div class="admin-alert <?php echo e($componentMessageType); ?>">
+                                <i class="fas <?php echo $componentMessageType === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'; ?>"></i>
+                                <span><?php echo e($componentMessage); ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <form class="editor-form" method="post" enctype="multipart/form-data" action="component-detail.php?component=<?php echo e($componentKey); ?>#component-editor">
+                        <input type="hidden" name="component_content_action" value="save">
+                        <input type="hidden" name="component_key" value="<?php echo e($componentKey); ?>">
+
+                        <div class="panel editor-grid">
+                            <div class="field">
+                                <label for="name">Component Label</label>
+                                <input id="name" name="name" value="<?php echo e($component['name']); ?>" required>
+                            </div>
+                            <div class="field">
+                                <label for="accent">Accent Color</label>
+                                <select id="accent" name="accent">
+                                    <?php foreach (['teal', 'gold', 'crimson', 'blue'] as $accent): ?>
+                                        <option value="<?php echo e($accent); ?>" <?php echo ($component['accent'] ?? '') === $accent ? 'selected' : ''; ?>>
+                                            <?php echo e(ucfirst($accent)); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="field full">
+                                <label for="title">Title</label>
+                                <input id="title" name="title" value="<?php echo e($component['title']); ?>" required>
+                            </div>
+                            <div class="field full">
+                                <label for="subtitle">Subtitle</label>
+                                <input id="subtitle" name="subtitle" value="<?php echo e($component['subtitle']); ?>">
+                            </div>
+                            <div class="field full">
+                                <label for="hero_image">Hero Image URL or Path</label>
+                                <input id="hero_image" name="hero_image" value="<?php echo e($component['hero_image']); ?>">
+                            </div>
+                            <div class="field full">
+                                <label for="hero_image_upload">Upload Hero Image</label>
+                                <input id="hero_image_upload" name="hero_image_upload" type="file" accept="image/*">
+                            </div>
+                            <div class="field full">
+                                <label for="summary">About / Summary</label>
+                                <textarea id="summary" name="summary"><?php echo e($component['summary']); ?></textarea>
+                            </div>
+                            <div class="field full">
+                                <label for="short_details">Short Details</label>
+                                <textarea id="short_details" name="short_details"><?php echo e($component['short_details']); ?></textarea>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <h3>Highlights</h3>
+                            <div class="repeat-list" id="highlightList">
+                                <?php foreach (array_values($component['highlights']) as $index => $highlight): ?>
+                                    <div class="repeat-row field">
+                                        <label for="highlight_<?php echo $index; ?>">Highlight <?php echo $index + 1; ?></label>
+                                        <input id="highlight_<?php echo $index; ?>" name="highlights[]" value="<?php echo e($highlight); ?>">
+                                    </div>
+                                <?php endforeach; ?>
+                                <div class="repeat-row field">
+                                    <label for="highlight_new">Add Highlight</label>
+                                    <input id="highlight_new" name="highlights[]" value="" placeholder="New highlight">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <h3>Activity Images</h3>
+                            <div class="repeat-list" id="activityList">
+                                <?php foreach (array_values($component['activities']) as $index => $activity): ?>
+                                    <div class="activity-editor-row">
+                                        <div class="activity-editor-fields">
+                                            <div class="field">
+                                                <label for="activity_title_<?php echo $index; ?>">Activity Title</label>
+                                                <input id="activity_title_<?php echo $index; ?>" name="activity_title[]" value="<?php echo e($activity['title'] ?? ''); ?>">
+                                            </div>
+                                            <div class="field">
+                                                <label for="activity_label_<?php echo $index; ?>">Label</label>
+                                                <input id="activity_label_<?php echo $index; ?>" name="activity_label[]" value="<?php echo e($activity['label'] ?? ''); ?>">
+                                            </div>
+                                        </div>
+                                        <div class="field">
+                                            <label for="activity_detail_<?php echo $index; ?>">Details</label>
+                                            <textarea id="activity_detail_<?php echo $index; ?>" name="activity_detail[]"><?php echo e($activity['detail'] ?? ''); ?></textarea>
+                                        </div>
+                                        <div class="field">
+                                            <label for="activity_image_<?php echo $index; ?>">Image URL or Path</label>
+                                            <input id="activity_image_<?php echo $index; ?>" name="activity_image[]" value="<?php echo e($activity['image'] ?? ''); ?>">
+                                        </div>
+                                        <div class="field">
+                                            <label for="activity_image_upload_<?php echo $index; ?>">Upload Activity Image</label>
+                                            <input id="activity_image_upload_<?php echo $index; ?>" name="activity_image_upload[]" type="file" accept="image/*">
+                                        </div>
+                                        <label class="remove-check">
+                                            <input type="checkbox" name="activity_remove[<?php echo $index; ?>]" value="1">
+                                            Remove this activity
+                                        </label>
+                                    </div>
+                                <?php endforeach; ?>
+                                <?php $newIndex = count($component['activities']); ?>
+                                <div class="activity-editor-row">
+                                    <div class="activity-editor-fields">
+                                        <div class="field">
+                                            <label for="activity_title_<?php echo $newIndex; ?>">Add Activity Title</label>
+                                            <input id="activity_title_<?php echo $newIndex; ?>" name="activity_title[]" value="" placeholder="New activity">
+                                        </div>
+                                        <div class="field">
+                                            <label for="activity_label_<?php echo $newIndex; ?>">Label</label>
+                                            <input id="activity_label_<?php echo $newIndex; ?>" name="activity_label[]" value="">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label for="activity_detail_<?php echo $newIndex; ?>">Details</label>
+                                        <textarea id="activity_detail_<?php echo $newIndex; ?>" name="activity_detail[]"></textarea>
+                                    </div>
+                                    <div class="field">
+                                        <label for="activity_image_<?php echo $newIndex; ?>">Image URL or Path</label>
+                                        <input id="activity_image_<?php echo $newIndex; ?>" name="activity_image[]" value="">
+                                    </div>
+                                    <div class="field">
+                                        <label for="activity_image_upload_<?php echo $newIndex; ?>">Upload Activity Image</label>
+                                        <input id="activity_image_upload_<?php echo $newIndex; ?>" name="activity_image_upload[]" type="file" accept="image/*">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="editor-actions">
+                            <button type="button" class="add-button" id="addActivityRow">
+                                <i class="fas fa-plus"></i> Add another activity
+                            </button>
+                            <button type="submit" class="save-button">
+                                <i class="fas fa-save"></i> Save Content
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        <?php endif; ?>
     </main>
 
     <footer class="footer">
         <div class="section-inner">National Service Training Program</div>
     </footer>
+    <?php if ($canEditComponent): ?>
+        <script>
+            (function () {
+                const activityList = document.getElementById('activityList');
+                const addActivityRow = document.getElementById('addActivityRow');
+                let nextActivityIndex = <?php echo (int) count($component['activities']) + 1; ?>;
+
+                if (!activityList || !addActivityRow) {
+                    return;
+                }
+
+                addActivityRow.addEventListener('click', function () {
+                    const row = document.createElement('div');
+                    row.className = 'activity-editor-row';
+                    row.innerHTML = `
+                        <div class="activity-editor-fields">
+                            <div class="field">
+                                <label for="activity_title_dynamic_${nextActivityIndex}">Activity Title</label>
+                                <input id="activity_title_dynamic_${nextActivityIndex}" name="activity_title[]" value="" placeholder="New activity">
+                            </div>
+                            <div class="field">
+                                <label for="activity_label_dynamic_${nextActivityIndex}">Label</label>
+                                <input id="activity_label_dynamic_${nextActivityIndex}" name="activity_label[]" value="">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="activity_detail_dynamic_${nextActivityIndex}">Details</label>
+                            <textarea id="activity_detail_dynamic_${nextActivityIndex}" name="activity_detail[]"></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="activity_image_dynamic_${nextActivityIndex}">Image URL or Path</label>
+                            <input id="activity_image_dynamic_${nextActivityIndex}" name="activity_image[]" value="">
+                        </div>
+                        <div class="field">
+                            <label for="activity_image_upload_dynamic_${nextActivityIndex}">Upload Activity Image</label>
+                            <input id="activity_image_upload_dynamic_${nextActivityIndex}" name="activity_image_upload[]" type="file" accept="image/*">
+                        </div>
+                    `;
+                    activityList.appendChild(row);
+                    nextActivityIndex += 1;
+                });
+            })();
+        </script>
+    <?php endif; ?>
 </body>
 </html>
