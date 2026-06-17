@@ -238,6 +238,12 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
         .public-qr-btn i {
             color: #fff !important;
         }
+        .modal[id^="detailsModal"] {
+            z-index: 2060 !important;
+        }
+        .modal-backdrop.show {
+            z-index: 2050 !important;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
