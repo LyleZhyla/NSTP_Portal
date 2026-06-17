@@ -31,10 +31,30 @@ function ensureNotificationTables(PDO $conn) {
             scope_program VARCHAR(20) NULL,
             created_by INT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived_at DATETIME NULL,
+            archived_by INT NULL,
             INDEX idx_scope_created (scope_program, created_at),
-            INDEX idx_created_by (created_by)
+            INDEX idx_created_by (created_by),
+            INDEX idx_archived_at (archived_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    foreach ([
+        'archived_at' => "ALTER TABLE tbl_announcements ADD COLUMN archived_at DATETIME NULL AFTER created_at",
+        'archived_by' => "ALTER TABLE tbl_announcements ADD COLUMN archived_by INT NULL AFTER archived_at",
+    ] as $column => $sql) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'tbl_announcements'
+              AND COLUMN_NAME = ?
+        ");
+        $stmt->execute([$column]);
+        if ((int) $stmt->fetchColumn() === 0) {
+            $conn->exec($sql);
+        }
+    }
 }
 
 function cleanNotificationText($value, $maxLength = 5000) {
@@ -396,7 +416,7 @@ function countUnreadNotifications(PDO $conn, $userId) {
 function getRecentAnnouncements(PDO $conn, array $actor, $limit = 20) {
     ensureNotificationTables($conn);
 
-    $where = [];
+    $where = ["a.archived_at IS NULL"];
     $params = [];
     if (($actor['role'] ?? '') === 'coordinator') {
         $where[] = "a.scope_program = ?";
@@ -411,13 +431,84 @@ function getRecentAnnouncements(PDO $conn, array $actor, $limit = 20) {
         FROM tbl_announcements a
         LEFT JOIN tbl_users u ON u.user_id = a.created_by
     ";
-    if ($where) {
-        $sql .= " WHERE " . implode(' AND ', $where);
-    }
+    $sql .= " WHERE " . implode(' AND ', $where);
     $sql .= " ORDER BY a.created_at DESC LIMIT " . max(1, (int) $limit);
 
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
 
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function announcementManageWhereClause(array $actor, array $announcementIds, array &$params) {
+    $ids = array_values(array_unique(array_map('intval', $announcementIds)));
+    $ids = array_values(array_filter($ids, fn($id) => $id > 0));
+    if (empty($ids)) {
+        throw new InvalidArgumentException('Please select at least one announcement.');
+    }
+
+    $params = $ids;
+    $where = 'announcement_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
+
+    if (($actor['role'] ?? '') !== 'super_admin') {
+        $where .= ' AND created_by = ?';
+        $params[] = (int) ($actor['user_id'] ?? 0);
+    }
+
+    return $where;
+}
+
+function archiveAnnouncements(PDO $conn, array $actor, array $announcementIds) {
+    ensureNotificationTables($conn);
+
+    $whereParams = [];
+    $where = announcementManageWhereClause($actor, $announcementIds, $whereParams);
+    $params = array_merge([(int) ($actor['user_id'] ?? 0)], $whereParams);
+
+    $stmt = $conn->prepare("
+        UPDATE tbl_announcements
+        SET archived_at = NOW(), archived_by = ?
+        WHERE {$where}
+          AND archived_at IS NULL
+    ");
+    $stmt->execute($params);
+
+    return $stmt->rowCount();
+}
+
+function deleteAnnouncements(PDO $conn, array $actor, array $announcementIds) {
+    ensureNotificationTables($conn);
+
+    $params = [];
+    $where = announcementManageWhereClause($actor, $announcementIds, $params);
+
+    $selectStmt = $conn->prepare("SELECT announcement_id FROM tbl_announcements WHERE {$where}");
+    $selectStmt->execute($params);
+    $deletableIds = array_map('intval', $selectStmt->fetchAll(PDO::FETCH_COLUMN));
+    if (empty($deletableIds)) {
+        return 0;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($deletableIds), '?'));
+    $conn->beginTransaction();
+    try {
+        $notificationStmt = $conn->prepare("
+            DELETE FROM tbl_notifications
+            WHERE related_table = 'tbl_announcements'
+              AND related_id IN ({$placeholders})
+        ");
+        $notificationStmt->execute($deletableIds);
+
+        $deleteStmt = $conn->prepare("DELETE FROM tbl_announcements WHERE announcement_id IN ({$placeholders})");
+        $deleteStmt->execute($deletableIds);
+        $deleted = $deleteStmt->rowCount();
+
+        $conn->commit();
+        return $deleted;
+    } catch (Throwable $error) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $error;
+    }
 }

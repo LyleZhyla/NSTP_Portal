@@ -43,6 +43,17 @@ $program = normalizeProgram($currentUser['program'] ?? null);
             background: #f4f8fa;
             padding: 14px 16px;
         }
+        .announcement-bulk-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-bottom: 12px;
+        }
+        .announcement-select-col {
+            width: 42px;
+            text-align: center;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
@@ -139,10 +150,21 @@ $program = normalizeProgram($currentUser['program'] ?? null);
                                 <?php if (count($announcements) === 0): ?>
                                     <div class="text-center text-muted py-5">No announcements yet</div>
                                 <?php else: ?>
+                                    <div class="announcement-bulk-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="archiveAnnouncementsBtn" disabled>
+                                            <i class="fas fa-archive mr-1"></i>Archive Selected
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" id="deleteAnnouncementsBtn" disabled>
+                                            <i class="fas fa-trash mr-1"></i>Delete Selected
+                                        </button>
+                                    </div>
                                     <div class="table-responsive">
                                         <table class="table table-hover">
                                             <thead>
                                                 <tr>
+                                                    <th class="announcement-select-col">
+                                                        <input type="checkbox" id="selectAllAnnouncements" aria-label="Select all announcements">
+                                                    </th>
                                                     <th>Title</th>
                                                     <th>Scope</th>
                                                     <th>Created By</th>
@@ -151,7 +173,17 @@ $program = normalizeProgram($currentUser['program'] ?? null);
                                             </thead>
                                             <tbody>
                                                 <?php foreach ($announcements as $announcement): ?>
+                                                    <?php
+                                                        $canManageAnnouncement = $role === 'super_admin' || (int) ($announcement['created_by'] ?? 0) === (int) $currentUser['user_id'];
+                                                    ?>
                                                     <tr>
+                                                        <td class="announcement-select-col">
+                                                            <?php if ($canManageAnnouncement): ?>
+                                                                <input type="checkbox" class="announcement-select" value="<?php echo (int) $announcement['announcement_id']; ?>" aria-label="Select announcement">
+                                                            <?php else: ?>
+                                                                <input type="checkbox" disabled aria-label="Announcement cannot be selected">
+                                                            <?php endif; ?>
+                                                        </td>
                                                         <td>
                                                             <strong><?php echo htmlspecialchars($announcement['title']); ?></strong>
                                                             <div class="announcement-body small mt-1"><?php echo htmlspecialchars($announcement['body']); ?></div>
@@ -186,6 +218,89 @@ $program = normalizeProgram($currentUser['program'] ?? null);
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(function() {
+    function selectedAnnouncementIds() {
+        return $('.announcement-select:checked').map(function() {
+            return $(this).val();
+        }).get();
+    }
+
+    function updateBulkActionState() {
+        const selectedCount = selectedAnnouncementIds().length;
+        $('#archiveAnnouncementsBtn, #deleteAnnouncementsBtn').prop('disabled', selectedCount === 0);
+
+        const selectable = $('.announcement-select');
+        const checked = $('.announcement-select:checked');
+        $('#selectAllAnnouncements')
+            .prop('checked', selectable.length > 0 && checked.length === selectable.length)
+            .prop('indeterminate', checked.length > 0 && checked.length < selectable.length);
+    }
+
+    function runAnnouncementBulkAction(action) {
+        const ids = selectedAnnouncementIds();
+        if (ids.length === 0) {
+            return;
+        }
+
+        const isDelete = action === 'delete';
+        Swal.fire({
+            title: isDelete ? 'Delete selected announcements?' : 'Archive selected announcements?',
+            text: isDelete
+                ? 'This will permanently delete selected announcements and their related bell notifications.'
+                : 'Archived announcements will be hidden from the recent announcements list.',
+            icon: isDelete ? 'warning' : 'question',
+            showCancelButton: true,
+            confirmButtonText: isDelete ? 'Delete' : 'Archive',
+            confirmButtonColor: isDelete ? '#dc3545' : '#6c757d'
+        }).then(function(result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', action);
+            ids.forEach(function(id) {
+                formData.append('announcement_ids[]', id);
+            });
+
+            $('#archiveAnnouncementsBtn, #deleteAnnouncementsBtn').prop('disabled', true);
+
+            fetch('endpoint/manage-announcements.php', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+                .then(function(response) { return response.json(); })
+                .then(function(response) {
+                    if (!response.success) {
+                        Swal.fire('Error', response.message || 'Unable to update announcements.', 'error');
+                        updateBulkActionState();
+                        return;
+                    }
+
+                    Swal.fire('Done', response.message, 'success').then(function() {
+                        window.location.reload();
+                    });
+                })
+                .catch(function() {
+                    Swal.fire('Error', 'Unable to update announcements.', 'error');
+                    updateBulkActionState();
+                });
+        });
+    }
+
+    $('#selectAllAnnouncements').on('change', function() {
+        $('.announcement-select').prop('checked', this.checked);
+        updateBulkActionState();
+    });
+
+    $(document).on('change', '.announcement-select', updateBulkActionState);
+    $('#archiveAnnouncementsBtn').on('click', function() {
+        runAnnouncementBulkAction('archive');
+    });
+    $('#deleteAnnouncementsBtn').on('click', function() {
+        runAnnouncementBulkAction('delete');
+    });
+
     $('#announcementForm').on('submit', function(event) {
         event.preventDefault();
 
