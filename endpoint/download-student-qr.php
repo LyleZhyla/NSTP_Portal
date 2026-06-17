@@ -233,12 +233,23 @@ $labelSize = 13;
 $valueSize = 15;
 $maxTextWidth = 300;
 $fields = [
-    'Full Name:' => $student['student_name'] ?: 'N/A',
-    'Course/Major/Section:' => qrCardCourseMajorSection($student),
-    'Contact No.:' => $student['contact_number'] ?: 'N/A',
+    ['label' => 'Full Name:', 'value' => $student['student_name'] ?: 'N/A', 'inline' => false],
+    ['label' => 'Course/Major/Section:', 'value' => qrCardCourseMajorSection($student), 'inline' => false],
+    ['label' => 'Contact No.:', 'value' => $student['contact_number'] ?: 'N/A', 'inline' => true],
 ];
 $y = 172;
-foreach ($fields as $label => $value) {
+foreach ($fields as $field) {
+    $label = $field['label'];
+    $value = $field['value'];
+
+    if (!empty($field['inline'])) {
+        drawText($canvas, $labelSize, $x, $y, $green, $boldFont, $label);
+        $valueX = $x + textWidth($boldFont, $labelSize, $label) + 8;
+        drawText($canvas, $valueSize, $valueX, $y, $ink, $boldFont, $value);
+        $y += 34;
+        continue;
+    }
+
     drawText($canvas, $labelSize, $x, $y, $green, $boldFont, $label);
     $y = fitText($canvas, $boldFont, $valueSize, $x, $y + 26, $value, $ink, $maxTextWidth) + 34;
 }
