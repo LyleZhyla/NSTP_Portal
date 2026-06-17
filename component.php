@@ -122,10 +122,9 @@ if (isset($_POST['update_component'])) {
     } else {
         try {
             ensureRotcRegistrationColumns($conn);
+            ensureSectionFoldersTable($conn);
             $rotcProofPath = null;
             $existingProofPath = null;
-
-            $conn->beginTransaction();
 
             $stmt = $conn->prepare("SELECT full_name, role, username FROM tbl_users WHERE user_id = ?");
             $stmt->execute([$user_id]);
@@ -168,6 +167,8 @@ if (isset($_POST['update_component'])) {
                 $registration['year_section'] ?? '',
                 $originalSection
             );
+
+            $conn->beginTransaction();
 
             $stmt = $conn->prepare("SELECT tbl_student_id FROM tbl_student WHERE user_id = ? LIMIT 1");
             $stmt->execute([$user_id]);
@@ -216,7 +217,9 @@ if (isset($_POST['update_component'])) {
                 $studentNumber,
             ]);
 
-            $conn->commit();
+            if ($conn->inTransaction()) {
+                $conn->commit();
+            }
             $_SESSION['program'] = $selectedComponent;
             $message = 'NSTP component updated successfully!';
         } catch (Throwable $componentError) {
