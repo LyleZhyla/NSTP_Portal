@@ -30,7 +30,7 @@ try {
 
     echo json_encode([
         'success' => true,
-        'message' => 'Announcement posted. ' . (int) $result['recipient_count'] . ' in-app notification(s) created. ' . (int) $result['email_sent_count'] . ' email(s) sent.',
+        'message' => 'Announcement posted. ' . (int) $result['recipient_count'] . ' in-app notification(s) created. ' . (int) $result['email_sent_count'] . ' email(s) sent. ' . (int) $result['email_skipped_count'] . ' skipped/failed.',
         'recipient_count' => (int) $result['recipient_count'],
         'email_sent_count' => (int) $result['email_sent_count'],
         'email_skipped_count' => (int) $result['email_skipped_count'],
