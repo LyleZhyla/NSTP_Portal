@@ -41,14 +41,84 @@ function loadImageFromPath($path) {
     }
 }
 
+function firstExistingFile(array $paths) {
+    foreach ($paths as $path) {
+        if ($path && is_file($path) && is_readable($path)) {
+            return $path;
+        }
+    }
+
+    return null;
+}
+
+function resolveQrCardFonts() {
+    $regular = firstExistingFile([
+        __DIR__ . '/../include/fonts/DejaVuSans.ttf',
+        __DIR__ . '/../include/fonts/arial.ttf',
+        'C:/Windows/Fonts/arial.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+        '/usr/share/fonts/liberation/LiberationSans-Regular.ttf',
+    ]);
+
+    $bold = firstExistingFile([
+        __DIR__ . '/../include/fonts/DejaVuSans-Bold.ttf',
+        __DIR__ . '/../include/fonts/arialbd.ttf',
+        'C:/Windows/Fonts/arialbd.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        '/usr/share/fonts/liberation/LiberationSans-Bold.ttf',
+    ]);
+
+    return [
+        'regular' => $regular,
+        'bold' => $bold ?: $regular,
+    ];
+}
+
+function gdFontForSize($size) {
+    if ($size >= 18) {
+        return 5;
+    }
+    if ($size >= 14) {
+        return 4;
+    }
+    if ($size >= 11) {
+        return 3;
+    }
+
+    return 2;
+}
+
+function textWidth($font, $size, $text) {
+    if ($font) {
+        $box = imagettfbbox($size, 0, $font, $text);
+        return $box[2] - $box[0];
+    }
+
+    $gdFont = gdFontForSize($size);
+    return imagefontwidth($gdFont) * strlen((string) $text);
+}
+
+function drawText($image, $size, $x, $y, $color, $font, $text) {
+    if ($font) {
+        imagettftext($image, $size, 0, $x, $y, $color, $font, $text);
+        return;
+    }
+
+    $gdFont = gdFontForSize($size);
+    imagestring($image, $gdFont, $x, max(0, $y - imagefontheight($gdFont)), $text, $color);
+}
+
 function fitText($image, $font, $size, $x, $y, $text, $color, $maxWidth) {
     $words = preg_split('/\s+/', (string) $text);
     $line = '';
     foreach ($words as $word) {
         $test = trim($line . ' ' . $word);
-        $box = imagettfbbox($size, 0, $font, $test);
-        if (($box[2] - $box[0]) > $maxWidth && $line !== '') {
-            imagettftext($image, $size, 0, $x, $y, $color, $font, $line);
+        if (textWidth($font, $size, $test) > $maxWidth && $line !== '') {
+            drawText($image, $size, $x, $y, $color, $font, $line);
             $line = $word;
             $y += $size + 10;
         } else {
@@ -57,7 +127,7 @@ function fitText($image, $font, $size, $x, $y, $text, $color, $maxWidth) {
     }
 
     if ($line !== '') {
-        imagettftext($image, $size, 0, $x, $y, $color, $font, $line);
+        drawText($image, $size, $x, $y, $color, $font, $line);
     }
 
     return $y;
@@ -111,27 +181,21 @@ imagerectangle($canvas, 54, 330, 554, 496, $line);
 imagefilledrectangle($canvas, 584, 132, 866, 520, $paleGold);
 imagerectangle($canvas, 584, 132, 866, 520, $line);
 
-$font = 'C:\Windows\Fonts\arial.ttf';
-$boldFont = 'C:\Windows\Fonts\arialbd.ttf';
-if (!is_file($font)) {
-    http_response_code(500);
-    exit('A TrueType font is required to render the QR card.');
-}
-if (!is_file($boldFont)) {
-    $boldFont = $font;
-}
+$fonts = resolveQrCardFonts();
+$font = $fonts['regular'];
+$boldFont = $fonts['bold'];
 
 $nstpLogo = loadImageFromPath('include/logos/nstp.png');
 if ($nstpLogo) {
     imagecopyresampled($canvas, $nstpLogo, 38, 18, 0, 0, 72, 72, imagesx($nstpLogo), imagesy($nstpLogo));
 }
 
-imagettftext($canvas, 24, 0, 126, 52, $white, $boldFont, 'TAU NSTP ID');
-imagettftext($canvas, 13, 0, 128, 78, $white, $font, 'National Service Training Program');
+drawText($canvas, 24, 126, 52, $white, $boldFont, 'TAU NSTP ID');
+drawText($canvas, 13, 128, 78, $white, $font, 'National Service Training Program');
 
 imagecopyresampled($canvas, $qrImage, 606, 176, 0, 0, 238, 238, imagesx($qrImage), imagesy($qrImage));
 imagerectangle($canvas, 606, 176, 844, 414, $line);
-imagettftext($canvas, 11, 0, 626, 448, $muted, $font, 'QR Code: ' . $student['generated_code']);
+drawText($canvas, 11, 626, 448, $muted, $font, 'QR Code: ' . $student['generated_code']);
 
 $picture = loadImageFromPath($student['formal_picture'] ?? null);
 if ($picture) {
@@ -140,7 +204,7 @@ if ($picture) {
 } else {
     imagefilledrectangle($canvas, 70, 156, 212, 298, $white);
     imagerectangle($canvas, 70, 156, 212, 298, $line);
-    imagettftext($canvas, 46, 0, 112, 244, $green, $boldFont, strtoupper(substr($student['student_name'], 0, 1)));
+    drawText($canvas, 46, 112, 244, $green, $boldFont, strtoupper(substr($student['student_name'], 0, 1)));
 }
 
 $x = 236;
@@ -154,11 +218,11 @@ $fields = [
 ];
 $y = 172;
 foreach ($fields as $label => $value) {
-    imagettftext($canvas, $labelSize, 0, $x, $y, $green, $boldFont, $label);
+    drawText($canvas, $labelSize, $x, $y, $green, $boldFont, $label);
     $y = fitText($canvas, $boldFont, $valueSize, $x, $y + 26, $value, $ink, $maxTextWidth) + 34;
 }
 
-imagettftext($canvas, 16, 0, 74, 366, $green, $boldFont, 'Emergency Contact Details');
+drawText($canvas, 16, 74, 366, $green, $boldFont, 'Emergency Contact Details');
 imageline($canvas, 74, 380, 534, 380, $gold);
 
 $emergencyFields = [
@@ -168,7 +232,7 @@ $emergencyFields = [
 ];
 $y = 410;
 foreach ($emergencyFields as $label => $value) {
-    imagettftext($canvas, 11, 0, 74, $y, $muted, $boldFont, $label);
+    drawText($canvas, 11, 74, $y, $muted, $boldFont, $label);
     $valueY = fitText($canvas, $font, 12, 188, $y, $value, $ink, 330);
     $y = max($y + 30, $valueY + 18);
 }
