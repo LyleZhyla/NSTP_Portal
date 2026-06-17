@@ -122,6 +122,15 @@ date_default_timezone_set('Asia/Manila');
             padding: 1rem;
             margin: -1rem -1rem -1rem auto;
         }
+        #addAdminModal,
+        #editAdminModal,
+        #changePasswordModal,
+        #assignSectionModal {
+            z-index: 2060 !important;
+        }
+        .modal-backdrop.show {
+            z-index: 2050 !important;
+        }
         .btn-xs {
             padding: 0.25rem 0.5rem;
             font-size: 0.75rem;
