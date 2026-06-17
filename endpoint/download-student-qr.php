@@ -133,11 +133,32 @@ function fitText($image, $font, $size, $x, $y, $text, $color, $maxWidth) {
     return $y;
 }
 
+function qrCardCleanValue($value) {
+    $value = trim((string) $value);
+    return $value === '' || strtoupper($value) === 'N/A' ? '' : $value;
+}
+
+function qrCardCourseMajorSection(array $student) {
+    $parts = array_filter([
+        qrCardCleanValue($student['course'] ?? ''),
+        qrCardCleanValue($student['major'] ?? ''),
+        qrCardCleanValue($student['year_section'] ?? ''),
+    ]);
+
+    if (!empty($parts)) {
+        return implode(' - ', $parts);
+    }
+
+    return qrCardCleanValue($student['original_section'] ?? '') ?: 'N/A';
+}
+
 $stmt = $conn->prepare("
-    SELECT s.*, r.course, r.year_section, r.formal_picture, r.contact_number,
+    SELECT s.*, r.course, r.major, r.year_section, r.formal_picture, r.contact_number,
            r.emergency_name, r.emergency_relationship, r.emergency_contact_number
     FROM tbl_student s
-    LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
+    LEFT JOIN tbl_public_student_registrations r
+      ON r.user_id = s.user_id
+      OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r.student_number = s.student_number)
     WHERE s.user_id = ?
     ORDER BY r.created_at DESC
     LIMIT 1
@@ -213,7 +234,7 @@ $valueSize = 15;
 $maxTextWidth = 300;
 $fields = [
     'Full Name:' => $student['student_name'] ?: 'N/A',
-    'Course/Yr/Section:' => 'BSGE - 1A',
+    'Course/Major/Section:' => qrCardCourseMajorSection($student),
     'Contact #:' => $student['contact_number'] ?: 'N/A',
 ];
 $y = 172;
