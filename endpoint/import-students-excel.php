@@ -498,13 +498,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
             ];
             $studentName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($studentNameParts))));
             $originalSection = autoSectionOriginalSection($record['course'], $record['year_section'], $component);
-            $autoFolder = autoSectionFolderForStudent(
-                $conn,
-                $component,
-                $record['course'],
-                $record['year_section'],
-                $originalSection
-            );
+            $pendingComponent = normalizeProgram($component) ?: 'PUBLIC';
             $generatedCode = !empty($record['student_number'])
                 ? 'PUB_' . $record['student_number']
                 : generateUniqueImportCode($conn, 'IMP');
@@ -513,7 +507,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                 $record['student_number'],
                 $studentName,
                 $originalSection,
-                $autoFolder,
+                $pendingComponent,
                 $generatedCode,
             ]);
         }
@@ -521,7 +515,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
         $conn->commit();
         $response['success'] = true;
         $response['imported'] = count($rows);
-        $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s) with automatic folder sectioning.';
+        $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s). Students are pending folder creation/assignment.';
     } catch (Throwable $error) {
         if ($conn->inTransaction()) {
             $conn->rollBack();

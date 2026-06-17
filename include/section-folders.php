@@ -34,34 +34,6 @@ function syncSectionFoldersFromExisting(PDO $conn) {
         WHERE course_section IN (?, ?, ?)
     ");
     $deletePendingBuckets->execute($pendingBuckets);
-
-    $sources = [];
-    foreach ([
-        "SELECT DISTINCT course_section FROM tbl_student WHERE course_section IS NOT NULL AND course_section != ''",
-        "SELECT DISTINCT course_section FROM tbl_admin_sections WHERE course_section IS NOT NULL AND course_section != ''",
-    ] as $sql) {
-        try {
-            foreach ($conn->query($sql)->fetchAll(PDO::FETCH_COLUMN) as $folderName) {
-                $folderName = trim((string) $folderName);
-                if ($folderName !== '') {
-                    $sources[$folderName] = true;
-                }
-            }
-        } catch (Throwable $error) {
-            // Keep folder tools usable even if an older install is missing a source table.
-        }
-    }
-
-    foreach (array_keys($sources) as $folderName) {
-        if (in_array(normalizeProgram($folderName), $pendingBuckets, true) && strtoupper(trim((string) $folderName)) === normalizeProgram($folderName)) {
-            continue;
-        }
-
-        $program = inferProgramFromText($folderName) ?: normalizeProgram($folderName);
-        if ($program) {
-            createSectionFolder($conn, $program, $folderName);
-        }
-    }
 }
 
 function createSectionFolder(PDO $conn, $program, $courseSection, $createdBy = null) {

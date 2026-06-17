@@ -208,7 +208,7 @@ date_default_timezone_set('Asia/Manila');
                                         </div>
                                     </div>
                                     <p class="text-muted small mb-0 mt-3">
-                                        New student records are grouped by course and section. When a folder reaches the maximum, the next students continue in the next folder.
+                                        Students stay in the component pending list until you click rebuild. Rebuild creates folders by course and section, then continues to the next folder when the maximum is reached.
                                         <?php echo $autoSectionComponent ? 'This setting applies to your component only.' : 'This is the default setting for automatic folders.'; ?>
                                     </p>
                                 </div>

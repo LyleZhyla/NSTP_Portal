@@ -380,13 +380,7 @@ function publicRegistrationFullName(array $registration) {
 
 function publicRegistrationCourseSection(array $registration) {
     $component = normalizeProgram($registration['component'] ?? null);
-    return autoSectionFolderForStudent(
-        $GLOBALS['conn'],
-        $component ?: 'PUBLIC',
-        $registration['course'] ?? '',
-        $registration['year_section'] ?? '',
-        publicRegistrationOriginalSection($registration)
-    );
+    return $component ?: 'PUBLIC';
 }
 
 function publicRegistrationOriginalSection(array $registration) {
