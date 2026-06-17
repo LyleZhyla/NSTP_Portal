@@ -30,8 +30,10 @@ try {
 
     echo json_encode([
         'success' => true,
-        'message' => 'Announcement posted. ' . (int) $result['recipient_count'] . ' recipient(s) were notified.',
+        'message' => 'Announcement posted. ' . (int) $result['recipient_count'] . ' in-app notification(s) created. ' . (int) $result['email_sent_count'] . ' email(s) sent.',
         'recipient_count' => (int) $result['recipient_count'],
+        'email_sent_count' => (int) $result['email_sent_count'],
+        'email_skipped_count' => (int) $result['email_skipped_count'],
     ]);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => $error->getMessage()]);

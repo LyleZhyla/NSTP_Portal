@@ -273,6 +273,8 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
     $announcementId = (int) $conn->lastInsertId();
 
     $recipients = announcementRecipients($conn, $scopeProgram, $createdByRestriction, (int) ($actor['user_id'] ?? 0), $recipientScope);
+    $emailSentCount = 0;
+    $emailSkippedCount = 0;
     foreach ($recipients as $recipient) {
         $notificationId = createUserNotification(
             $conn,
@@ -285,6 +287,7 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
         );
 
         if ($notificationId <= 0 || isPlaceholderEmail($recipient['email'] ?? '') || !filter_var($recipient['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
+            $emailSkippedCount++;
             continue;
         }
 
@@ -305,12 +308,17 @@ HTML;
 
         if (sendAppMail($recipient['email'], $recipientName, 'NSTP Announcement: ' . $title, $htmlBody, $textBody)) {
             markNotificationEmailed($conn, $notificationId);
+            $emailSentCount++;
+        } else {
+            $emailSkippedCount++;
         }
     }
 
     return [
         'announcement_id' => $announcementId,
         'recipient_count' => count($recipients),
+        'email_sent_count' => $emailSentCount,
+        'email_skipped_count' => $emailSkippedCount,
     ];
 }
 
