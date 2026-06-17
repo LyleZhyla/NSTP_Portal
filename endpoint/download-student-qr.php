@@ -235,7 +235,7 @@ $maxTextWidth = 300;
 $fields = [
     'Full Name:' => $student['student_name'] ?: 'N/A',
     'Course/Major/Section:' => qrCardCourseMajorSection($student),
-    'Contact #:' => $student['contact_number'] ?: 'N/A',
+    'Contact No.:' => $student['contact_number'] ?: 'N/A',
 ];
 $y = 172;
 foreach ($fields as $label => $value) {
