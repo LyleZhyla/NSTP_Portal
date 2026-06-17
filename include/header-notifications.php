@@ -75,6 +75,9 @@ if (isset($_SESSION['user_id'])) {
                                         <i class="fas fa-check mr-1"></i>Mark as read
                                     </button>
                                 <?php endif; ?>
+                                <button type="button" class="btn btn-sm btn-outline-danger header-delete-notification" data-id="<?php echo (int) $notification['notification_id']; ?>">
+                                    <i class="fas fa-trash mr-1"></i>Delete
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -230,6 +233,9 @@ if (isset($_SESSION['user_id'])) {
 
     .notification-actions {
         min-height: 31px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
     }
 
     .notification-read-label {
@@ -377,10 +383,36 @@ if (isset($_SESSION['user_id'])) {
 
         const actions = item.querySelector('.notification-actions');
         if (actions) {
+            const deleteButton = actions.querySelector('.header-delete-notification');
             actions.innerHTML = '<span class="notification-read-label"><i class="fas fa-check mr-1"></i>Read</span>';
+            if (deleteButton) {
+                actions.appendChild(deleteButton);
+            }
         } else if (button) {
             button.outerHTML = '<span class="notification-read-label"><i class="fas fa-check mr-1"></i>Read</span>';
         }
+    }
+
+    function showEmptyNotificationStateIfNeeded() {
+        const list = document.getElementById('headerNotificationList');
+        if (!list || list.querySelector('.header-notification-item')) {
+            return;
+        }
+
+        list.innerHTML = '<div class="notification-empty-state" id="headerNotificationEmpty"><i class="far fa-bell-slash"></i><p>No new notifications</p></div>';
+    }
+
+    function deleteNotificationItem(item) {
+        if (!item) {
+            return;
+        }
+
+        if (item.dataset.isRead !== '1') {
+            updateNotificationBadge();
+        }
+
+        item.remove();
+        showEmptyNotificationStateIfNeeded();
     }
 
     function openNotificationDetail(item) {
@@ -432,7 +464,7 @@ if (isset($_SESSION['user_id'])) {
         }
 
         const item = event.target.closest('.header-notification-item');
-        if (!item || event.target.closest('.header-mark-notification-read')) {
+        if (!item || event.target.closest('.header-mark-notification-read, .header-delete-notification')) {
             return;
         }
 
@@ -485,8 +517,47 @@ if (isset($_SESSION['user_id'])) {
     });
 
     document.addEventListener('click', function(event) {
+        const button = event.target.closest('.header-delete-notification');
+        if (!button) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const notificationId = button.getAttribute('data-id');
+        if (!notificationId) {
+            return;
+        }
+
+        const item = button.closest('.header-notification-item');
+        button.disabled = true;
+
+        const formData = new FormData();
+        formData.append('notification_id', notificationId);
+
+        fetch('endpoint/delete-notification.php', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+        })
+            .then(function(response) { return response.json(); })
+            .then(function(response) {
+                if (!response.success) {
+                    button.disabled = false;
+                    return;
+                }
+
+                deleteNotificationItem(item || document.getElementById('header-notification-' + notificationId));
+            })
+            .catch(function() {
+                button.disabled = false;
+            });
+    });
+
+    document.addEventListener('click', function(event) {
         const item = event.target.closest('.header-notification-item');
-        if (!item || event.target.closest('.header-mark-notification-read')) {
+        if (!item || event.target.closest('.header-mark-notification-read, .header-delete-notification')) {
             return;
         }
 
