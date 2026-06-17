@@ -43,7 +43,8 @@ try {
 
     $actorProgram = normalizeProgram($currentUser['program'] ?? null);
     foreach ($folders as $folder) {
-        $folderProgram = normalizeProgram($folder['program'] ?? null);
+        $rawProgram = strtoupper(trim((string) ($folder['program'] ?? '')));
+        $folderProgram = $rawProgram === 'PUBLIC' ? 'PUBLIC' : normalizeProgram($rawProgram);
         if (!$folderProgram) {
             throw new RuntimeException('One selected folder has an invalid program.');
         }
@@ -73,7 +74,8 @@ try {
     $deleted = 0;
     $releasedStudents = 0;
     foreach ($folders as $folder) {
-        $program = normalizeProgram($folder['program']);
+        $rawProgram = strtoupper(trim((string) ($folder['program'] ?? '')));
+        $program = $rawProgram === 'PUBLIC' ? 'PUBLIC' : normalizeProgram($rawProgram);
 
         $moveStmt->execute([$program, $folder['course_section']]);
         $releasedStudents += $moveStmt->rowCount();

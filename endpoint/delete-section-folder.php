@@ -48,7 +48,8 @@ try {
     }
 
     foreach ($folders as $folder) {
-        $program = normalizeProgram($folder['program'] ?? null);
+        $rawProgram = strtoupper(trim((string) ($folder['program'] ?? '')));
+        $program = $rawProgram === 'PUBLIC' ? 'PUBLIC' : normalizeProgram($rawProgram);
         if (!$program) {
             throw new RuntimeException('Folder program is invalid.');
         }
@@ -80,7 +81,8 @@ try {
     $deletedFolderNames = [];
 
     foreach ($folders as $folder) {
-        $program = normalizeProgram($folder['program'] ?? null);
+        $rawProgram = strtoupper(trim((string) ($folder['program'] ?? '')));
+        $program = $rawProgram === 'PUBLIC' ? 'PUBLIC' : normalizeProgram($rawProgram);
         $courseSection = $folder['course_section'];
 
         $moveStmt->execute([$program, $courseSection]);
