@@ -122,7 +122,6 @@ if (isset($_POST['update_component'])) {
     } else {
         try {
             ensureRotcRegistrationColumns($conn);
-            ensureSectionFoldersTable($conn);
             $rotcProofPath = null;
             $existingProofPath = null;
 
@@ -160,13 +159,7 @@ if (isset($_POST['update_component'])) {
                 $registration['year_section'] ?? '',
                 ''
             );
-            $autoFolder = autoSectionFolderForStudent(
-                $conn,
-                $selectedComponent,
-                $registration['course'] ?? '',
-                $registration['year_section'] ?? '',
-                $originalSection
-            );
+            $pendingComponent = $selectedComponent;
 
             $conn->beginTransaction();
 
@@ -178,10 +171,10 @@ if (isset($_POST['update_component'])) {
             if ($existingStudent) {
                 $stmt = $conn->prepare("
                     UPDATE tbl_student
-                    SET student_name = ?, original_section = ?, course_section = ?
+                    SET student_name = ?, original_section = ?, course_section = ?, created_by = NULL
                     WHERE user_id = ?
                 ");
-                $stmt->execute([$studentName, $originalSection, $autoFolder, $user_id]);
+                $stmt->execute([$studentName, $originalSection, $pendingComponent, $user_id]);
             } else {
                 do {
                     $generatedCode = 'STU_' . uniqid('', true) . '_' . random_int(1000, 9999);
@@ -193,7 +186,7 @@ if (isset($_POST['update_component'])) {
                     INSERT INTO tbl_student (user_id, student_name, original_section, course_section, generated_code, created_by)
                     VALUES (?, ?, ?, ?, ?, NULL)
                 ");
-                $stmt->execute([$user_id, $studentName, $originalSection, $autoFolder, $generatedCode]);
+                $stmt->execute([$user_id, $studentName, $originalSection, $pendingComponent, $generatedCode]);
             }
 
             $stmt = $conn->prepare("UPDATE tbl_users SET program = ? WHERE user_id = ?");
