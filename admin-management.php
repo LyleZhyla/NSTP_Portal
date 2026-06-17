@@ -159,6 +159,31 @@ date_default_timezone_set('Asia/Manila');
             font-weight: bold;
             margin: 0 auto;
         }
+        #adminsTable_wrapper .pagination .page-link,
+        #sectionFoldersTable_wrapper .pagination .page-link {
+            background-color: #f3faf6 !important;
+            border-color: #cce8d6 !important;
+            color: #0f5132 !important;
+            font-weight: 700;
+        }
+        #adminsTable_wrapper .pagination .page-link:hover,
+        #sectionFoldersTable_wrapper .pagination .page-link:hover {
+            background-color: #dff3e7 !important;
+            border-color: #8bc4a4 !important;
+            color: #063f28 !important;
+        }
+        #adminsTable_wrapper .pagination .page-item.active .page-link,
+        #sectionFoldersTable_wrapper .pagination .page-item.active .page-link {
+            background-color: #f59e0b !important;
+            border-color: #d97706 !important;
+            color: #111827 !important;
+        }
+        #adminsTable_wrapper .pagination .page-item.disabled .page-link,
+        #sectionFoldersTable_wrapper .pagination .page-item.disabled .page-link {
+            background-color: #f8fafc !important;
+            border-color: #e5e7eb !important;
+            color: #94a3b8 !important;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
@@ -271,21 +296,22 @@ date_default_timezone_set('Asia/Manila');
                                 </div>
                             </div>
                             <div class="card-body">
-                                <table id="adminsTable" class="table table-bordered table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>User</th>
-                                            <th>Username</th>
-                                            <th>Email</th>
-                                            <th>Role</th>
-                                            <th>Program</th>
-                                            <th class="assigned-section-col">Assigned Section(s)</th>
-                                            <th>Created</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
+                                <div class="table-responsive">
+                                    <table id="adminsTable" class="table table-bordered table-hover mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>User</th>
+                                                <th>Username</th>
+                                                <th>Email</th>
+                                                <th>Role</th>
+                                                <th>Program</th>
+                                                <th class="assigned-section-col">Assigned Section(s)</th>
+                                                <th>Created</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
                                         <?php
                                         if ($isSuperAdmin) {
                                             $stmt = $conn->prepare("
@@ -415,8 +441,9 @@ date_default_timezone_set('Asia/Manila');
                                             </td>
                                         </tr>
                                         <?php endforeach; ?>
-                                    </tbody>
-                                </table>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
