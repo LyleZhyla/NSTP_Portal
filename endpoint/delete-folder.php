@@ -14,8 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $currentUser = getCurrentUserRecord($conn);
-if (!$currentUser || ($currentUser['role'] ?? '') !== 'coordinator') {
-    $response['message'] = 'Only coordinators can delete facilitator folders.';
+if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true)) {
+    $response['message'] = 'Only super admins and coordinators can delete facilitator folders.';
     echo json_encode($response);
     exit();
 }
