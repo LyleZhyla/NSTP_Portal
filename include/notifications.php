@@ -84,20 +84,42 @@ function notificationStudentEmail(PDO $conn, array $student) {
 function createUserNotification(PDO $conn, $userId, $type, $title, $message, $relatedTable = null, $relatedId = null) {
     ensureNotificationTables($conn);
 
+    $userId = (int) $userId;
+    $type = cleanNotificationText($type, 40);
+    $title = cleanNotificationText($title, 180);
+    $message = trim((string) $message);
+    $relatedId = $relatedId ? (int) $relatedId : null;
+
     $stmt = $conn->prepare("
         INSERT IGNORE INTO tbl_notifications (user_id, type, title, message, related_table, related_id)
         VALUES (?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
-        (int) $userId,
-        cleanNotificationText($type, 40),
-        cleanNotificationText($title, 180),
-        trim((string) $message),
+        $userId,
+        $type,
+        $title,
+        $message,
         $relatedTable,
-        $relatedId ? (int) $relatedId : null,
+        $relatedId,
     ]);
 
-    return (int) $conn->lastInsertId();
+    $notificationId = (int) $conn->lastInsertId();
+    if ($notificationId > 0) {
+        return $notificationId;
+    }
+
+    $lookupStmt = $conn->prepare("
+        SELECT notification_id
+        FROM tbl_notifications
+        WHERE user_id = ?
+          AND type = ?
+          AND related_table <=> ?
+          AND related_id <=> ?
+        LIMIT 1
+    ");
+    $lookupStmt->execute([$userId, $type, $relatedTable, $relatedId]);
+
+    return (int) $lookupStmt->fetchColumn();
 }
 
 function markNotificationEmailed(PDO $conn, $notificationId) {
@@ -275,6 +297,8 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
     $recipients = announcementRecipients($conn, $scopeProgram, $createdByRestriction, (int) ($actor['user_id'] ?? 0), $recipientScope);
     $emailSentCount = 0;
     $emailSkippedCount = 0;
+    $emailInvalidCount = 0;
+    $emailFailedCount = 0;
     foreach ($recipients as $recipient) {
         $notificationId = createUserNotification(
             $conn,
@@ -288,6 +312,7 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
 
         if ($notificationId <= 0 || isPlaceholderEmail($recipient['email'] ?? '') || !filter_var($recipient['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
             $emailSkippedCount++;
+            $emailInvalidCount++;
             continue;
         }
 
@@ -311,6 +336,7 @@ HTML;
             $emailSentCount++;
         } else {
             $emailSkippedCount++;
+            $emailFailedCount++;
         }
     }
 
@@ -319,6 +345,8 @@ HTML;
         'recipient_count' => count($recipients),
         'email_sent_count' => $emailSentCount,
         'email_skipped_count' => $emailSkippedCount,
+        'email_invalid_count' => $emailInvalidCount,
+        'email_failed_count' => $emailFailedCount,
     ];
 }
 
