@@ -165,40 +165,89 @@ HTML;
     return false;
 }
 
-function announcementRecipients(PDO $conn, $scopeProgram = null, $createdBy = null) {
-    $params = [];
-    $where = ["u.role = 'student'", "s.user_id IS NOT NULL"];
-    $joins = "INNER JOIN tbl_student s ON s.user_id = u.user_id";
-
-    $scopeProgram = normalizeProgram($scopeProgram);
-    if ($scopeProgram) {
-        $where[] = "(u.program = ? OR s.course_section LIKE ?)";
-        $params[] = $scopeProgram;
-        $params[] = '%' . $scopeProgram . '%';
-    }
-
-    if ($createdBy) {
-        $where[] = "s.created_by = ?";
-        $params[] = (int) $createdBy;
-    }
-
-    $stmt = $conn->prepare("
-        SELECT DISTINCT u.user_id, u.full_name, u.email, s.tbl_student_id, s.student_name, s.student_number
-        FROM tbl_users u
-        {$joins}
-        WHERE " . implode(' AND ', $where) . "
-        ORDER BY u.full_name
-    ");
-    $stmt->execute($params);
-
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+function normalizeAnnouncementRecipientScope($recipientScope) {
+    $recipientScope = strtolower(trim((string) $recipientScope));
+    return in_array($recipientScope, ['students', 'staff', 'all'], true) ? $recipientScope : 'all';
 }
 
-function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgram = null) {
+function announcementRecipients(PDO $conn, $scopeProgram = null, $createdBy = null, $excludeUserId = null, $recipientScope = 'all') {
+    $recipients = [];
+    $recipientScope = normalizeAnnouncementRecipientScope($recipientScope);
+
+    $scopeProgram = normalizeProgram($scopeProgram);
+
+    if (in_array($recipientScope, ['students', 'all'], true)) {
+        $params = [];
+        $where = ["u.role = 'student'", "s.user_id IS NOT NULL"];
+        $joins = "INNER JOIN tbl_student s ON s.user_id = u.user_id";
+
+        if ($scopeProgram) {
+            $where[] = "(u.program = ? OR s.course_section = ? OR s.course_section LIKE ?)";
+            $params[] = $scopeProgram;
+            $params[] = $scopeProgram;
+            $params[] = '%' . $scopeProgram . '%';
+        }
+
+        if ($createdBy) {
+            $where[] = "s.created_by = ?";
+            $params[] = (int) $createdBy;
+        }
+
+        if ($excludeUserId) {
+            $where[] = "u.user_id <> ?";
+            $params[] = (int) $excludeUserId;
+        }
+
+        $stmt = $conn->prepare("
+            SELECT DISTINCT u.user_id, u.full_name, u.email, s.tbl_student_id, s.student_name, s.student_number
+            FROM tbl_users u
+            {$joins}
+            WHERE " . implode(' AND ', $where) . "
+            ORDER BY u.full_name
+        ");
+        $stmt->execute($params);
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $recipient) {
+            $recipients[(int) $recipient['user_id']] = $recipient;
+        }
+    }
+
+    if (in_array($recipientScope, ['staff', 'all'], true)) {
+        $staffParams = [];
+        $staffWhere = ["u.role IN ('coordinator', 'facilitator')"];
+
+        if ($scopeProgram) {
+            $staffWhere[] = "u.program = ?";
+            $staffParams[] = $scopeProgram;
+        }
+
+        if ($excludeUserId) {
+            $staffWhere[] = "u.user_id <> ?";
+            $staffParams[] = (int) $excludeUserId;
+        }
+
+        $staffStmt = $conn->prepare("
+            SELECT DISTINCT u.user_id, u.full_name, u.email, NULL AS tbl_student_id, NULL AS student_name, NULL AS student_number
+            FROM tbl_users u
+            WHERE " . implode(' AND ', $staffWhere) . "
+            ORDER BY u.full_name
+        ");
+        $staffStmt->execute($staffParams);
+
+        foreach ($staffStmt->fetchAll(PDO::FETCH_ASSOC) as $recipient) {
+            $recipients[(int) $recipient['user_id']] = $recipient;
+        }
+    }
+
+    return array_values($recipients);
+}
+
+function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgram = null, $recipientScope = 'all') {
     ensureNotificationTables($conn);
 
     $actorRole = $actor['role'] ?? '';
     $scopeProgram = normalizeProgram($scopeProgram);
+    $recipientScope = normalizeAnnouncementRecipientScope($recipientScope);
     $createdByRestriction = null;
 
     if ($actorRole === 'coordinator') {
@@ -223,7 +272,7 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
     $stmt->execute([$title, $body, $scopeProgram, (int) $actor['user_id']]);
     $announcementId = (int) $conn->lastInsertId();
 
-    $recipients = announcementRecipients($conn, $scopeProgram, $createdByRestriction);
+    $recipients = announcementRecipients($conn, $scopeProgram, $createdByRestriction, (int) ($actor['user_id'] ?? 0), $recipientScope);
     foreach ($recipients as $recipient) {
         $notificationId = createUserNotification(
             $conn,
@@ -239,7 +288,7 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
             continue;
         }
 
-        $safeName = htmlspecialchars($recipient['full_name'] ?: $recipient['student_name'] ?: 'Student', ENT_QUOTES, 'UTF-8');
+        $safeName = htmlspecialchars($recipient['full_name'] ?: $recipient['student_name'] ?: 'NSTP User', ENT_QUOTES, 'UTF-8');
         $safeTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $safeBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
         $bodyHtml = <<<HTML
@@ -251,9 +300,10 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
 </div>
 HTML;
         $htmlBody = renderAppEmailTemplate('NSTP Announcement', 'A new announcement was posted in the TAU NSTP Portal.', $bodyHtml);
-        $textBody = "Hello {$recipient['full_name']},\n\n{$title}\n\n{$body}\n\nTAU NSTP Portal";
+        $recipientName = $recipient['full_name'] ?: $recipient['student_name'] ?: 'NSTP User';
+        $textBody = "Hello {$recipientName},\n\n{$title}\n\n{$body}\n\nTAU NSTP Portal";
 
-        if (sendAppMail($recipient['email'], $recipient['full_name'], 'NSTP Announcement: ' . $title, $htmlBody, $textBody)) {
+        if (sendAppMail($recipient['email'], $recipientName, 'NSTP Announcement: ' . $title, $htmlBody, $textBody)) {
             markNotificationEmailed($conn, $notificationId);
         }
     }

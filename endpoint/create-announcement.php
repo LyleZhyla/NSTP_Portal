@@ -22,14 +22,15 @@ try {
         $currentUser,
         $_POST['title'] ?? '',
         $_POST['body'] ?? '',
-        $_POST['scope_program'] ?? null
+        $_POST['scope_program'] ?? null,
+        $_POST['recipient_scope'] ?? 'all'
     );
 
     logSystemEvent($conn, 'announcement_created', 'Created announcement #' . $result['announcement_id']);
 
     echo json_encode([
         'success' => true,
-        'message' => 'Announcement posted. ' . (int) $result['recipient_count'] . ' student(s) were notified.',
+        'message' => 'Announcement posted. ' . (int) $result['recipient_count'] . ' recipient(s) were notified.',
         'recipient_count' => (int) $result['recipient_count'],
     ]);
 } catch (Throwable $error) {

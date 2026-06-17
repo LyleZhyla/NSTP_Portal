@@ -82,11 +82,11 @@ $program = normalizeProgram($currentUser['program'] ?? null);
                                     <div class="scope-note mb-3">
                                         <strong>Recipients:</strong>
                                         <?php if ($role === 'super_admin'): ?>
-                                            Students from the selected component, or all students when no component is selected.
+                                            Choose students only, coordinators/facilitators only, or everyone. Component scope still applies.
                                         <?php elseif ($role === 'coordinator'): ?>
-                                            Students under <?php echo htmlspecialchars($program ?: 'your component'); ?>.
+                                            Choose students only, coordinators/facilitators only, or everyone under <?php echo htmlspecialchars($program ?: 'your component'); ?>.
                                         <?php else: ?>
-                                            Students assigned to your handled folders.
+                                            Choose students assigned to your handled folders, staff under your component, or both.
                                         <?php endif; ?>
                                     </div>
 
@@ -106,6 +106,15 @@ $program = normalizeProgram($currentUser['program'] ?? null);
                                         </select>
                                     </div>
                                     <?php endif; ?>
+
+                                    <div class="form-group">
+                                        <label for="recipient_scope">Send To</label>
+                                        <select class="form-control" id="recipient_scope" name="recipient_scope" required>
+                                            <option value="students">Students only</option>
+                                            <option value="staff">Coordinators / Facilitators only</option>
+                                            <option value="all" selected>All recipients</option>
+                                        </select>
+                                    </div>
 
                                     <div class="form-group mb-0">
                                         <label for="body">Message</label>
