@@ -22,6 +22,7 @@ if (!$user_program) {
     $user_program = normalizeProgram($programStmt->fetchColumn());
 }
 $isRotcFacilitator = $user_role === 'facilitator' && $user_program === 'ROTC';
+ensureRotcAttendanceSchema($conn);
 
 if (!canAccessStaffTools($user_role)) {
     header("Location: profile.php");
@@ -273,7 +274,7 @@ if ($user_role === 'coordinator') {
 
 // FOR REGULAR ADMIN WITH MULTIPLE SECTIONS - Get students organized by section folder
 if ($user_role === 'facilitator' && $isRotcFacilitator) {
-    $rotcCondition = rotcStudentSqlCondition('s');
+    $rotcCondition = rotcMs1StudentSqlCondition('s');
     $stmt = $conn->prepare("
         SELECT s.*, s.original_section
         FROM tbl_student s
@@ -494,7 +495,7 @@ if ($user_role === 'super_admin') {
 } elseif ($user_role === 'facilitator') {
     if (!empty($assignedSections)) {
         if ($isRotcFacilitator) {
-            $rotcCondition = rotcStudentSqlCondition('s');
+            $rotcCondition = rotcMs1StudentSqlCondition('s');
             $total_stmt = $conn->prepare("
                 SELECT COUNT(*)
                 FROM tbl_student s
@@ -511,7 +512,7 @@ if ($user_role === 'super_admin') {
         $total_stmt->execute(array_merge([$user_id], $assignedSections));
         }
     } elseif ($isRotcFacilitator) {
-        $rotcCondition = rotcStudentSqlCondition('s');
+        $rotcCondition = rotcMs1StudentSqlCondition('s');
         $total_stmt = $conn->prepare("
             SELECT COUNT(*)
             FROM tbl_student s

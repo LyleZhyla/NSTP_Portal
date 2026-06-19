@@ -5,6 +5,7 @@ require_once '../vendor/autoload.php';
 require_once '../include/public-registration-forms.php';
 require_once '../include/college-courses.php';
 require_once '../include/religions.php';
+require_once '../include/user-permissions.php';
 require_once '../include/automatic-sectioning.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -275,6 +276,9 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
     $activeForm = activeStudentRegistrationFormForImport($conn);
     $fields = $activeForm['fields'];
     $expectedColumns = superAdminImportColumns($fields);
+    if ($component === 'ROTC') {
+        $expectedColumns['rotc_ms_level'] = ['MS Level', 'ROTC MS Level'];
+    }
 
     $spreadsheet = IOFactory::load($file['tmp_name']);
     $worksheet = $spreadsheet->getActiveSheet();
@@ -349,6 +353,13 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                 $errors[] = "Row $row: " . $expectedColumns[$fieldKey][0] . " cannot be N/A.";
             }
             $record[$fieldKey] = $value;
+        }
+
+        if ($component === 'ROTC') {
+            $record['rotc_ms_level'] = normalizeRotcMsLevel($record['rotc_ms_level'] ?? '');
+            if (!$record['rotc_ms_level']) {
+                $errors[] = "Row $row: MS Level must be MS-1, MS-31, or MS-41.";
+            }
         }
 
         if (!empty($record['student_number'])) {
@@ -450,8 +461,8 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                 form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
                 date_of_birth, gender, religion, blood_type, contact_number, email, province, city_municipality, barangay, street, house_no,
                 emergency_name, emergency_relationship, emergency_contact_number, emergency_address,
-                student_number, college, course, major, year_section, component, formal_picture, status
-            ) VALUES (?, NULL, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'imported_by_super_admin')
+                student_number, college, course, major, year_section, component, rotc_ms_level, formal_picture, status
+            ) VALUES (?, NULL, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'imported_by_super_admin')
         ");
         $studentStmt = $conn->prepare("
             INSERT INTO tbl_student (user_id, student_number, student_name, original_section, course_section, generated_code, qr_code, created_by)
@@ -487,6 +498,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                 $record['major'],
                 $record['year_section'],
                 $component,
+                $record['rotc_ms_level'] ?? null,
                 $record['formal_picture'],
             ]);
 

@@ -20,10 +20,11 @@ if (!canAccessStaffTools($admin_role)) {
     exit();
 }
 $currentUser = getCurrentUserRecord($conn);
+ensureRotcAttendanceSchema($conn);
 $isRotcFacilitator = $admin_role === 'facilitator'
     && normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null)) === 'ROTC';
 $facilitatorStudentAccessCondition = "(s.created_by = ? OR ads.user_id = ?"
-    . ($isRotcFacilitator ? " OR " . rotcStudentSqlCondition('s') : "")
+    . ($isRotcFacilitator ? " OR " . rotcMs1StudentSqlCondition('s') : "")
     . ")";
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $admin_role === 'super_admin'

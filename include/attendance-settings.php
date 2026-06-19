@@ -91,6 +91,26 @@ function hasAttendanceForStudentScopeOnDate(PDO $conn, array $student, $date = n
     }
 
     $attendanceDate = $date ? date('Y-m-d', strtotime($date)) : date('Y-m-d');
+
+    $rotcGroup = getRotcAttendanceGroup($conn, $student);
+    if ($rotcGroup) {
+        ensureRotcAttendanceSchema($conn);
+        $rotcGroupCondition = $rotcGroup === 'ROTC_MS31_MS41'
+            ? rotcAdvancedStudentSqlCondition('s')
+            : rotcMs1StudentSqlCondition('s');
+
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM tbl_attendance a
+            INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
+            WHERE DATE(a.time_in) = ?
+              AND {$rotcGroupCondition}
+        ");
+        $stmt->execute([$attendanceDate]);
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
     $createdBy = isset($student['created_by']) && $student['created_by'] !== ''
         ? (int) $student['created_by']
         : null;

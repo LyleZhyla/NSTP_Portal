@@ -84,6 +84,7 @@ function exportAttendanceFill($statusGroup) {
 $userId = (int) $currentUser['user_id'];
 $userRole = $currentUser['role'] ?? 'facilitator';
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
+ensureRotcAttendanceSchema($conn);
 $isRotcFacilitator = $userRole === 'facilitator' && $program === 'ROTC';
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $userRole === 'super_admin'
@@ -92,7 +93,7 @@ $canViewAllAttendance = $userRole === 'super_admin'
 if ($canViewAllAttendance) {
     $studentWhere = '';
     if ($userRole !== 'super_admin' && $program === 'ROTC') {
-        $studentWhere = 'WHERE ' . rotcStudentSqlCondition('s');
+        $studentWhere = 'WHERE ' . rotcMs1StudentSqlCondition('s');
     }
 
     $studentSql = "
@@ -137,10 +138,10 @@ if ($canViewAllAttendance) {
     $preparedBy = strtoupper(($program ?: 'NSTP') . ' COORDINATOR');
 } else {
     $facilitatorStudentAccessCondition = "(s.created_by = :creator_user_id OR ads.user_id = :section_user_id"
-        . ($isRotcFacilitator ? " OR " . rotcStudentSqlCondition('s') : "")
+        . ($isRotcFacilitator ? " OR " . rotcMs1StudentSqlCondition('s') : "")
         . ")";
     if ($program === 'ROTC') {
-        $facilitatorStudentAccessCondition = "({$facilitatorStudentAccessCondition} AND " . rotcStudentSqlCondition('s') . ")";
+        $facilitatorStudentAccessCondition = "({$facilitatorStudentAccessCondition} AND " . rotcMs1StudentSqlCondition('s') . ")";
     }
 
     $studentSql = "

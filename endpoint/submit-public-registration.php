@@ -572,7 +572,11 @@ try {
     $course = $enabledFields['course_section'] ? cleanText($_POST['course'] ?? '') : 'N/A';
     $major = $enabledFields['course_section'] ? cleanText($_POST['major'] ?? '') : 'N/A';
     $yearSection = $enabledFields['course_section'] ? cleanText($_POST['year_section'] ?? '') : 'N/A';
-    $component = $isFacilitatorRegistration ? normalizeProgram($_POST['component'] ?? null) : null;
+    $component = normalizeProgram($_POST['component'] ?? null);
+    $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
+    if ($component !== 'ROTC') {
+        $rotcMsLevel = null;
+    }
 
     if (!$enabledFields['extension_name']) {
         $extensionName = 'N/A';
@@ -703,6 +707,14 @@ try {
         failRegistration('Student Number must be exactly 10 digits and numbers only.');
     }
 
+    if (!$isFacilitatorRegistration && !$studentNumberBased && isComponentSelectionEnabled($conn) && !$component) {
+        failRegistration('Please select an NSTP component.');
+    }
+
+    if (!$isFacilitatorRegistration && !$studentNumberBased && $component === 'ROTC' && !$rotcMsLevel) {
+        failRegistration('Please select your ROTC MS level.');
+    }
+
     if ($studentNumberOnlyForm && !$isFacilitatorRegistration) {
         $existingRegistration = findLatestPublicRegistrationByStudentNumber($conn, $studentNumber);
         if (!$existingRegistration) {
@@ -711,7 +723,8 @@ try {
 
         $attendanceOnlyRegistration = $existingRegistration;
         $attendanceOnlyRegistration['form_title'] = $publicForm['form_title'];
-        $attendanceOnlyRegistration['component'] = null;
+        $attendanceOnlyRegistration['component'] = normalizeProgram($existingRegistration['component'] ?? null);
+        $attendanceOnlyRegistration['rotc_ms_level'] = $existingRegistration['rotc_ms_level'] ?? null;
         $attendanceOnlyRegistration['formal_picture'] = $existingRegistration['formal_picture'] ?? 'include/logo.png';
 
         $conn->beginTransaction();
@@ -720,8 +733,8 @@ try {
                 form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
                 date_of_birth, gender, religion, blood_type, contact_number, email, province, city_municipality, barangay, street, house_no,
                 emergency_name, emergency_relationship, emergency_contact_number, emergency_address,
-                student_number, college, course, major, year_section, component, formal_picture, status
-            ) VALUES (?, ?, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                student_number, college, course, major, year_section, component, rotc_ms_level, formal_picture, status
+            ) VALUES (?, ?, 'student', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $formId,
@@ -752,6 +765,7 @@ try {
             $existingRegistration['major'],
             $existingRegistration['year_section'],
             $attendanceOnlyRegistration['component'],
+            $attendanceOnlyRegistration['rotc_ms_level'],
             $attendanceOnlyRegistration['formal_picture'],
             'attendance_only',
         ]);
@@ -924,8 +938,8 @@ try {
             form_id, user_id, registrant_role, last_name, extension_name, first_name, middle_name, place_of_birth,
             date_of_birth, gender, religion, blood_type, contact_number, email, province, city_municipality, barangay, street, house_no,
             emergency_name, emergency_relationship, emergency_contact_number, emergency_address,
-            student_number, college, course, major, year_section, component, formal_picture
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            student_number, college, course, major, year_section, component, rotc_ms_level, formal_picture
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $formId,
@@ -957,6 +971,7 @@ try {
         $major,
         $yearSection,
         $component,
+        $rotcMsLevel,
         $dbPicturePath,
     ]);
     $registrationId = (int) $conn->lastInsertId();
@@ -972,6 +987,7 @@ try {
         'course' => $course,
         'year_section' => $yearSection,
         'component' => $component,
+        'rotc_ms_level' => $rotcMsLevel,
         'form_title' => $publicForm['form_title'],
         'formal_picture' => $dbPicturePath,
         'user_id' => null,

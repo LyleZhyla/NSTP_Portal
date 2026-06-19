@@ -4,6 +4,7 @@ require_once './conn/conn.php';
 require_once './include/public-registration-forms.php';
 require_once './include/college-courses.php';
 require_once './include/religions.php';
+require_once './include/user-permissions.php';
 
 if (isset($_SESSION['user_id'])) {
     $home = ($_SESSION['role'] ?? '') === 'student' ? 'student-dashboard.php' : 'index.php';
@@ -23,6 +24,7 @@ $enabledFieldCount = count(array_filter($fields));
 $studentNumberBased = !$isFacilitatorForm && !empty($fields['student_number']) && $enabledFieldCount === 1;
 $showNameFields = !empty($fields['name']);
 $showEmailField = !empty($fields['email']);
+$componentSelectionEnabled = !$isFacilitatorForm && !$studentNumberBased && isComponentSelectionEnabled($conn);
 $religionOptions = philippinesReligionOptions();
 ?>
 <!DOCTYPE html>
@@ -261,6 +263,26 @@ $religionOptions = philippinesReligionOptions();
             <div class="form-block">
                 <div class="section-title"><i class="fa-solid fa-graduation-cap"></i> Academic Information</div>
                 <div class="row g-3">
+                    <?php if ($componentSelectionEnabled): ?>
+                    <div class="col-md-4 student-only-field">
+                        <label class="form-label" for="component">NSTP Component <span class="required">*</span></label>
+                        <select class="form-select" id="component" name="component" required>
+                            <option value="">Select Component</option>
+                            <option value="CWTS">CWTS</option>
+                            <option value="LTS">LTS</option>
+                            <option value="ROTC">ROTC</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 student-only-field" id="rotcMsLevelWrap" style="display:none;">
+                        <label class="form-label" for="rotc_ms_level">ROTC MS Level <span class="required">*</span></label>
+                        <select class="form-select" id="rotc_ms_level" name="rotc_ms_level">
+                            <option value="">Select MS Level</option>
+                            <option value="MS-1">MS-1</option>
+                            <option value="MS-31">MS-31</option>
+                            <option value="MS-41">MS-41</option>
+                        </select>
+                    </div>
+                    <?php endif; ?>
                     <?php if ($fields['student_number']): ?>
                     <div class="col-md-4 student-only-field">
                         <label class="form-label" for="student_number">Student Number <span class="required">*</span></label>
@@ -346,6 +368,9 @@ $religionOptions = philippinesReligionOptions();
         const emergencyContactNumber = document.getElementById('emergency_contact_number');
         const emergencyAddress = document.getElementById('emergency_address');
         const emergencySameAddress = document.getElementById('emergency_same_address');
+        const componentSelect = document.getElementById('component');
+        const rotcMsLevelWrap = document.getElementById('rotcMsLevelWrap');
+        const rotcMsLevel = document.getElementById('rotc_ms_level');
         const studentNumber = document.getElementById('student_number');
         const collegeSelect = document.getElementById('college');
         const courseSelect = document.getElementById('course');
@@ -493,7 +518,19 @@ $religionOptions = philippinesReligionOptions();
             }
         }
 
+        function updateRotcMsLevel() {
+            if (!componentSelect || !rotcMsLevelWrap || !rotcMsLevel) return;
+            const showRotcLevel = currentRegistrantRole() !== 'facilitator' && componentSelect.value === 'ROTC';
+            rotcMsLevelWrap.style.display = showRotcLevel ? '' : 'none';
+            rotcMsLevel.required = showRotcLevel;
+            rotcMsLevel.disabled = !showRotcLevel;
+            if (!showRotcLevel) {
+                rotcMsLevel.value = '';
+            }
+        }
+
         if (religionSelect) religionSelect.addEventListener('change', updateReligionOther);
+        if (componentSelect) componentSelect.addEventListener('change', updateRotcMsLevel);
         if (religionOther) religionOther.addEventListener('input', () => {
             religionOther.setCustomValidity(isAbbreviationOnly(religionOther.value) ? 'Please enter the full religion name, not an abbreviation.' : '');
         });
@@ -645,6 +682,7 @@ $religionOptions = philippinesReligionOptions();
 
             submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i> ' + (studentNumberBased ? 'Record Attendance' : (isFacilitator ? 'Create Facilitator Account' : 'Submit Registration'));
             updateReligionOther();
+            updateRotcMsLevel();
         }
 
         form.addEventListener('submit', async (event) => {
