@@ -12,6 +12,9 @@ if (isset($_SESSION['user_id'])) {
     if (!function_exists('getSystemSetting')) {
         require_once './include/user-permissions.php';
     }
+    if (!function_exists('profilePictureUrl')) {
+        require_once './include/profile-picture-utils.php';
+    }
 
     $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_minutes', '5');
     if ($inactivityTimeoutMinutes <= 0) {
@@ -74,7 +77,7 @@ if (isset($_SESSION['user_id'])) {
                 if (isset($_SESSION['profile_picture']) && !empty($_SESSION['profile_picture'])) {
                     $profilePicPath = $_SESSION['profile_picture'];
                     // Check if file exists
-                    if (file_exists($profilePicPath)) {
+                    if (profilePictureExists($profilePicPath, __DIR__)) {
                         $hasProfilePic = true;
                     }
                 }
@@ -90,7 +93,7 @@ if (isset($_SESSION['user_id'])) {
                     $stmt->execute([$_SESSION['user_id']]);
                     $dbProfilePic = $stmt->fetchColumn();
                     
-                    if ($dbProfilePic && file_exists($dbProfilePic)) {
+                    if ($dbProfilePic && profilePictureExists($dbProfilePic, __DIR__)) {
                         $hasProfilePic = true;
                         $profilePicPath = $dbProfilePic;
                         // Update session for future use
@@ -99,7 +102,7 @@ if (isset($_SESSION['user_id'])) {
                 }
                 
                 if ($hasProfilePic): ?>
-                    <img src="<?php echo htmlspecialchars($profilePicPath); ?>?v=<?php echo time(); ?>" 
+                    <img src="<?php echo htmlspecialchars(profilePictureUrl($profilePicPath, __DIR__)); ?>" 
                          class="img-circle elevation-2" 
                          alt="User Image"
                          style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%; border: 2px solid #fff;">

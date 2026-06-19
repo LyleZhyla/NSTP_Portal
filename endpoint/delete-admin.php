@@ -2,6 +2,7 @@
 session_start();
 require_once '../conn/conn.php'; // Fixed path
 require_once '../include/user-permissions.php';
+require_once '../include/profile-picture-utils.php';
 
 function deleteAdminTableExists(PDO $conn, $tableName) {
     $stmt = $conn->prepare("
@@ -84,12 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $deleteSectionsStmt->execute([$user_id]);
         
         // Delete profile picture file if exists
-        if (!empty($user['profile_picture']) && strpos($user['profile_picture'], 'uploads/profile_pictures/') === 0) {
-            $file_path = '../' . $user['profile_picture'];
-            if (file_exists($file_path)) {
-                unlink($file_path);
-            }
-        }
+        deleteProfilePictureFile($user['profile_picture'] ?? '', dirname(__DIR__));
         
         // Delete the user
         $deleteUserStmt = $conn->prepare("DELETE FROM tbl_users WHERE user_id = ?");

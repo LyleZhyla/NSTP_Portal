@@ -4,6 +4,7 @@ include('./include/theme-loader.php');
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
 require_once './include/section-folders.php';
+require_once './include/profile-picture-utils.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
@@ -351,14 +352,15 @@ date_default_timezone_set('Asia/Manila');
                                             $assignedSections = $admin['assigned_sections_list'] ? explode(',', $admin['assigned_sections_list']) : [];
                                             
                                             // Check if profile picture exists
-                                            $hasProfilePic = !empty($admin['profile_picture']) && file_exists($admin['profile_picture']);
+                                            $profilePicUrl = !empty($admin['profile_picture']) ? profilePictureUrl($admin['profile_picture'], __DIR__) : '';
+                                            $hasProfilePic = !empty($admin['profile_picture']) && profilePictureExists($admin['profile_picture'], __DIR__);
                                         ?>
                                         <tr>
                                             <td><?php echo $admin['user_id']; ?></td>
                                             <td>
                                                 <div class="d-flex align-items-center">
                                                     <?php if ($hasProfilePic): ?>
-                                                        <img src="<?php echo htmlspecialchars($admin['profile_picture']); ?>?v=<?php echo time(); ?>" 
+                                                        <img src="<?php echo htmlspecialchars($profilePicUrl); ?>" 
                                                              alt="<?php echo htmlspecialchars($admin['full_name']); ?>" 
                                                              class="admin-avatar-img mr-3">
                                                     <?php else: ?>
@@ -410,7 +412,7 @@ date_default_timezone_set('Asia/Manila');
                                                             data-email="<?php echo htmlspecialchars($admin['email']); ?>"
                                                             data-role="<?php echo $admin['role']; ?>"
                                                             data-program="<?php echo htmlspecialchars($admin['program'] ?? ''); ?>"
-                                                            data-profile="<?php echo $hasProfilePic ? htmlspecialchars($admin['profile_picture']) : ''; ?>">
+                                                            data-profile="<?php echo $hasProfilePic ? htmlspecialchars($profilePicUrl) : ''; ?>">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
                                                     <button class="btn btn-sm btn-warning change-password" 

@@ -3,6 +3,7 @@ session_start();
 require_once '../conn/conn.php'; // Fixed path - removed the dot
 require_once '../include/user-permissions.php';
 require_once '../include/mailer.php';
+require_once '../include/profile-picture-utils.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
@@ -71,25 +72,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Handle profile picture upload
     $profile_picture = null;
-    if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = '../uploads/profiles/';
-        
-        // Create directory if it doesn't exist
-        if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-        }
-        
-        $file_extension = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
-        $file_name = uniqid() . '_' . time() . '.' . $file_extension;
-        $upload_path = $upload_dir . $file_name;
-        
-        // Validate file type
-        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/jpg'];
-        if (in_array($_FILES['profile_picture']['type'], $allowed_types)) {
-            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                $profile_picture = 'uploads/profiles/' . $file_name;
-            }
-        }
+    try {
+        $profile_picture = uploadProfilePicture($_FILES['profile_picture'] ?? [], dirname(__DIR__), 'account');
+    } catch (RuntimeException $error) {
+        echo json_encode(['success' => false, 'message' => $error->getMessage()]);
+        exit();
     }
     
     try {

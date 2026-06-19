@@ -3,6 +3,7 @@ session_start();
 
 require_once 'conn/conn.php';
 require_once 'include/attendance-settings.php';
+require_once 'include/profile-picture-utils.php';
 
 
 // Check if user is logged in
@@ -16,51 +17,33 @@ $message = '';
 $error = '';
 $componentOptions = ['CWTS', 'LTS', 'ROTC'];
 
-// Create upload directory if it doesn't exist
-$upload_dir = 'uploads/profile_pictures/';
-if (!file_exists($upload_dir)) {
-    mkdir($upload_dir, 0777, true);
-}
-
 // Handle profile picture upload
 if (isset($_POST['upload_picture'])) {
-    if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] == 0) {
-        $allowed = ['jpg', 'jpeg', 'png', 'gif'];
-        $filename = $_FILES['profile_picture']['name'];
-        $file_ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        
-        if (in_array($file_ext, $allowed)) {
-            $new_filename = 'profile_' . $user_id . '_' . time() . '.' . $file_ext;
-            $target_path = $upload_dir . $new_filename;
-            
-            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
-                // Get old profile picture to delete
-                $stmt = $conn->prepare("SELECT profile_picture FROM tbl_users WHERE user_id = ?");
-                $stmt->execute([$user_id]);
-                $old_picture = $stmt->fetchColumn();
-                
-                if ($old_picture && file_exists($old_picture)) {
-                    unlink($old_picture);
-                }
-                
-                // Update database
-                $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = ? WHERE user_id = ?");
-                
-                if ($stmt->execute([$target_path, $user_id])) {
-                    // Update session with new profile picture
-                    $_SESSION['profile_picture'] = $target_path;
-                    $message = "Profile picture updated successfully!";
-                } else {
-                    $error = "Error updating database.";
-                }
+    try {
+        $target_path = uploadProfilePicture($_FILES['profile_picture'] ?? [], __DIR__, 'profile_' . $user_id);
+        if ($target_path) {
+            // Get old profile picture to delete
+            $stmt = $conn->prepare("SELECT profile_picture FROM tbl_users WHERE user_id = ?");
+            $stmt->execute([$user_id]);
+            $old_picture = $stmt->fetchColumn();
+
+            deleteProfilePictureFile($old_picture, __DIR__);
+
+            // Update database
+            $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = ? WHERE user_id = ?");
+
+            if ($stmt->execute([$target_path, $user_id])) {
+                // Update session with new profile picture
+                $_SESSION['profile_picture'] = $target_path;
+                $message = "Profile picture updated successfully!";
             } else {
-                $error = "Error uploading file.";
+                $error = "Error updating database.";
             }
         } else {
-            $error = "Only JPG, JPEG, PNG & GIF files are allowed.";
+            $error = "Please select an image file.";
         }
-    } else {
-        $error = "Please select an image file.";
+    } catch (RuntimeException $uploadError) {
+        $error = $uploadError->getMessage();
     }
 }
 
@@ -70,9 +53,7 @@ if (isset($_POST['remove_picture'])) {
     $stmt->execute([$user_id]);
     $old_picture = $stmt->fetchColumn();
     
-    if ($old_picture && file_exists($old_picture)) {
-        unlink($old_picture);
-    }
+    deleteProfilePictureFile($old_picture, __DIR__);
     
     $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = NULL WHERE user_id = ?");
     
@@ -956,13 +937,13 @@ if (!empty($user['full_name'])) {
                                         $hasProfilePic = false;
                                         $profilePicPath = '';
                                         
-                                        if (!empty($user['profile_picture']) && file_exists($user['profile_picture'])) {
+                                        if (!empty($user['profile_picture']) && profilePictureExists($user['profile_picture'], __DIR__)) {
                                             $hasProfilePic = true;
-                                            $profilePicPath = $user['profile_picture'];
+                                            $profilePicPath = profilePictureUrl($user['profile_picture'], __DIR__);
                                         }
                                         
                                         if ($hasProfilePic): ?>
-                                            <img src="<?php echo htmlspecialchars($profilePicPath); ?>?v=<?php echo time(); ?>" 
+                                            <img src="<?php echo htmlspecialchars($profilePicPath); ?>" 
                                                  alt="Profile Picture" 
                                                  class="profile-avatar"
                                                  id="profileImage">

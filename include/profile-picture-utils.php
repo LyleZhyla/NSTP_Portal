@@ -1,0 +1,127 @@
+<?php
+
+function profilePictureUploadErrorMessage($errorCode) {
+    $messages = [
+        UPLOAD_ERR_INI_SIZE => 'Profile picture is bigger than the server upload limit.',
+        UPLOAD_ERR_FORM_SIZE => 'Profile picture is bigger than the form upload limit.',
+        UPLOAD_ERR_PARTIAL => 'Profile picture upload was interrupted. Please try again.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Server upload temp folder is missing.',
+        UPLOAD_ERR_CANT_WRITE => 'Server could not write the profile picture.',
+        UPLOAD_ERR_EXTENSION => 'A server extension blocked the profile picture upload.',
+    ];
+
+    return $messages[$errorCode] ?? 'Profile picture upload failed.';
+}
+
+function profilePictureRootDir($baseDir = '') {
+    return $baseDir !== '' ? rtrim($baseDir, '/\\') : dirname(__DIR__);
+}
+
+function profilePictureFullPath($path, $baseDir = '') {
+    $path = trim((string) $path);
+    if ($path === '' || preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+        return '';
+    }
+
+    return profilePictureRootDir($baseDir) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, ltrim($path, '/\\'));
+}
+
+function profilePictureExists($path, $baseDir = '') {
+    $fullPath = profilePictureFullPath($path, $baseDir);
+    return $fullPath !== '' && is_file($fullPath);
+}
+
+function profilePictureUrl($path, $baseDir = '') {
+    $path = trim(str_replace('\\', '/', (string) $path));
+    if ($path === '' || preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+        return $path;
+    }
+
+    $urlParts = explode('?', $path, 2);
+    $cleanPath = ltrim($urlParts[0], '/');
+    $query = $urlParts[1] ?? '';
+    $fullPath = profilePictureFullPath($cleanPath, $baseDir);
+
+    if ($fullPath !== '' && is_file($fullPath)) {
+        $query .= ($query !== '' ? '&' : '') . 'v=' . filemtime($fullPath);
+    }
+
+    return $cleanPath . ($query !== '' ? '?' . $query : '');
+}
+
+function deleteProfilePictureFile($path, $baseDir = '') {
+    $normalizedPath = ltrim(str_replace('\\', '/', trim((string) $path)), '/');
+    $allowedPrefixes = ['uploads/profile_pictures/', 'uploads/profiles/'];
+    $isAllowedProfileUpload = false;
+
+    foreach ($allowedPrefixes as $prefix) {
+        if (strpos($normalizedPath, $prefix) === 0) {
+            $isAllowedProfileUpload = true;
+            break;
+        }
+    }
+
+    if (!$isAllowedProfileUpload) {
+        return false;
+    }
+
+    $fullPath = profilePictureFullPath($path, $baseDir);
+    if ($fullPath !== '' && is_file($fullPath)) {
+        return unlink($fullPath);
+    }
+
+    return false;
+}
+
+function uploadProfilePicture(array $file, $baseDir = '', $prefix = 'profile') {
+    if (empty($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    $errorCode = $file['error'] ?? UPLOAD_ERR_OK;
+    if ($errorCode !== UPLOAD_ERR_OK) {
+        throw new RuntimeException(profilePictureUploadErrorMessage($errorCode));
+    }
+
+    $tmpName = $file['tmp_name'] ?? '';
+    if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+        throw new RuntimeException('The uploaded profile picture was not received by the server.');
+    }
+
+    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
+        throw new RuntimeException('Profile picture must be 5MB or smaller.');
+    }
+
+    $allowedTypes = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'image/webp' => 'webp',
+    ];
+    $mimeType = mime_content_type($tmpName);
+    if (!isset($allowedTypes[$mimeType])) {
+        throw new RuntimeException('Profile picture must be JPG, PNG, GIF, or WEBP.');
+    }
+
+    $relativeDir = 'uploads/profile_pictures/';
+    $uploadDir = profilePictureRootDir($baseDir) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, trim($relativeDir, '/\\')) . DIRECTORY_SEPARATOR;
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+        throw new RuntimeException('Could not create profile picture upload folder.');
+    }
+
+    if (!is_writable($uploadDir)) {
+        throw new RuntimeException('Profile picture upload folder is not writable.');
+    }
+
+    $safePrefix = preg_replace('/[^a-z0-9_]/i', '', (string) $prefix) ?: 'profile';
+    $fileName = $safePrefix . '_' . date('YmdHis') . '_' . bin2hex(random_bytes(5)) . '.' . $allowedTypes[$mimeType];
+    $targetPath = $uploadDir . $fileName;
+
+    if (!move_uploaded_file($tmpName, $targetPath)) {
+        throw new RuntimeException('Could not save the profile picture.');
+    }
+
+    @chmod($targetPath, 0644);
+
+    return $relativeDir . $fileName;
+}
