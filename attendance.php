@@ -888,7 +888,7 @@ if ($admin_role === 'super_admin') {
         if ($canViewAllAttendance) {
             $stmt = $conn->prepare("
                 SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
-                       s.student_name, s.course_section 
+                       s.student_number, s.student_name, s.course_section 
                 FROM tbl_attendance a 
                 LEFT JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id 
                 WHERE DATE(a.time_in) = CURDATE()
@@ -898,7 +898,7 @@ if ($admin_role === 'super_admin') {
         } else {
             $stmt = $conn->prepare("
                 SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
-                       s.student_name, s.course_section 
+                       s.student_number, s.student_name, s.course_section 
                 FROM tbl_attendance a 
                 INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
                 LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
@@ -923,7 +923,7 @@ if ($admin_role === 'super_admin') {
                 
                 // Determine status if not set
                 if (empty($status) && !empty($timeIn)) {
-                    $status = getAttendanceStatus($conn, $studentCourse, $timeIn);
+                    $status = getAttendanceStatusForStudent($conn, $record, $timeIn);
                 }
                 
                 $statusClass = (stripos($status, 'Late') === 0) ? 'warning' : 'success';

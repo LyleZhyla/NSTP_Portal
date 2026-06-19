@@ -480,7 +480,7 @@ function recordPublicRegistrationAttendance(PDO $conn, array $registration) {
     }
 
     $timeIn = date('Y-m-d H:i:s');
-    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $timeIn);
+    $status = getAttendanceStatusForStudent($conn, $student, $timeIn);
 
     $stmt = $conn->prepare("
         INSERT INTO tbl_attendance (tbl_student_id, time_in, status, notes)

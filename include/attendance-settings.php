@@ -3,11 +3,17 @@
 require_once __DIR__ . '/user-permissions.php';
 
 function attendanceComponents() {
-    return ['CWTS', 'LTS', 'ROTC', 'PUBLIC'];
+    return ['CWTS', 'LTS', 'ROTC_BASIC', 'ROTC_ADVANCED', 'PUBLIC'];
 }
 
 function attendanceComponentLabel($component) {
-    return $component === 'PUBLIC' ? 'Public Registration' : $component;
+    $labels = [
+        'ROTC_BASIC' => 'ROTC Basic Cadets',
+        'ROTC_ADVANCED' => 'ROTC Advance Cadets',
+        'PUBLIC' => 'Public Registration',
+    ];
+
+    return $labels[$component] ?? $component;
 }
 
 function normalizeAttendanceComponent($value) {
@@ -29,7 +35,8 @@ function defaultAttendanceCutoffs() {
     return [
         'CWTS' => ['morning' => '08:00', 'afternoon' => '13:00'],
         'LTS' => ['morning' => '08:00', 'afternoon' => '13:00'],
-        'ROTC' => ['morning' => '07:00', 'afternoon' => '13:00'],
+        'ROTC_BASIC' => ['morning' => '07:00', 'afternoon' => '13:00'],
+        'ROTC_ADVANCED' => ['morning' => '07:00', 'afternoon' => '13:00'],
         'PUBLIC' => ['morning' => '08:00', 'afternoon' => '13:00'],
     ];
 }
@@ -39,9 +46,18 @@ function getAttendanceCutoffs(PDO $conn) {
     $cutoffs = [];
 
     foreach (attendanceComponents() as $component) {
+        $legacyComponent = strpos($component, 'ROTC_') === 0 ? 'ROTC' : $component;
         $cutoffs[$component] = [
-            'morning' => getSystemSetting($conn, 'attendance_' . strtolower($component) . '_morning_cutoff', $defaults[$component]['morning']),
-            'afternoon' => getSystemSetting($conn, 'attendance_' . strtolower($component) . '_afternoon_cutoff', $defaults[$component]['afternoon']),
+            'morning' => getSystemSetting(
+                $conn,
+                'attendance_' . strtolower($component) . '_morning_cutoff',
+                getSystemSetting($conn, 'attendance_' . strtolower($legacyComponent) . '_morning_cutoff', $defaults[$component]['morning'])
+            ),
+            'afternoon' => getSystemSetting(
+                $conn,
+                'attendance_' . strtolower($component) . '_afternoon_cutoff',
+                getSystemSetting($conn, 'attendance_' . strtolower($legacyComponent) . '_afternoon_cutoff', $defaults[$component]['afternoon'])
+            ),
         ];
     }
 
@@ -65,6 +81,16 @@ function saveAttendanceCutoffs(PDO $conn, array $cutoffs) {
     }
 }
 
+function attendanceComponentForStudent(PDO $conn, array $student) {
+    if (isRotcStudentRecord($conn, $student)) {
+        return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
+            ? 'ROTC_ADVANCED'
+            : 'ROTC_BASIC';
+    }
+
+    return normalizeAttendanceComponent($student['course_section'] ?? '');
+}
+
 function getAttendanceStatus(PDO $conn, $courseSection, $timeIn = null) {
     $timeIn = $timeIn ?: date('Y-m-d H:i:s');
     $timestamp = strtotime($timeIn);
@@ -73,6 +99,30 @@ function getAttendanceStatus(PDO $conn, $courseSection, $timeIn = null) {
     }
 
     $component = normalizeAttendanceComponent($courseSection);
+    if ($component === 'ROTC') {
+        $component = normalizeRotcMsLevel($courseSection) && in_array(normalizeRotcMsLevel($courseSection), ['MS-31', 'MS-41'], true)
+            ? 'ROTC_ADVANCED'
+            : 'ROTC_BASIC';
+    }
+    $cutoffs = getAttendanceCutoffs($conn);
+    $hour = (int) date('G', $timestamp);
+    $period = $hour < 12 ? 'morning' : 'afternoon';
+    $cutoff = date('Y-m-d', $timestamp) . ' ' . ($cutoffs[$component][$period] ?? '08:00') . ':00';
+    $periodLabel = $period === 'morning' ? 'Morning' : 'Afternoon';
+
+    return strtotime(date('Y-m-d H:i:s', $timestamp)) >= strtotime($cutoff)
+        ? 'Late - ' . $periodLabel
+        : 'On Time - ' . $periodLabel;
+}
+
+function getAttendanceStatusForStudent(PDO $conn, array $student, $timeIn = null) {
+    $timeIn = $timeIn ?: date('Y-m-d H:i:s');
+    $timestamp = strtotime($timeIn);
+    if (!$timestamp) {
+        $timestamp = time();
+    }
+
+    $component = attendanceComponentForStudent($conn, $student);
     $cutoffs = getAttendanceCutoffs($conn);
     $hour = (int) date('G', $timestamp);
     $period = $hour < 12 ? 'morning' : 'afternoon';

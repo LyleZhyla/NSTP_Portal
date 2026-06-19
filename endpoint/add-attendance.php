@@ -74,7 +74,7 @@ try {
     
     // Record attendance
     $time_in = date('Y-m-d H:i:s');
-    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $time_in);
+    $status = getAttendanceStatusForStudent($conn, $student, $time_in);
     
     $insertStmt = $conn->prepare("
         INSERT INTO tbl_attendance (tbl_student_id, time_in, status) 

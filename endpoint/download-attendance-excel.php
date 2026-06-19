@@ -275,7 +275,7 @@ if (!empty($students)) {
             if ($record) {
                 $status = trim((string) ($record['status'] ?? ''));
                 if ($status === '') {
-                    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $record['time_in'] ?? null);
+                    $status = getAttendanceStatusForStudent($conn, $student, $record['time_in'] ?? null);
                 }
                 $statusGroup = exportStatusGroup($status);
                 $cellText = $statusGroup . "\n" . date('h:i A', strtotime($record['time_in']));

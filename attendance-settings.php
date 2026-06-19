@@ -231,7 +231,9 @@ date_default_timezone_set('Asia/Manila');
                                         <div class="cutoff-row">
                                             <div class="cutoff-label">
                                                 <strong><?php echo htmlspecialchars(attendanceComponentLabel($component)); ?></strong>
-                                                <span class="text-muted small">Applies to matching student folders.</span>
+                                                <span class="text-muted small">
+                                                    <?php echo strpos($component, 'ROTC_') === 0 ? 'Applies by ROTC MS level.' : 'Applies to matching student folders.'; ?>
+                                                </span>
                                             </div>
                                             <div>
                                                 <label class="small mb-1" for="<?php echo $key; ?>_morning">Morning Late Starts</label>

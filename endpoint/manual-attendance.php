@@ -62,7 +62,7 @@ try {
         exit();
     }
     
-    $status = getAttendanceStatus($conn, $student['course_section'] ?? '', $time_in);
+    $status = getAttendanceStatusForStudent($conn, $student, $time_in);
     
     // Insert record
     $columns = "tbl_student_id, time_in, status";
