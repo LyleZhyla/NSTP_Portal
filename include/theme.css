@@ -659,32 +659,56 @@ body.dark-mode .page-item.active .page-link {
 }
 
 .pagination .page-link,
-.dataTables_wrapper .dataTables_paginate .page-link {
+.dataTables_wrapper .dataTables_paginate .page-link,
+.dataTables_wrapper .dataTables_paginate .paginate_button {
     background-color: #f3faf6 !important;
     border-color: #cce8d6 !important;
     color: #0f5132 !important;
     font-weight: 700;
+    min-width: 40px;
+    text-align: center;
 }
 
 .pagination .page-link:hover,
-.dataTables_wrapper .dataTables_paginate .page-link:hover {
+.pagination .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button:focus {
     background-color: #dff3e7 !important;
     border-color: #8bc4a4 !important;
     color: #063f28 !important;
 }
 
 .pagination .page-item.active .page-link,
-.dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
+.pagination .page-item.active .page-link:focus,
+.pagination .page-item.active .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:focus {
     background-color: #f59e0b !important;
     border-color: #d97706 !important;
+    color: #111827 !important;
+    font-weight: 800;
+    text-shadow: none !important;
+}
+
+.pagination .page-item.active .page-link *,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link *,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current * {
     color: #111827 !important;
 }
 
 .pagination .page-item.disabled .page-link,
-.dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
+.dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled {
     background-color: #f8fafc !important;
     border-color: #e5e7eb !important;
     color: #94a3b8 !important;
+    opacity: 1 !important;
 }
 
 .btn-primary,
@@ -1144,4 +1168,62 @@ body.modal-open .main-sidebar,
 body.modal-open .content-wrapper,
 body.modal-open .main-footer {
     z-index: auto !important;
+}
+
+/* Final pagination readability override. */
+.pagination .page-link,
+.pagination .page-link:visited,
+.dataTables_wrapper .dataTables_paginate .page-link,
+.dataTables_wrapper .dataTables_paginate .paginate_button,
+#qrFormsPagination .page-link {
+    background: #f3faf6 !important;
+    border-color: #cce8d6 !important;
+    color: #0f5132 !important;
+    min-width: 40px;
+    text-align: center;
+    font-weight: 700;
+    text-indent: 0 !important;
+    opacity: 1 !important;
+}
+
+.pagination .page-link:hover,
+.pagination .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button:focus,
+#qrFormsPagination .page-link:hover,
+#qrFormsPagination .page-link:focus {
+    background: #dff3e7 !important;
+    border-color: #8bc4a4 !important;
+    color: #063f28 !important;
+}
+
+.pagination .page-item.active .page-link,
+.pagination .page-item.active .page-link:hover,
+.pagination .page-item.active .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:focus,
+#qrFormsPagination .page-item.active .page-link,
+#qrFormsPagination .page-item.active .page-link:hover,
+#qrFormsPagination .page-item.active .page-link:focus {
+    background: #f59e0b !important;
+    border-color: #d97706 !important;
+    color: #111827 !important;
+    font-weight: 800;
+    text-shadow: none !important;
+}
+
+.pagination .page-item.disabled .page-link,
+.dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+#qrFormsPagination .page-item.disabled .page-link {
+    background: #f8fafc !important;
+    border-color: #e5e7eb !important;
+    color: #64748b !important;
+    opacity: 1 !important;
 }
