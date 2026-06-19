@@ -1113,3 +1113,35 @@ body.dark-mode .modal-body .text-muted,
 body.dark-mode .select2-results__option {
     color: #1f2937 !important;
 }
+
+/* Keep all dialogs above AdminLTE wrappers, sidebars, backdrops, and page overlays. */
+.modal {
+    z-index: 20060 !important;
+}
+
+.modal.show {
+    display: block;
+}
+
+.modal-dialog {
+    z-index: 20070 !important;
+}
+
+.modal-backdrop {
+    z-index: 20040 !important;
+}
+
+.modal-backdrop.show {
+    opacity: 0.55;
+}
+
+.swal2-container {
+    z-index: 20100 !important;
+}
+
+body.modal-open .main-header,
+body.modal-open .main-sidebar,
+body.modal-open .content-wrapper,
+body.modal-open .main-footer {
+    z-index: auto !important;
+}

@@ -1552,7 +1552,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         .modal-backdrop {
             position: fixed;
             inset: 0;
-            z-index: 60;
+            z-index: 20040;
             display: none;
             align-items: center;
             justify-content: center;
@@ -1565,6 +1565,8 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         }
 
         .landing-modal {
+            position: relative;
+            z-index: 20060;
             width: min(720px, 100%);
             max-height: min(760px, calc(100vh - 40px));
             overflow: auto;
