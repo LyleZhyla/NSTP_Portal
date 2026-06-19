@@ -337,35 +337,6 @@ $success = isset($_GET['success']) ? htmlspecialchars($_GET['success']) : '';
             transform: none;
         }
 
-        .register-link {
-            margin-top: 2.2rem;
-            width: 100%;
-            display: flex;
-            justify-content: center;
-        }
-
-        .register-link a {
-            color: #0f5132;
-            text-decoration: none;
-            font-size: 0.88rem;
-            font-weight: 600;
-            background: rgba(255,255,255,0.6);
-            padding: 0.7rem 2rem;
-            border-radius: 60px;
-            border: 1px solid #80aeb9;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.7rem;
-            transition: all 0.2s;
-            backdrop-filter: blur(2px);
-        }
-
-        .register-link a:hover {
-            background: white;
-            border-color: #198754;
-            color: #0f5132;
-        }
-
         .landing-link {
             margin-top: 0.85rem;
             width: 100%;
@@ -496,9 +467,7 @@ $success = isset($_GET['success']) ? htmlspecialchars($_GET['success']) : '';
         .password-toggle,
         .footer-credit i,
         .forgot-link,
-        .register-link {
-            color: #198754 !important;
-        }
+        
         .footer-credit span,
         .left-tagline,
         .right-panel h3 {
@@ -595,12 +564,6 @@ $success = isset($_GET['success']) ? htmlspecialchars($_GET['success']) : '';
                     <i class="fas fa-arrow-right-to-bracket"></i> Sign In
                 </button>
             </form>
-
-            <div class="register-link">
-                <a href="register.php">
-                    <i class="fas fa-user-plus"></i> Create Account
-                </a>
-            </div>
 
             <div class="landing-link">
                 <a href="landing_page.php">
