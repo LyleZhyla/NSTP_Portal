@@ -720,7 +720,16 @@ date_default_timezone_set('Asia/Manila');
                     
                     <div class="form-group">
                         <label for="new_password">New Password *</label>
-                        <input type="password" class="form-control" id="new_password" name="password" required>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="new_password" name="password" required>
+                            <?php if ($isSuperAdmin): ?>
+                            <div class="input-group-append">
+                                <button type="button" class="btn btn-outline-primary" id="generateTempPassword">
+                                    <i class="fas fa-random mr-1"></i>Generate
+                                </button>
+                            </div>
+                            <?php endif; ?>
+                        </div>
                         <small class="form-text text-muted">Minimum 8 characters</small>
                     </div>
                     
@@ -819,6 +828,8 @@ date_default_timezone_set('Asia/Manila');
 <script src="https://cdn.jsdelivr.net/npm/bs-custom-file-input/dist/bs-custom-file-input.min.js"></script>
 
 <script>
+const isSuperAdmin = <?php echo $isSuperAdmin ? 'true' : 'false'; ?>;
+
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, function(char) {
         return {
@@ -832,6 +843,8 @@ function escapeHtml(value) {
 }
 
 $(document).ready(function() {
+    let generatedTempPassword = '';
+
     // Initialize bs-custom-file-input for file upload styling
     bsCustomFileInput.init();
     
@@ -1462,8 +1475,35 @@ $(document).ready(function() {
         // Clear password fields
         $('#new_password').val('');
         $('#confirm_new_password').val('');
+        generatedTempPassword = '';
+        $('#new_password, #confirm_new_password').attr('type', 'password');
         
         $('#changePasswordModal').modal('show');
+    });
+
+    $('#generateTempPassword').on('click', function() {
+        if (!isSuperAdmin) {
+            return;
+        }
+
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+        const randomValues = new Uint32Array(14);
+        window.crypto.getRandomValues(randomValues);
+        generatedTempPassword = Array.from(randomValues, value => alphabet[value % alphabet.length]).join('');
+
+        $('#new_password, #confirm_new_password')
+            .val(generatedTempPassword)
+            .attr('type', 'text');
+    });
+
+    $('#new_password, #confirm_new_password').on('input', function() {
+        if (!generatedTempPassword) {
+            return;
+        }
+
+        if ($('#new_password').val() !== generatedTempPassword || $('#confirm_new_password').val() !== generatedTempPassword) {
+            generatedTempPassword = '';
+        }
     });
     
     // Handle change password form submission
@@ -1507,15 +1547,42 @@ $('#changePasswordForm').on('submit', function(e) {
             submitBtn.html(originalText).prop('disabled', false);
             
             if (response.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: 'Password changed successfully!',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
+                if (generatedTempPassword) {
+                    const safePassword = escapeHtml(generatedTempPassword);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Temporary Password Created',
+                        html: `
+                            <p>Password changed successfully. Give this temporary password to the user:</p>
+                            <div class="input-group">
+                                <input type="text" class="form-control font-weight-bold" value="${safePassword}" readonly>
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-success" id="copyGeneratedPassword">
+                                        <i class="fas fa-copy mr-1"></i>Copy
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="text-muted d-block mt-2">The database stores only the hashed password.</small>
+                        `,
+                        didOpen: () => {
+                            $('#copyGeneratedPassword').on('click', function() {
+                                navigator.clipboard.writeText(generatedTempPassword || '');
+                                $(this).html('<i class="fas fa-check mr-1"></i>Copied');
+                            });
+                        }
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: 'Password changed successfully!',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                }
                 $('#changePasswordModal').modal('hide');
                 $('#changePasswordForm')[0].reset();
+                generatedTempPassword = '';
             } else {
                 Swal.fire('Error', response.message || 'Failed to change password.', 'error');
             }

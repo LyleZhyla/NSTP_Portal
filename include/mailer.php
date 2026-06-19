@@ -34,6 +34,14 @@ function appMailerIsConfigured() {
         && trim((string) $config['password']) !== '';
 }
 
+function setAppMailLastError($message) {
+    $GLOBALS['app_mail_last_error'] = (string) $message;
+}
+
+function getAppMailLastError() {
+    return (string) ($GLOBALS['app_mail_last_error'] ?? '');
+}
+
 function renderAppEmailTemplate($title, $preheader, $bodyHtml, $footerNote = '') {
     $safeTitle = htmlspecialchars((string) $title, ENT_QUOTES, 'UTF-8');
     $safePreheader = htmlspecialchars((string) $preheader, ENT_QUOTES, 'UTF-8');
@@ -97,9 +105,11 @@ HTML;
 
 function sendAppMail($toEmail, $toName, $subject, $htmlBody, $textBody = '') {
     $config = appMailConfig();
+    setAppMailLastError('');
 
     if (!appMailerIsConfigured()) {
-        error_log('Email not sent because SMTP settings are not configured in config/mail.php');
+        setAppMailLastError('SMTP settings are incomplete. Check config/mail.local.php or mail environment variables.');
+        error_log('Email not sent because SMTP settings are not configured.');
         return false;
     }
 
@@ -129,6 +139,7 @@ function sendAppMail($toEmail, $toName, $subject, $htmlBody, $textBody = '') {
 
         return $mail->send();
     } catch (MailerException $error) {
+        setAppMailLastError($error->getMessage());
         error_log('Email send failed: ' . $error->getMessage());
         return false;
     }
@@ -140,6 +151,7 @@ function isPlaceholderEmail($email) {
 
 function sendAccountCredentialsEmail($email, $fullName, $username, $password, $role = 'user') {
     if (trim((string) $email) === '' || isPlaceholderEmail($email)) {
+        setAppMailLastError('Recipient email is empty or placeholder.');
         return false;
     }
 

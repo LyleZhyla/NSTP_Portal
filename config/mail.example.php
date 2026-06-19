@@ -1,5 +1,7 @@
 <?php
 
+// Copy this file to config/mail.local.php for local/manual server setup.
+// Do not commit config/mail.local.php because it contains your SMTP password.
 return [
     'host' => 'smtp.gmail.com',
     'username' => 'your-email@example.com',

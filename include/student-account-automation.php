@@ -88,6 +88,45 @@ function sendStudentAccountEmail(PDO $conn, array $registration, $studentNumber,
     return $sent;
 }
 
+function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
+    $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
+    if (!preg_match('/^\d{10}$/', $studentNumber)) {
+        return ['sent' => false, 'reason' => 'missing_student_number'];
+    }
+
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM tbl_public_student_registrations
+        WHERE student_number = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$studentNumber]);
+    $registration = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$registration) {
+        return ['sent' => false, 'reason' => 'registration_not_found'];
+    }
+
+    $email = trim((string) ($registration['email'] ?? ''));
+    if ($email === '' || isPlaceholderEmail($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['sent' => false, 'reason' => 'invalid_email'];
+    }
+
+    $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
+    $stmt->execute([$studentNumber]);
+    $userId = (int) $stmt->fetchColumn();
+    if ($userId <= 0) {
+        return ['sent' => false, 'reason' => 'account_not_found'];
+    }
+
+    $password = generateStudentAccountPassword();
+    $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ? WHERE user_id = ?");
+    $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $email, $userId]);
+
+    $sent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);
+    return ['sent' => $sent, 'reason' => $sent ? 'resent' : (getAppMailLastError() ?: 'email_failed')];
+}
+
 function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
     ensureStudentNumberColumn($conn);
 

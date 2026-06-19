@@ -15,6 +15,7 @@ if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coor
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
+$cutoffComponents = attendanceCutoffComponentsForUser($currentUser);
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
 $autoSectionEnabledForCurrentUser = $autoSectionComponent !== 'ROTC';
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
@@ -217,7 +218,7 @@ date_default_timezone_set('Asia/Manila');
                     </div>
                     <?php endif; ?>
 
-                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
+                    <?php if (!empty($cutoffComponents)): ?>
                     <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
@@ -226,7 +227,7 @@ date_default_timezone_set('Asia/Manila');
                             <form id="attendanceCutoffForm">
                                 <div class="card-body">
                                     <p class="text-muted">Set what time late attendance starts for each morning and afternoon session.</p>
-                                    <?php foreach (attendanceComponents() as $component): ?>
+                                    <?php foreach ($cutoffComponents as $component): ?>
                                         <?php $key = strtolower($component); ?>
                                         <div class="cutoff-row">
                                             <div class="cutoff-label">

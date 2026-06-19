@@ -58,9 +58,10 @@ try {
 
     $sent = 0;
     $createdNoEmail = 0;
-    $alreadyExists = 0;
+    $resent = 0;
     $invalidEmail = 0;
     $failed = 0;
+    $failureReasons = [];
 
     foreach ($registrations as $registration) {
         $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
@@ -78,23 +79,35 @@ try {
                 $sent++;
             } elseif (!empty($result['created'])) {
                 $createdNoEmail++;
+                $reason = getAppMailLastError() ?: 'email_failed';
+                $failureReasons[$reason] = ($failureReasons[$reason] ?? 0) + 1;
             } elseif (($result['reason'] ?? '') === 'already_exists') {
-                $alreadyExists++;
+                $resendResult = resetStudentAccountPasswordAndEmail($conn, $studentNumber);
+                if (!empty($resendResult['sent'])) {
+                    $resent++;
+                } else {
+                    $failed++;
+                    $reason = $resendResult['reason'] ?? 'resend_failed';
+                    $failureReasons[$reason] = ($failureReasons[$reason] ?? 0) + 1;
+                }
             } else {
                 $failed++;
+                $reason = $result['reason'] ?? 'unknown';
+                $failureReasons[$reason] = ($failureReasons[$reason] ?? 0) + 1;
             }
         } catch (Throwable $error) {
             error_log('Student account email send failed for ' . $studentNumber . ': ' . $error->getMessage());
             $failed++;
+            $failureReasons[$error->getMessage()] = ($failureReasons[$error->getMessage()] ?? 0) + 1;
         }
     }
 
     $message = "Account email process finished. Sent: {$sent}.";
+    if ($resent > 0) {
+        $message .= " Existing accounts resent: {$resent}.";
+    }
     if ($createdNoEmail > 0) {
         $message .= " Created but email failed: {$createdNoEmail}.";
-    }
-    if ($alreadyExists > 0) {
-        $message .= " Already had accounts: {$alreadyExists}.";
     }
     if ($invalidEmail > 0) {
         $message .= " Invalid emails skipped: {$invalidEmail}.";
@@ -102,15 +115,23 @@ try {
     if ($failed > 0) {
         $message .= " Failed: {$failed}.";
     }
+    if (!empty($failureReasons)) {
+        $message .= " Reason: " . implode('; ', array_map(
+            static fn($reason, $count) => $reason . ' (' . $count . ')',
+            array_keys($failureReasons),
+            $failureReasons
+        )) . ".";
+    }
 
     echo json_encode([
         'success' => true,
         'message' => $message,
         'sent' => $sent,
+        'resent' => $resent,
         'created_no_email' => $createdNoEmail,
-        'already_exists' => $alreadyExists,
         'invalid_email' => $invalidEmail,
         'failed' => $failed,
+        'failure_reasons' => $failureReasons,
         'processed' => count($registrations),
     ]);
 } catch (Throwable $error) {

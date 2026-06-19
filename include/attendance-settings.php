@@ -81,6 +81,42 @@ function saveAttendanceCutoffs(PDO $conn, array $cutoffs) {
     }
 }
 
+function attendanceCutoffComponentsForUser(array $user) {
+    $role = $user['role'] ?? '';
+    if ($role === 'super_admin') {
+        return attendanceComponents();
+    }
+
+    if ($role !== 'coordinator') {
+        return [];
+    }
+
+    $program = normalizeProgram($user['program'] ?? null);
+    if ($program === 'ROTC') {
+        return ['ROTC_BASIC', 'ROTC_ADVANCED'];
+    }
+
+    return $program ? [$program] : [];
+}
+
+function saveAttendanceCutoffsForComponents(PDO $conn, array $cutoffs, array $components) {
+    $validComponents = attendanceComponents();
+    foreach ($components as $component) {
+        if (!in_array($component, $validComponents, true)) {
+            continue;
+        }
+
+        foreach (['morning', 'afternoon'] as $period) {
+            $value = $cutoffs[$component][$period] ?? null;
+            if (!validAttendanceTime($value)) {
+                throw new InvalidArgumentException('Please enter valid late start times.');
+            }
+
+            setSystemSetting($conn, 'attendance_' . strtolower($component) . '_' . $period . '_cutoff', $value);
+        }
+    }
+}
+
 function attendanceComponentForStudent(PDO $conn, array $student) {
     if (isRotcStudentRecord($conn, $student)) {
         return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
