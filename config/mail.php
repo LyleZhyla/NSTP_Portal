@@ -37,11 +37,20 @@ $config = [
     'from_name' => $readMailEnv(['MAIL_FROM_NAME', 'SMTP_FROM_NAME'], 'TAU NSTP Portal'),
 ];
 
-$localConfigPath = __DIR__ . '/mail.local.php';
-if (is_file($localConfigPath)) {
-    $localConfig = require $localConfigPath;
-    if (is_array($localConfig)) {
-        $config = $mergeMailConfig($config, $localConfig);
+$localConfigPaths = array_filter([
+    __DIR__ . '/mail.local.php',
+    dirname(__DIR__) . '/mail.local.php',
+    isset($_SERVER['HOME']) ? rtrim((string) $_SERVER['HOME'], '/\\') . '/mail.local.php' : null,
+]);
+
+foreach (array_unique($localConfigPaths) as $localConfigPath) {
+    if (is_file($localConfigPath)) {
+        $localConfig = require $localConfigPath;
+        if (is_array($localConfig)) {
+            $config = $mergeMailConfig($config, $localConfig);
+        }
+
+        break;
     }
 }
 
