@@ -88,6 +88,10 @@ function e($value) {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function landingImageUrl($path) {
+    return nstpComponentImageUrl(str_replace('\\', '/', (string) $path), __DIR__);
+}
+
 function initials($name) {
     $words = preg_split('/\s+/', trim((string) $name));
     $letters = '';
@@ -146,7 +150,8 @@ function renderOrgNode($entry, $canEditLanding, $extraClass = '') {
     }
 
     $photo = $entry['photo_path'] ?? '';
-    $hasPhoto = $photo && file_exists($photo);
+    $photoUrl = landingImageUrl($photo);
+    $hasPhoto = $photo && is_file(__DIR__ . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, ltrim($photo, '/\\')));
     $program = staffProgram($entry);
     $groupLabel = $entry['group_label'] ?: 'NSTP Office';
     $positionTitle = $entry['position_title'] ?: 'NSTP Staff';
@@ -171,7 +176,7 @@ function renderOrgNode($entry, $canEditLanding, $extraClass = '') {
             </button>
         <?php endif; ?>
         <?php if ($hasPhoto): ?>
-            <img class="org-photo" src="<?php echo e($photo); ?>" alt="<?php echo e($entry['full_name']); ?>">
+            <img class="org-photo" src="<?php echo e($photoUrl); ?>" alt="<?php echo e($entry['full_name']); ?>">
         <?php else: ?>
             <div class="org-initials" aria-hidden="true"><?php echo e(initials($entry['full_name'])); ?></div>
         <?php endif; ?>
@@ -1714,6 +1719,12 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
             background: #fff;
         }
 
+        .payload-preview.is-missing {
+            object-fit: contain;
+            background: #fff7ed;
+            border-color: #fed7aa;
+        }
+
         .field label {
             display: block;
             margin-bottom: 6px;
@@ -2723,7 +2734,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                 <?php foreach ($heroSlides as $slideIndex => $slideImage): ?>
                     <div
                         class="hero-slide <?php echo $slideIndex === 0 ? 'is-active' : ''; ?>"
-                        style="background-image: url('<?php echo e($slideImage); ?>');"
+                        style="background-image: url('<?php echo e(landingImageUrl($slideImage)); ?>');"
                     ></div>
                 <?php endforeach; ?>
             </div>
@@ -2778,7 +2789,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         <section class="app-feature" id="programs">
             <div class="feature-row">
                 <div class="feature-media">
-                    <img src="<?php echo e($primaryProgram['image'] ?? ''); ?>" alt="<?php echo e($primaryProgram['title'] ?? 'CWTS'); ?>">
+                    <img src="<?php echo e(landingImageUrl($primaryProgram['image'] ?? '')); ?>" alt="<?php echo e($primaryProgram['title'] ?? 'CWTS'); ?>">
                 </div>
                 <div class="feature-copy">
                     <?php renderSectionEditButton('programs', $landingSections['programs'], $canEditLanding); ?>
@@ -2799,7 +2810,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         <section class="app-feature">
             <div class="feature-row reverse">
                 <div class="feature-media">
-                    <img src="<?php echo e($secondaryProgram['image'] ?? ''); ?>" alt="<?php echo e($secondaryProgram['title'] ?? 'LTS'); ?>">
+                    <img src="<?php echo e(landingImageUrl($secondaryProgram['image'] ?? '')); ?>" alt="<?php echo e($secondaryProgram['title'] ?? 'LTS'); ?>">
                 </div>
                 <div class="feature-copy">
                     <h2><?php echo e($secondaryProgram['title'] ?? 'Literacy Training Service'); ?></h2>
@@ -2819,7 +2830,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
         <section class="app-feature">
             <div class="feature-row">
                 <div class="feature-media">
-                    <img src="<?php echo e($serviceProgram['image'] ?? ''); ?>" alt="<?php echo e($serviceProgram['title'] ?? 'ROTC'); ?>">
+                    <img src="<?php echo e(landingImageUrl($serviceProgram['image'] ?? '')); ?>" alt="<?php echo e($serviceProgram['title'] ?? 'ROTC'); ?>">
                 </div>
                 <div class="feature-copy">
                     <h2><?php echo e($serviceProgram['title'] ?? 'Reserve Officers Training Corps'); ?></h2>
@@ -2849,7 +2860,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                     <?php foreach ($programs as $program): ?>
                         <article class="program-card">
                             <div class="program-media">
-                                <img src="<?php echo e($program['image']); ?>" alt="" aria-hidden="true">
+                                <img src="<?php echo e(landingImageUrl($program['image'])); ?>" alt="" aria-hidden="true">
                             </div>
                             <div class="program-body">
                                 <span class="program-badge <?php echo e($program['accent']); ?>"><?php echo e($program['name']); ?></span>
@@ -2918,7 +2929,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                 <div class="activity-picture-grid">
                     <?php foreach ($gallery as $activity): ?>
                         <article class="activity-picture-card">
-                            <img src="<?php echo e(nstpComponentImageUrl($activity['image'] ?? '', __DIR__)); ?>" alt="<?php echo e($activity['title'] ?? 'NSTP activity'); ?>">
+                            <img src="<?php echo e(landingImageUrl($activity['image'] ?? '')); ?>" alt="<?php echo e($activity['title'] ?? 'NSTP activity'); ?>">
                             <div class="activity-picture-body">
                                 <span><?php echo e($activity['label'] ?? 'NSTP'); ?></span>
                                 <h3><?php echo e($activity['title'] ?? 'NSTP Activity'); ?></h3>
@@ -3373,12 +3384,26 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                     }
                 }
 
+                function previewImagePath(value) {
+                    return value ? String(value).replace(/\\/g, '/') : '';
+                }
+
                 function setPayloadPreview(fieldName, index, value) {
                     const image = document.querySelector(`[data-preview="${fieldName}"][data-index="${index}"]`);
                     if (image) {
-                        image.src = value || '';
+                        image.classList.remove('is-missing');
+                        image.src = previewImagePath(value);
                         image.style.display = value ? 'block' : 'none';
                     }
+                }
+
+                function markMissingPreview(image) {
+                    if (!image || !image.getAttribute('src')) {
+                        return;
+                    }
+
+                    image.classList.add('is-missing');
+                    image.alt = 'Image file not found on server';
                 }
 
                 function setImageUploadStatus(fileInput, message, isActive) {
@@ -3440,6 +3465,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                     }
 
                     preview.src = URL.createObjectURL(fileInput.files[0]);
+                    preview.classList.remove('is-missing');
                     preview.style.display = 'block';
                 }
 
@@ -3459,6 +3485,7 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                         replaceInput.value = '1';
                     }
                     preview.src = URL.createObjectURL(fileInput.files[0]);
+                    preview.classList.remove('is-missing');
                     preview.style.display = 'block';
                 }
 
@@ -3509,7 +3536,8 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
 
                     existingInput.value = image;
                     altInput.value = item && typeof item === 'object' ? (item.alt || '') : '';
-                    preview.src = image;
+                    preview.src = previewImagePath(image);
+                    preview.classList.remove('is-missing');
                     preview.style.display = image ? 'block' : 'none';
 
                     row.querySelector('.remove-payload-row').addEventListener('click', function () {
@@ -3662,6 +3690,12 @@ if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
                         showReadyUploadStatus(input, 'Image');
                     });
                 });
+
+                document.addEventListener('error', function (event) {
+                    if (event.target?.classList?.contains('payload-preview')) {
+                        markMissingPreview(event.target);
+                    }
+                }, true);
 
                 document.getElementById('sectionEditorForm')?.addEventListener('change', function (event) {
                     if (event.target.matches('input[type="file"][name="hero_image_upload[]"]')) {
