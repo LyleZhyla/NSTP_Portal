@@ -479,6 +479,9 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     <a class="btn btn-success mb-2 public-qr-btn" id="downloadPublicAttendance" href="endpoint/download-public-registration-attendance.php?date=<?php echo date('Y-m-d'); ?>">
                                         <i class="fas fa-file-excel mr-1"></i> Download Attendance
                                     </a>
+                                    <button type="button" class="btn btn-primary mb-2" id="sendAccountEmailsBtn">
+                                        <i class="fas fa-envelope mr-1"></i> Send Account Emails
+                                    </button>
                                     <button type="button" class="btn btn-outline-secondary" id="clearFormTitleFilter">
                                         <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
                                     </button>
@@ -770,6 +773,7 @@ foreach ($publicForms as $formRow) {
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     $(function () {
         const registrationsTable = $('#registrationsTable').DataTable({
@@ -832,6 +836,52 @@ foreach ($publicForms as $formRow) {
 
         $('#publicAttendanceDate').on('change', updatePublicAttendanceDownloadLink);
         $('#componentFilter').on('change', applyComponentFilter);
+
+        $('#sendAccountEmailsBtn').on('click', function() {
+            const button = $(this);
+            const selectedComponent = $('#componentFilter').val();
+            const scopeLabel = selectedComponent ? selectedComponent : 'all components';
+
+            Swal.fire({
+                title: 'Send account emails?',
+                text: 'This will create missing student accounts and email credentials for uploaded registrations under ' + scopeLabel + '.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Send Emails',
+                cancelButtonText: 'Cancel'
+            }).then(function(result) {
+                if (!result.isConfirmed) {
+                    return;
+                }
+
+                const originalHtml = button.html();
+                button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Sending');
+
+                $.ajax({
+                    url: 'endpoint/send-student-account-emails.php',
+                    method: 'POST',
+                    dataType: 'json',
+                    data: {
+                        component: selectedComponent || ''
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire('Done', response.message, 'success').then(function() {
+                                window.location.reload();
+                            });
+                        } else {
+                            Swal.fire('Unable to Send', response.message || 'Please try again.', 'error');
+                        }
+                    },
+                    error: function() {
+                        Swal.fire('Request Failed', 'Unable to send account emails. Please try again.', 'error');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false).html(originalHtml);
+                    }
+                });
+            });
+        });
 
         registrationsTable.on('draw', updateVisibleSubmissionCount);
         updateVisibleSubmissionCount();
