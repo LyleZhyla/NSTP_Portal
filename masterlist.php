@@ -620,6 +620,110 @@ if ($user_role === 'super_admin') {
             min-width: 220px;
             white-space: normal;
         }
+
+        .content-wrapper {
+            background: #f4f8f6;
+        }
+
+        .content-header h1 {
+            color: #0f5132;
+            font-weight: 800;
+        }
+
+        .card {
+            border: 1px solid #dfe9e3;
+            border-radius: 8px;
+            box-shadow: 0 10px 24px rgba(31, 41, 55, 0.07);
+        }
+
+        .card-header {
+            border-bottom: 1px solid #dfe9e3;
+            background: linear-gradient(90deg, #f3faf6, #ffffff);
+            color: #0f5132;
+        }
+
+        .card-title {
+            font-weight: 800;
+        }
+
+        .table thead th {
+            border-bottom: 0;
+            background: #0f5132;
+            color: #fff;
+            font-size: 0.82rem;
+            letter-spacing: 0.01em;
+            vertical-align: middle;
+        }
+
+        .table-hover tbody tr:hover {
+            background: #f3faf6;
+        }
+
+        #studentFoldersTable tbody tr,
+        #coordinatorPendingStudentsTable tbody tr {
+            background: #fff;
+        }
+
+        #studentFoldersTable tbody tr:hover,
+        #coordinatorPendingStudentsTable tbody tr:hover {
+            background: #eef8f2;
+        }
+
+        #coordinatorPendingStudentsTable .badge-success,
+        #studentFoldersTable .badge-success {
+            background: #198754;
+        }
+
+        #coordinatorPendingStudentsTable .badge-warning {
+            background: #fff0c2;
+            border: 1px solid #f4cf70;
+            color: #5f4300;
+        }
+
+        #coordinatorPendingStudentsTable .form-control-sm,
+        #studentFoldersTable .form-control-sm {
+            border-color: #cfe3d7;
+        }
+
+        #coordinatorPendingStudentsTable .form-control-sm:focus,
+        #studentFoldersTable .form-control-sm:focus {
+            border-color: #198754;
+            box-shadow: 0 0 0 0.12rem rgba(25, 135, 84, 0.16);
+        }
+
+        body.dark-mode .content-wrapper {
+            background: #26322c !important;
+        }
+
+        body.dark-mode .content-header h1 {
+            color: #d8f3df;
+        }
+
+        body.dark-mode .card {
+            border-color: #3e5147 !important;
+            box-shadow: none;
+        }
+
+        body.dark-mode .card-header {
+            background: #25372d !important;
+            border-bottom-color: #3e5147 !important;
+            color: #d8f3df !important;
+        }
+
+        body.dark-mode .table thead th {
+            background: #0f5132 !important;
+            color: #fff !important;
+        }
+
+        body.dark-mode #studentFoldersTable tbody tr,
+        body.dark-mode #coordinatorPendingStudentsTable tbody tr {
+            background: #323b35;
+        }
+
+        body.dark-mode #studentFoldersTable tbody tr:hover,
+        body.dark-mode #coordinatorPendingStudentsTable tbody tr:hover {
+            background: #3b4b42 !important;
+        }
         
         .section-info {
             font-size: 0.9rem;
