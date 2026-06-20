@@ -6,6 +6,7 @@ date_default_timezone_set('Asia/Manila');
 include('../conn/conn.php');
 require_once '../include/attendance-settings.php';
 require_once '../include/notifications.php';
+require_once '../include/student-account-automation.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'User not authenticated']);
@@ -95,6 +96,24 @@ try {
             'status' => $status,
         ]);
     }
+
+    $accountAutomation = null;
+    if (!empty($student['student_number'])) {
+        try {
+            $accountAutomation = autoCreateStudentAccountIfEligible($conn, $student['student_number']);
+        } catch (Throwable $automationError) {
+            error_log(
+                'Student account automation failed for student number '
+                . $student['student_number']
+                . ': '
+                . $automationError->getMessage()
+            );
+            $accountAutomation = [
+                'created' => false,
+                'reason' => 'automation_failed',
+            ];
+        }
+    }
     
     error_log("Attendance recorded for student ID: " . $student['tbl_student_id'] . " (Attendance ID: " . $attendance_id . ")");
     
@@ -105,7 +124,8 @@ try {
         'student_name' => $student['student_name'],
         'course_section' => $student['course_section'],
         'time' => date('h:i A', strtotime($time_in)),
-        'status' => $status
+        'status' => $status,
+        'account_automation' => $accountAutomation
     ]);
     
 } catch (Exception $e) {

@@ -572,7 +572,12 @@ try {
     $course = $enabledFields['course_section'] ? cleanText($_POST['course'] ?? '') : 'N/A';
     $major = $enabledFields['course_section'] ? cleanText($_POST['major'] ?? '') : 'N/A';
     $yearSection = $enabledFields['course_section'] ? cleanText($_POST['year_section'] ?? '') : 'N/A';
-    $component = normalizeProgram($_POST['component'] ?? null);
+    $componentSelectionOpen = !$isFacilitatorRegistration
+        && !$studentNumberBased
+        && isComponentSelectionEnabled($conn);
+    $component = ($isFacilitatorRegistration || $componentSelectionOpen)
+        ? normalizeProgram($_POST['component'] ?? null)
+        : null;
     $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
     if ($component !== 'ROTC') {
         $rotcMsLevel = null;
@@ -707,7 +712,7 @@ try {
         failRegistration('Student Number must be exactly 10 digits and numbers only.');
     }
 
-    if (!$isFacilitatorRegistration && !$studentNumberBased && isComponentSelectionEnabled($conn) && !$component) {
+    if ($componentSelectionOpen && !$component) {
         failRegistration('Please select an NSTP component.');
     }
 

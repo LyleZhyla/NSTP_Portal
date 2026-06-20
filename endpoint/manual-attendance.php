@@ -2,6 +2,7 @@
 session_start();
 require_once '../conn/conn.php';
 require_once '../include/attendance-settings.php';
+require_once '../include/student-account-automation.php';
 
 header('Content-Type: application/json');
 
@@ -80,9 +81,28 @@ try {
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
 
+    $accountAutomation = null;
+    if (!empty($student['student_number'])) {
+        try {
+            $accountAutomation = autoCreateStudentAccountIfEligible($conn, $student['student_number']);
+        } catch (Throwable $automationError) {
+            error_log(
+                'Student account automation failed for student number '
+                . $student['student_number']
+                . ': '
+                . $automationError->getMessage()
+            );
+            $accountAutomation = [
+                'created' => false,
+                'reason' => 'automation_failed',
+            ];
+        }
+    }
+
     echo json_encode([
         'success' => true,
-        'message' => 'Manual attendance recorded successfully'
+        'message' => 'Manual attendance recorded successfully',
+        'account_automation' => $accountAutomation
     ]);
     
 } catch (PDOException $e) {
