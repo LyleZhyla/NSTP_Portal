@@ -254,8 +254,11 @@ function e($value) {
             position: relative;
             overflow: hidden;
             border-radius: 8px;
+            border: 0;
             background: #1f2937;
             color: #fff;
+            cursor: pointer;
+            text-align: left;
         }
 
         .activity-card img {
@@ -275,8 +278,13 @@ function e($value) {
         }
 
         .activity-card:hover img,
-        .activity-card:focus-within img {
+        .activity-card:focus-visible img {
             transform: scale(1.05);
+        }
+
+        .activity-card:focus-visible {
+            outline: 3px solid rgba(25, 135, 84, 0.42);
+            outline-offset: 3px;
         }
 
         .activity-copy {
@@ -315,10 +323,154 @@ function e($value) {
         }
 
         .activity-card:hover .activity-copy p,
-        .activity-card:focus-within .activity-copy p {
+        .activity-card:focus-visible .activity-copy p {
             max-height: 120px;
             margin-top: 9px;
             opacity: 1;
+        }
+
+        .activity-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .activity-modal.is-open {
+            display: flex;
+        }
+
+        .activity-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.72);
+        }
+
+        .activity-modal-dialog {
+            position: relative;
+            z-index: 1;
+            width: min(980px, 100%);
+            max-height: min(86vh, 780px);
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 280px;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.36);
+        }
+
+        .activity-modal-media {
+            min-height: 420px;
+            background: #0f172a;
+        }
+
+        .activity-modal-media img {
+            width: 100%;
+            height: 100%;
+            min-height: 420px;
+            object-fit: cover;
+        }
+
+        .activity-modal-content {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+            gap: 16px;
+            padding: 22px;
+            overflow: hidden;
+        }
+
+        .activity-modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 2;
+            width: 42px;
+            height: 42px;
+            border: 0;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.82);
+            color: #fff;
+            cursor: pointer;
+            font-size: 1.1rem;
+        }
+
+        .activity-modal-label {
+            display: inline-flex;
+            width: fit-content;
+            margin-bottom: 10px;
+            padding: 5px 9px;
+            border-radius: 5px;
+            background: #e8f5ee;
+            color: #0f5132;
+            font-size: 0.74rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .activity-modal-content h3 {
+            margin: 0 0 10px;
+            line-height: 1.15;
+        }
+
+        .activity-modal-content p {
+            margin: 0;
+            color: #475569;
+            font-weight: 650;
+        }
+
+        .activity-thumbs {
+            display: grid;
+            gap: 10px;
+            align-content: start;
+            overflow: auto;
+            padding-right: 4px;
+        }
+
+        .activity-thumb {
+            display: grid;
+            grid-template-columns: 72px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px;
+            background: #fff;
+            color: var(--ink);
+            cursor: pointer;
+            text-align: left;
+            font: inherit;
+        }
+
+        .activity-thumb.is-active {
+            border-color: var(--<?php echo e($component['accent']); ?>);
+            background: #f0fdf4;
+        }
+
+        .activity-thumb img {
+            width: 72px;
+            height: 56px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+
+        .activity-thumb strong {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.9rem;
+            line-height: 1.2;
+        }
+
+        .activity-thumb span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-weight: 800;
         }
 
         .footer {
@@ -471,9 +623,24 @@ function e($value) {
         @media (max-width: 860px) {
             .detail-grid,
             .activity-grid,
+            .activity-modal-dialog,
             .editor-grid,
             .activity-editor-fields {
                 grid-template-columns: 1fr;
+            }
+
+            .activity-modal {
+                padding: 14px;
+            }
+
+            .activity-modal-dialog {
+                max-height: 90vh;
+                overflow: auto;
+            }
+
+            .activity-modal-media,
+            .activity-modal-media img {
+                min-height: 280px;
             }
 
             .nav-shell {
@@ -538,22 +705,42 @@ function e($value) {
             <div class="section-inner">
                 <div class="panel">
                     <h3><?php echo e($component['name']); ?> Activity Images</h3>
-                    <p>Hover or press an activity image to reveal the short details.</p>
+                    <p>Press an activity image to view related photos and details.</p>
                 </div>
                 <div class="activity-grid">
-                    <?php foreach ($component['activities'] as $activity): ?>
-                        <article class="activity-card" tabindex="0">
+                    <?php foreach ($component['activities'] as $index => $activity): ?>
+                        <button class="activity-card" type="button" data-activity-index="<?php echo (int) $index; ?>" aria-haspopup="dialog">
                             <img src="<?php echo e(nstpComponentImageUrl($activity['image'], __DIR__)); ?>" alt="<?php echo e($activity['title']); ?>">
                             <div class="activity-copy">
                                 <span><?php echo e($activity['label']); ?></span>
                                 <strong><?php echo e($activity['title']); ?></strong>
                                 <p><?php echo e($activity['detail']); ?></p>
                             </div>
-                        </article>
+                        </button>
                     <?php endforeach; ?>
                 </div>
             </div>
         </section>
+
+        <div class="activity-modal" id="activityModal" role="dialog" aria-modal="true" aria-labelledby="activityModalTitle" aria-hidden="true">
+            <div class="activity-modal-backdrop" data-close-activity-modal></div>
+            <div class="activity-modal-dialog">
+                <button class="activity-modal-close" type="button" data-close-activity-modal aria-label="Close activity gallery">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="activity-modal-media">
+                    <img id="activityModalImage" src="" alt="">
+                </div>
+                <div class="activity-modal-content">
+                    <div>
+                        <span class="activity-modal-label" id="activityModalLabel"></span>
+                        <h3 id="activityModalTitle"></h3>
+                        <p id="activityModalDetail"></p>
+                    </div>
+                    <div class="activity-thumbs" id="activityModalThumbs" aria-label="Related activity images"></div>
+                </div>
+            </div>
+        </div>
 
         <?php if ($canEditComponent): ?>
             <section class="admin-editor" id="component-editor">
@@ -710,6 +897,117 @@ function e($value) {
     <footer class="footer">
         <div class="section-inner">National Service Training Program</div>
     </footer>
+    <script>
+        (function () {
+            const activities = <?php echo json_encode(array_map(static function ($activity) {
+                return [
+                    'title' => (string) ($activity['title'] ?? 'NSTP Activity'),
+                    'label' => (string) ($activity['label'] ?? 'Activity'),
+                    'detail' => (string) ($activity['detail'] ?? ''),
+                    'image' => nstpComponentImageUrl($activity['image'] ?? '', __DIR__),
+                ];
+            }, array_values($component['activities'])), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+
+            const modal = document.getElementById('activityModal');
+            const modalImage = document.getElementById('activityModalImage');
+            const modalLabel = document.getElementById('activityModalLabel');
+            const modalTitle = document.getElementById('activityModalTitle');
+            const modalDetail = document.getElementById('activityModalDetail');
+            const modalThumbs = document.getElementById('activityModalThumbs');
+            let activeIndex = 0;
+            let lastFocusedElement = null;
+
+            function setActiveActivity(index) {
+                const activity = activities[index];
+                if (!activity) return;
+
+                activeIndex = index;
+                modalImage.src = activity.image;
+                modalImage.alt = activity.title;
+                modalLabel.textContent = activity.label;
+                modalTitle.textContent = activity.title;
+                modalDetail.textContent = activity.detail;
+
+                Array.from(modalThumbs.querySelectorAll('.activity-thumb')).forEach((button) => {
+                    button.classList.toggle('is-active', Number(button.dataset.activityIndex) === activeIndex);
+                });
+            }
+
+            function buildThumbs() {
+                modalThumbs.innerHTML = '';
+                activities.forEach((activity, index) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'activity-thumb';
+                    button.dataset.activityIndex = String(index);
+
+                    const image = document.createElement('img');
+                    image.src = activity.image;
+                    image.alt = '';
+
+                    const textWrap = document.createElement('span');
+                    const title = document.createElement('strong');
+                    const label = document.createElement('span');
+                    title.textContent = activity.title;
+                    label.textContent = activity.label;
+                    textWrap.append(title, label);
+                    button.append(image, textWrap);
+
+                    button.addEventListener('click', () => setActiveActivity(index));
+                    modalThumbs.appendChild(button);
+                });
+            }
+
+            function openModal(index) {
+                if (!activities.length || !modal) return;
+
+                lastFocusedElement = document.activeElement;
+                buildThumbs();
+                setActiveActivity(index);
+                modal.classList.add('is-open');
+                modal.setAttribute('aria-hidden', 'false');
+                document.body.style.overflow = 'hidden';
+                modal.querySelector('.activity-modal-close').focus();
+            }
+
+            function closeModal() {
+                if (!modal) return;
+
+                modal.classList.remove('is-open');
+                modal.setAttribute('aria-hidden', 'true');
+                document.body.style.overflow = '';
+                if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                    lastFocusedElement.focus();
+                }
+            }
+
+            document.querySelectorAll('.activity-card').forEach((card) => {
+                card.addEventListener('click', () => openModal(Number(card.dataset.activityIndex) || 0));
+            });
+
+            document.querySelectorAll('[data-close-activity-modal]').forEach((element) => {
+                element.addEventListener('click', closeModal);
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (!modal || !modal.classList.contains('is-open')) return;
+
+                if (event.key === 'Escape') {
+                    closeModal();
+                    return;
+                }
+
+                if (event.key === 'ArrowRight') {
+                    setActiveActivity((activeIndex + 1) % activities.length);
+                    return;
+                }
+
+                if (event.key === 'ArrowLeft') {
+                    setActiveActivity((activeIndex - 1 + activities.length) % activities.length);
+                }
+            });
+        })();
+    </script>
     <?php if ($canEditComponent): ?>
         <script>
             (function () {
