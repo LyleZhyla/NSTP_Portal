@@ -133,6 +133,7 @@ $detailColumns = [
     'major' => 'Major',
     'year_section' => 'Year/Section',
     'component' => 'Component',
+    'rotc_ms_level' => 'ROTC MS Level',
     'course_section' => 'Folder Name',
     'generated_code' => 'QR Code',
     'status' => 'Registration Status',
@@ -1592,6 +1593,8 @@ if ($user_role === 'super_admin') {
                                                             <?php endif; ?>
                                                         <?php elseif ($columnKey === 'course_section'): ?>
                                                             <span class="badge badge-success"><?php echo htmlspecialchars($displayValue); ?></span>
+                                                        <?php elseif ($columnKey === 'rotc_ms_level'): ?>
+                                                            <span class="badge badge-warning"><?php echo htmlspecialchars($displayValue); ?></span>
                                                         <?php elseif ($columnKey === 'student_number'): ?>
                                                             <code><?php echo htmlspecialchars($displayValue); ?></code>
                                                         <?php else: ?>
@@ -2993,7 +2996,7 @@ $(document).ready(function() {
     // Initialize tooltips
     $('[data-toggle="tooltip"]').tooltip();
 
-    const coordinatorBasicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'course_section', 'generated_code']);
+    const coordinatorBasicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'component', 'rotc_ms_level', 'course_section', 'generated_code']);
 
     function setCoordinatorColumnVisible(columnKey, visible) {
         $('.coordinator-detail-col-' + columnKey).toggle(visible);

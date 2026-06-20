@@ -17,6 +17,7 @@ if (!$currentUser || !canAccessStaffTools($role)) {
     header('Location: profile.php');
     exit();
 }
+ensureRotcAttendanceSchema($conn);
 
 $scope = trim((string) ($_GET['scope'] ?? 'facilitator'));
 $folder = trim((string) ($_GET['folder'] ?? ''));
@@ -401,6 +402,7 @@ $detailColumns = [
     'major' => 'Major',
     'year_section' => 'Year/Section',
     'component' => 'Component',
+    'rotc_ms_level' => 'ROTC MS Level',
     'course_section' => 'Folder Name',
     'generated_code' => 'QR Code',
     'status' => 'Registration Status',
@@ -720,6 +722,8 @@ $detailColumns = [
                                                             <?php endif; ?>
                                                         <?php elseif ($columnKey === 'course_section'): ?>
                                                             <span class="badge badge-info"><?php echo htmlspecialchars($displayValue); ?></span>
+                                                        <?php elseif ($columnKey === 'rotc_ms_level'): ?>
+                                                            <span class="badge badge-warning"><?php echo htmlspecialchars($displayValue); ?></span>
                                                         <?php elseif ($columnKey === 'student_number'): ?>
                                                             <code><?php echo htmlspecialchars($displayValue); ?></code>
                                                         <?php else: ?>
@@ -780,7 +784,7 @@ $detailColumns = [
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
 $(function() {
-    const basicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'course_section', 'generated_code']);
+    const basicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'component', 'rotc_ms_level', 'course_section', 'generated_code']);
     const studentDetailTable = $('.student-detail-table').length
         ? $('.student-detail-table').DataTable({
             paging: true,
