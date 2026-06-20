@@ -1691,6 +1691,36 @@ if ($user_role === 'super_admin') {
                     </div>
                     <div class="card-body">
                         <?php if (!empty($coordinatorPendingStudents)): ?>
+                            <form class="batch-assign-students-form mb-3" method="POST">
+                                <div class="d-flex flex-wrap align-items-end" style="gap: 10px;">
+                                    <div class="form-group mb-0" style="min-width: 240px;">
+                                        <label class="mb-1" for="batch_facilitator_id">Facilitator</label>
+                                        <select class="form-control form-control-sm facilitator-select" id="batch_facilitator_id" name="facilitator_id" required>
+                                            <option value="">Select facilitator</option>
+                                            <?php foreach ($coordinatorFacilitators as $facilitator): ?>
+                                                <?php
+                                                    $facilitatorId = (int) $facilitator['user_id'];
+                                                    $folders = array_column($coordinatorFacilitatorFolders[$facilitatorId] ?? [], 'course_section');
+                                                ?>
+                                                <option value="<?php echo $facilitatorId; ?>" data-folders="<?php echo htmlspecialchars(json_encode($folders), ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <?php echo htmlspecialchars($facilitator['full_name'] ?: $facilitator['username']); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group mb-0" style="min-width: 240px;">
+                                        <label class="mb-1" for="batch_course_section">Folder</label>
+                                        <select class="form-control form-control-sm folder-select" id="batch_course_section" name="course_section" required disabled>
+                                            <option value="">Select facilitator first</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="btn btn-sm btn-primary" id="batchAssignStudentsBtn" disabled>
+                                        <i class="fas fa-user-plus mr-1"></i>
+                                        Assign Selected
+                                    </button>
+                                    <span class="text-muted small" id="batchSelectedStudentsText">0 selected</span>
+                                </div>
+                            </form>
                             <div class="column-picker">
                                 <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap: 8px;">
                                     <button type="button"
@@ -1728,13 +1758,15 @@ if ($user_role === 'super_admin') {
                                 <table class="table table-hover mb-0 student-detail-table" id="coordinatorPendingStudentsTable">
                                     <thead>
                                         <tr>
+                                            <th style="width: 44px;" class="text-center">
+                                                <input type="checkbox" id="selectAllPendingStudents" aria-label="Select all pending students">
+                                            </th>
                                             <th style="width: 70px;">No.</th>
                                             <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
                                                 <th class="coordinator-detail-col coordinator-detail-col-<?php echo htmlspecialchars($columnKey); ?>" data-column="<?php echo htmlspecialchars($columnKey); ?>">
                                                     <?php echo htmlspecialchars($columnLabel); ?>
                                                 </th>
                                             <?php endforeach; ?>
-                                            <th>Assign Facilitator</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1748,6 +1780,12 @@ if ($user_role === 'super_admin') {
                                                 data-student-name="<?php echo htmlspecialchars($searchStudentName, ENT_QUOTES, 'UTF-8'); ?>"
                                                 data-original-section="<?php echo htmlspecialchars($searchOriginalSection, ENT_QUOTES, 'UTF-8'); ?>"
                                                 data-folder-section="<?php echo htmlspecialchars($searchFolderSection, ENT_QUOTES, 'UTF-8'); ?>">
+                                                <td class="text-center align-middle">
+                                                    <input type="checkbox"
+                                                           class="pending-student-check"
+                                                           value="<?php echo (int) $student['tbl_student_id']; ?>"
+                                                           aria-label="Select <?php echo htmlspecialchars((string) masterlistDetailValue($student, 'student_name'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                </td>
                                                 <td><?php echo $index + 1; ?></td>
                                                 <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
                                                     <?php
@@ -1786,29 +1824,6 @@ if ($user_role === 'super_admin') {
                                                         <?php endif; ?>
                                                     </td>
                                                 <?php endforeach; ?>
-                                                <td>
-                                                    <form class="assign-student-form" method="POST">
-                                                        <input type="hidden" name="student_id" value="<?php echo (int) $student['tbl_student_id']; ?>">
-                                                        <select class="form-control form-control-sm mb-2 facilitator-select" name="facilitator_id" required>
-                                                            <option value="">Select facilitator</option>
-                                                            <?php foreach ($coordinatorFacilitators as $facilitator): ?>
-                                                                <?php
-                                                                    $facilitatorId = (int) $facilitator['user_id'];
-                                                                    $folders = array_column($coordinatorFacilitatorFolders[$facilitatorId] ?? [], 'course_section');
-                                                                ?>
-                                                                <option value="<?php echo $facilitatorId; ?>" data-folders="<?php echo htmlspecialchars(json_encode($folders), ENT_QUOTES, 'UTF-8'); ?>">
-                                                                    <?php echo htmlspecialchars($facilitator['full_name'] ?: $facilitator['username']); ?>
-                                                                </option>
-                                                            <?php endforeach; ?>
-                                                        </select>
-                                                        <select class="form-control form-control-sm mb-2 folder-select" name="course_section" required disabled>
-                                                            <option value="">Select facilitator first</option>
-                                                        </select>
-                                                        <button type="submit" class="btn btn-sm btn-primary">
-                                                            <i class="fas fa-user-plus"></i> Assign
-                                                        </button>
-                                                    </form>
-                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -3726,10 +3741,10 @@ $(document).ready(function() {
             "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
             "responsive": false,
             "ordering": true,
-            "order": [[1, 'asc']],
+            "order": [[2, 'asc']],
             "columnDefs": [
                 { "targets": 0, "orderable": false, "searchable": false },
-                { "targets": -1, "orderable": false, "searchable": false }
+                { "targets": 1, "orderable": false, "searchable": false }
             ]
         });
     }
@@ -3822,19 +3837,77 @@ $(document).ready(function() {
         folderSelect.prop('disabled', false);
     });
 
-    $('.assign-student-form').on('submit', function(e) {
+    function getCheckedPendingStudentIds() {
+        const ids = [];
+        if (coordinatorPendingStudentsTable) {
+            $(coordinatorPendingStudentsTable.rows().nodes()).find('.pending-student-check:checked').each(function() {
+                ids.push($(this).val());
+            });
+        } else {
+            $('.pending-student-check:checked').each(function() {
+                ids.push($(this).val());
+            });
+        }
+        return ids;
+    }
+
+    function updateBatchAssignState() {
+        const selectedCount = getCheckedPendingStudentIds().length;
+        $('#batchSelectedStudentsText').text(selectedCount + ' selected');
+        $('#batchAssignStudentsBtn').prop('disabled', selectedCount === 0);
+
+        const rowNodes = coordinatorPendingStudentsTable
+            ? $(coordinatorPendingStudentsTable.rows({ search: 'applied' }).nodes())
+            : $('#coordinatorPendingStudentsTable tbody tr');
+        const totalVisible = rowNodes.find('.pending-student-check').length;
+        const checkedVisible = rowNodes.find('.pending-student-check:checked').length;
+        $('#selectAllPendingStudents').prop({
+            checked: totalVisible > 0 && checkedVisible === totalVisible,
+            indeterminate: checkedVisible > 0 && checkedVisible < totalVisible
+        });
+    }
+
+    $('#selectAllPendingStudents').on('change', function() {
+        if (coordinatorPendingStudentsTable) {
+            $(coordinatorPendingStudentsTable.rows({ search: 'applied' }).nodes())
+                .find('.pending-student-check')
+                .prop('checked', this.checked);
+        } else {
+            $('.pending-student-check').prop('checked', this.checked);
+        }
+        updateBatchAssignState();
+    });
+
+    $(document).on('change', '.pending-student-check', updateBatchAssignState);
+
+    if (coordinatorPendingStudentsTable) {
+        coordinatorPendingStudentsTable.on('draw', updateBatchAssignState);
+    }
+
+    $('.batch-assign-students-form').on('submit', function(e) {
         e.preventDefault();
 
         const form = $(this);
         const button = form.find('button[type="submit"]');
         const originalText = button.html();
+        const studentIds = getCheckedPendingStudentIds();
+
+        if (studentIds.length === 0) {
+            Swal.fire('No students selected', 'Please check at least one student to assign.', 'warning');
+            return;
+        }
 
         button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Assigning...');
+
+        const payload = form.serializeArray();
+        studentIds.forEach(function(studentId) {
+            payload.push({ name: 'student_ids[]', value: studentId });
+        });
 
         $.ajax({
             url: './endpoint/assign-student-facilitator.php',
             method: 'POST',
-            data: form.serialize(),
+            data: $.param(payload),
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
