@@ -1227,3 +1227,113 @@ body.modal-open .main-footer {
     color: #64748b !important;
     opacity: 1 !important;
 }
+
+/* System-wide pagination contrast guard. Keep page words/numbers readable on every table. */
+.pagination {
+    gap: 4px;
+}
+
+.pagination .page-item .page-link,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item .page-link,
+.dataTables_wrapper .dataTables_paginate a.paginate_button,
+.dataTables_wrapper .dataTables_paginate span.paginate_button,
+#qrFormsPagination .page-item .page-link {
+    min-width: 38px !important;
+    min-height: 34px !important;
+    padding: 0.375rem 0.65rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid #b9d9c6 !important;
+    border-radius: 0.25rem !important;
+    background: #ffffff !important;
+    color: #0f5132 !important;
+    font-size: 0.92rem !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    text-indent: 0 !important;
+    text-shadow: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.pagination .page-item .page-link *,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item .page-link *,
+.dataTables_wrapper .dataTables_paginate .paginate_button *,
+#qrFormsPagination .page-item .page-link * {
+    color: inherit !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.pagination .page-item:not(.disabled) .page-link:hover,
+.pagination .page-item:not(.disabled) .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item:not(.disabled) .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item:not(.disabled) .page-link:focus,
+.dataTables_wrapper .dataTables_paginate a.paginate_button:not(.disabled):hover,
+.dataTables_wrapper .dataTables_paginate a.paginate_button:not(.disabled):focus,
+#qrFormsPagination .page-item:not(.disabled) .page-link:hover,
+#qrFormsPagination .page-item:not(.disabled) .page-link:focus {
+    background: #e8f6ee !important;
+    border-color: #198754 !important;
+    color: #073f28 !important;
+    box-shadow: 0 0 0 0.12rem rgba(25, 135, 84, 0.18) !important;
+}
+
+.pagination .page-item.active .page-link,
+.pagination .page-item.active .page-link:hover,
+.pagination .page-item.active .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item.active .page-link,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item.active .page-link:hover,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item.active .page-link:focus,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:focus,
+#qrFormsPagination .page-item.active .page-link,
+#qrFormsPagination .page-item.active .page-link:hover,
+#qrFormsPagination .page-item.active .page-link:focus {
+    background: #198754 !important;
+    border-color: #146c43 !important;
+    color: #ffffff !important;
+    font-weight: 900 !important;
+}
+
+.pagination .page-item.disabled .page-link,
+.dataTables_wrapper .dataTables_paginate .pagination .page-item.disabled .page-link,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:focus,
+#qrFormsPagination .page-item.disabled .page-link {
+    background: #f8fafc !important;
+    border-color: #d9e2dc !important;
+    color: #5f7468 !important;
+    cursor: not-allowed !important;
+}
+
+body.dark-mode .pagination .page-item .page-link,
+body.dark-mode .dataTables_wrapper .dataTables_paginate .pagination .page-item .page-link,
+body.dark-mode .dataTables_wrapper .dataTables_paginate a.paginate_button,
+body.dark-mode .dataTables_wrapper .dataTables_paginate span.paginate_button,
+body.dark-mode #qrFormsPagination .page-item .page-link {
+    background: #ffffff !important;
+    border-color: #b9d9c6 !important;
+    color: #0f5132 !important;
+}
+
+body.dark-mode .pagination .page-item.active .page-link,
+body.dark-mode .dataTables_wrapper .dataTables_paginate .pagination .page-item.active .page-link,
+body.dark-mode .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+body.dark-mode #qrFormsPagination .page-item.active .page-link {
+    background: #198754 !important;
+    border-color: #146c43 !important;
+    color: #ffffff !important;
+}
+
+body.dark-mode .pagination .page-item.disabled .page-link,
+body.dark-mode .dataTables_wrapper .dataTables_paginate .pagination .page-item.disabled .page-link,
+body.dark-mode .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+body.dark-mode #qrFormsPagination .page-item.disabled .page-link {
+    background: #f8fafc !important;
+    border-color: #d9e2dc !important;
+    color: #5f7468 !important;
+}

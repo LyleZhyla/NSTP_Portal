@@ -737,24 +737,28 @@ if ($user_role === 'super_admin') {
             justify-content: center;
             border-color: #cfe3d7;
             color: #0f5132 !important;
-            background: #fff;
+            background: #fff !important;
             font-weight: 800;
+            opacity: 1 !important;
+            text-shadow: none !important;
         }
 
         .dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
-            border-color: #198754;
+            border-color: #146c43;
             background: #198754 !important;
             color: #fff !important;
+            font-weight: 900;
         }
 
         .dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
-            color: #7b8b83 !important;
-            background: #f3f7f5;
+            color: #5f7468 !important;
+            background: #f8fafc !important;
+            opacity: 1 !important;
         }
 
         .dataTables_wrapper .dataTables_paginate .page-link:hover {
             border-color: #198754;
-            background: #eef8f2;
+            background: #eef8f2 !important;
             color: #0f5132 !important;
         }
 
@@ -793,20 +797,21 @@ if ($user_role === 'super_admin') {
         }
 
         body.dark-mode .dataTables_wrapper .dataTables_paginate .page-link {
-            border-color: #4a6355;
-            background: #323b35;
-            color: #d8f3df !important;
+            border-color: #b9d9c6;
+            background: #ffffff !important;
+            color: #0f5132 !important;
+            opacity: 1 !important;
         }
 
         body.dark-mode .dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
-            border-color: #36b372;
+            border-color: #146c43;
             background: #198754 !important;
             color: #fff !important;
         }
 
         body.dark-mode .dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
-            background: #29332d;
-            color: #9bb3a4 !important;
+            background: #f8fafc !important;
+            color: #5f7468 !important;
         }
         
         .section-info {
