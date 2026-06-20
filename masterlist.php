@@ -3226,12 +3226,16 @@ $(document).ready(function() {
     });
 
     $('#coordinatorHideOptionalColumns').on('click', function() {
+        applyCoordinatorBasicColumns();
+    });
+
+    function applyCoordinatorBasicColumns() {
         $('.coordinator-detail-column-toggle').each(function() {
             const visible = coordinatorBasicColumns.has(this.value);
             this.checked = visible;
             setCoordinatorColumnVisible(this.value, visible);
         });
-    });
+    }
 
     $('#coordinatorVisibleDetailsPanel')
         .on('show.bs.collapse', function() {
@@ -3751,6 +3755,8 @@ $(document).ready(function() {
                 { "targets": 1, "orderable": false, "searchable": false }
             ]
         });
+
+        applyCoordinatorBasicColumns();
     }
 
     <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>

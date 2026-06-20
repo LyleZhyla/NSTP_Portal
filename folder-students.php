@@ -817,12 +817,16 @@ $(function() {
     });
 
     $('#hideOptionalColumns').on('click', function() {
+        applyBasicColumns();
+    });
+
+    function applyBasicColumns() {
         $('.detail-column-toggle').each(function() {
             const visible = basicColumns.has(this.value);
             this.checked = visible;
             setColumnVisible(this.value, visible);
         });
-    });
+    }
 
     $('#visibleDetailsPanel')
         .on('show.bs.collapse', function() {
@@ -831,6 +835,8 @@ $(function() {
         .on('hide.bs.collapse', function() {
             $('#visibleDetailsIcon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
         });
+
+    applyBasicColumns();
 });
 
 function getFolderStudentQrImageUrl(qrCode, size) {
