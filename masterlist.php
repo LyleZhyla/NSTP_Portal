@@ -730,6 +730,39 @@ if ($user_role === 'super_admin') {
             min-width: 100%;
         }
 
+        .dataTables_wrapper .dataTables_paginate .pagination {
+            gap: 4px;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .page-link {
+            min-width: 36px;
+            min-height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-color: #cfe3d7;
+            color: #0f5132 !important;
+            background: #fff;
+            font-weight: 800;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
+            border-color: #198754;
+            background: #198754 !important;
+            color: #fff !important;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
+            color: #7b8b83 !important;
+            background: #f3f7f5;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .page-link:hover {
+            border-color: #198754;
+            background: #eef8f2;
+            color: #0f5132 !important;
+        }
+
         body.dark-mode .content-wrapper {
             background: #26322c !important;
         }
@@ -762,6 +795,23 @@ if ($user_role === 'super_admin') {
         body.dark-mode #studentFoldersTable tbody tr:hover,
         body.dark-mode #coordinatorPendingStudentsTable tbody tr:hover {
             background: #3b4b42 !important;
+        }
+
+        body.dark-mode .dataTables_wrapper .dataTables_paginate .page-link {
+            border-color: #4a6355;
+            background: #323b35;
+            color: #d8f3df !important;
+        }
+
+        body.dark-mode .dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
+            border-color: #36b372;
+            background: #198754 !important;
+            color: #fff !important;
+        }
+
+        body.dark-mode .dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
+            background: #29332d;
+            color: #9bb3a4 !important;
         }
         
         .section-info {

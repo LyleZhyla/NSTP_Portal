@@ -51,6 +51,7 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
             major VARCHAR(120) NOT NULL DEFAULT 'N/A',
             year_section VARCHAR(40) NOT NULL,
             component VARCHAR(20) NULL,
+            rotc_ms_level VARCHAR(20) NULL,
             formal_picture VARCHAR(255) NOT NULL,
             email_sent TINYINT(1) NOT NULL DEFAULT 0,
             status VARCHAR(40) NOT NULL DEFAULT 'submitted',
@@ -80,6 +81,7 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
             'college' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN college VARCHAR(150) NOT NULL DEFAULT '' AFTER student_number",
             'major' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN major VARCHAR(120) NOT NULL DEFAULT 'N/A' AFTER course",
             'component' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN component VARCHAR(20) NULL AFTER year_section",
+            'rotc_ms_level' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN rotc_ms_level VARCHAR(20) NULL AFTER component",
         ];
 
         foreach ($columnChecks as $columnName => $alterSql) {
@@ -526,6 +528,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             }
                                             $dobDisplay = (!empty($row['date_of_birth']) && $row['date_of_birth'] !== '1900-01-01') ? date('m/d/Y', strtotime($row['date_of_birth'])) : 'N/A';
                                             $photoPath = $row['formal_picture'] ?: 'include/logo.png';
+                                            $rotcMsLevel = trim((string) ($row['rotc_ms_level'] ?? ''));
                                         ?>
                                         <tr>
                                             <td><img class="registration-photo" src="<?php echo htmlspecialchars($photoPath); ?>" alt="Formal picture"></td>
@@ -550,6 +553,9 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             <td>
                                                 <?php if (!empty($row['component'])): ?>
                                                     <span class="badge badge-success"><?php echo htmlspecialchars($row['component']); ?></span>
+                                                    <?php if (($row['component'] ?? '') === 'ROTC' && $rotcMsLevel !== ''): ?>
+                                                        <span class="badge badge-warning d-block mt-1">MS Level: <?php echo htmlspecialchars($rotcMsLevel); ?></span>
+                                                    <?php endif; ?>
                                                 <?php else: ?>
                                                     <span class="badge badge-warning">Not selected</span>
                                                 <?php endif; ?>
@@ -649,6 +655,12 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                                         <span class="detail-label">NSTP Component</span>
                                                                         <span class="detail-value"><?php echo htmlspecialchars($row['component'] ?: 'Not selected'); ?></span>
                                                                     </div>
+                                                                    <?php if (($row['component'] ?? '') === 'ROTC'): ?>
+                                                                    <div class="col-md-6 mb-3">
+                                                                        <span class="detail-label">ROTC MS Level</span>
+                                                                        <span class="detail-value"><?php echo htmlspecialchars($rotcMsLevel !== '' ? $rotcMsLevel : 'Not set'); ?></span>
+                                                                    </div>
+                                                                    <?php endif; ?>
                                                                     <div class="col-12 mb-3">
                                                                         <span class="detail-label">Complete Address</span>
                                                                         <span class="detail-value"><?php echo htmlspecialchars($address); ?></span>
