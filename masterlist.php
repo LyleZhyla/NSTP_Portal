@@ -2997,8 +2997,18 @@ $(document).ready(function() {
     $('[data-toggle="tooltip"]').tooltip();
 
     const coordinatorBasicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'component', 'rotc_ms_level', 'course_section', 'generated_code']);
+    let coordinatorPendingStudentsTable = null;
+    const coordinatorColumnIndexes = {};
 
     function setCoordinatorColumnVisible(columnKey, visible) {
+        if (coordinatorPendingStudentsTable && Object.prototype.hasOwnProperty.call(coordinatorColumnIndexes, columnKey)) {
+            coordinatorPendingStudentsTable
+                .column(coordinatorColumnIndexes[columnKey])
+                .visible(visible, false);
+            coordinatorPendingStudentsTable.columns.adjust().draw(false);
+            return;
+        }
+
         $('.coordinator-detail-col-' + columnKey).toggle(visible);
     }
 
@@ -3523,19 +3533,21 @@ $(document).ready(function() {
     }
 
     if ($('#coordinatorPendingStudentsTable').length) {
-        const coordinatorPendingStudentsTable = $('#coordinatorPendingStudentsTable').DataTable({
+        $('#coordinatorPendingStudentsTable thead th[data-column]').each(function(index) {
+            coordinatorColumnIndexes[$(this).data('column')] = index;
+        });
+
+        coordinatorPendingStudentsTable = $('#coordinatorPendingStudentsTable').DataTable({
             "pageLength": 25,
             "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
             "responsive": false,
             "ordering": true,
-            "order": [[1, 'asc']]
+            "order": [[1, 'asc']],
+            "columnDefs": [
+                { "targets": 0, "orderable": false, "searchable": false },
+                { "targets": -1, "orderable": false, "searchable": false }
+            ]
         });
-
-        const originalSetCoordinatorColumnVisible = setCoordinatorColumnVisible;
-        setCoordinatorColumnVisible = function(columnKey, visible) {
-            originalSetCoordinatorColumnVisible(columnKey, visible);
-            coordinatorPendingStudentsTable.columns.adjust();
-        };
     }
 
     <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>
