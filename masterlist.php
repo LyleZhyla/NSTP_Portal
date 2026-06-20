@@ -181,6 +181,7 @@ $superAdminExportFacilitators = [];
 $studentManagementFolders = [];
 $folderAssignableFacilitators = [];
 $admins_with_sections = [];
+$sections_with_students = [];
 
 if (in_array($user_role, ['super_admin', 'coordinator'], true)) {
     syncSectionFoldersFromExisting($conn);
@@ -274,7 +275,7 @@ if ($user_role === 'coordinator') {
 }
 
 // FOR REGULAR ADMIN WITH MULTIPLE SECTIONS - Get students organized by section folder
-if ($user_role === 'facilitator' && $isRotcFacilitator) {
+if ($user_role === 'facilitator' && $isRotcFacilitator && empty($assignedSections)) {
     $rotcCondition = rotcMs1StudentSqlCondition('s');
     $stmt = $conn->prepare("
         SELECT s.*, s.original_section
@@ -495,15 +496,6 @@ if ($user_role === 'super_admin') {
     $total_coordinators = $total_coordinators_stmt->fetchColumn();
 } elseif ($user_role === 'facilitator') {
     if (!empty($assignedSections)) {
-        if ($isRotcFacilitator) {
-            $rotcCondition = rotcMs1StudentSqlCondition('s');
-            $total_stmt = $conn->prepare("
-                SELECT COUNT(*)
-                FROM tbl_student s
-                WHERE {$rotcCondition}
-            ");
-            $total_stmt->execute();
-        } else {
         $placeholders = implode(',', array_fill(0, count($assignedSections), '?'));
         $total_stmt = $conn->prepare("
             SELECT COUNT(*)
@@ -511,7 +503,6 @@ if ($user_role === 'super_admin') {
             WHERE created_by = ? AND course_section IN ($placeholders)
         ");
         $total_stmt->execute(array_merge([$user_id], $assignedSections));
-        }
     } elseif ($isRotcFacilitator) {
         $rotcCondition = rotcMs1StudentSqlCondition('s');
         $total_stmt = $conn->prepare("
@@ -1486,7 +1477,7 @@ if ($user_role === 'super_admin') {
                 <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>
                 <div class="row mb-3">
                     <div class="col-12">
-                        <?php if ($isRotcFacilitator): ?>
+                        <?php if ($isRotcFacilitator && empty($assignedSections)): ?>
                         <div class="section-info">
                             <i class="fas fa-layer-group mr-2"></i>
                             <strong>ROTC Access:</strong>
@@ -1956,7 +1947,7 @@ if ($user_role === 'super_admin') {
                 <!-- ==================== -->
                 <?php elseif ($user_role === 'facilitator'): ?>
                 
-                <?php if ($isRotcFacilitator): ?>
+                <?php if ($isRotcFacilitator && empty($assignedSections)): ?>
                     <div class="alert alert-info">
                         <i class="fas fa-file-export mr-2"></i>
                         <strong>ROTC access:</strong> All ROTC facilitators can view the full ROTC student list.
