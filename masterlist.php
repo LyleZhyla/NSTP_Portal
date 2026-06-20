@@ -210,7 +210,7 @@ if ($user_role === 'coordinator') {
     $coordinatorPendingStudents = attachMasterlistRegistrationDetails($conn, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
     $stmt = $conn->prepare("
-        SELECT user_id, full_name, username, assigned_section
+        SELECT user_id, full_name, username, program, assigned_section
         FROM tbl_users
         WHERE role = 'facilitator' AND program = ?
         ORDER BY full_name ASC, username ASC
