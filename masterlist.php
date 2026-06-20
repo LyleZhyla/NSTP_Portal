@@ -691,6 +691,45 @@ if ($user_role === 'super_admin') {
             box-shadow: 0 0 0 0.12rem rgba(25, 135, 84, 0.16);
         }
 
+        #coordinatorPendingStudentsTable {
+            width: auto !important;
+            min-width: 100%;
+        }
+
+        #coordinatorPendingStudentsTable th,
+        #coordinatorPendingStudentsTable td {
+            padding: 0.5rem 0.65rem;
+        }
+
+        #coordinatorPendingStudentsTable .detail-photo {
+            width: 42px;
+            height: 42px;
+        }
+
+        #coordinatorPendingStudentsTable .qr-thumb {
+            width: 48px;
+            height: 48px;
+        }
+
+        #coordinatorPendingStudentsTable code {
+            font-size: 0.78rem;
+        }
+
+        #coordinatorPendingStudentsTable .assign-student-form {
+            min-width: 220px;
+        }
+
+        #coordinatorPendingStudentsTable .badge {
+            white-space: normal;
+            line-height: 1.25;
+        }
+
+        #coordinatorPendingStudentsTable_wrapper .dataTables_scrollHeadInner,
+        #coordinatorPendingStudentsTable_wrapper .dataTables_scrollHeadInner table {
+            width: auto !important;
+            min-width: 100%;
+        }
+
         body.dark-mode .content-wrapper {
             background: #26322c !important;
         }
