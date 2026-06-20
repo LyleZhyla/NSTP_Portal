@@ -510,7 +510,16 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
             ];
             $studentName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($studentNameParts))));
             $originalSection = autoSectionOriginalSection($record['course'], $record['year_section'], $component);
-            $pendingComponent = normalizeProgram($component) ?: 'PUBLIC';
+            $studentComponent = normalizeProgram($component) ?: 'PUBLIC';
+            $studentFolder = autoSectionUsesAutomaticFolders($studentComponent)
+                ? autoSectionFolderForStudent(
+                    $conn,
+                    $studentComponent,
+                    $record['course'],
+                    $record['year_section'],
+                    $originalSection
+                )
+                : $studentComponent;
             $generatedCode = !empty($record['student_number'])
                 ? 'PUB_' . $record['student_number']
                 : generateUniqueImportCode($conn, 'IMP');
@@ -519,7 +528,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                 $record['student_number'],
                 $studentName,
                 $originalSection,
-                $pendingComponent,
+                $studentFolder,
                 $generatedCode,
             ]);
         }
@@ -527,7 +536,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
         $conn->commit();
         $response['success'] = true;
         $response['imported'] = count($rows);
-        $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s). Students are pending folder creation/assignment.';
+        $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s). CWTS/LTS students were placed into automatic folders; remaining students stay pending for coordinator assignment.';
     } catch (Throwable $error) {
         if ($conn->inTransaction()) {
             $conn->rollBack();

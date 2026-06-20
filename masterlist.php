@@ -195,11 +195,15 @@ if ($user_role === 'coordinator') {
         $coordinatorProgram = normalizeProgram($stmt->fetchColumn());
     }
 
+    if ($coordinatorProgram && autoSectionUsesAutomaticFolders($coordinatorProgram)) {
+        rebuildAutoSectionFolders($conn, $coordinatorProgram);
+    }
+
     $stmt = $conn->prepare("
         SELECT s.*
         FROM tbl_student s
         LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-        WHERE (s.course_section = ? OR s.course_section LIKE ?)
+        WHERE s.course_section = ?
           AND (
               s.created_by IS NULL
               OR creator.role <> 'facilitator'
@@ -207,7 +211,7 @@ if ($user_role === 'coordinator') {
           )
         ORDER BY student_name ASC
     ");
-    $stmt->execute([$coordinatorProgram, autoSectionFolderPrefix($coordinatorProgram) . ' %', $coordinatorProgram]);
+    $stmt->execute([$coordinatorProgram, $coordinatorProgram]);
     $coordinatorPendingStudents = attachMasterlistRegistrationDetails($conn, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
     $stmt = $conn->prepare("

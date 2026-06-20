@@ -378,9 +378,21 @@ function publicRegistrationFullName(array $registration) {
     return $name;
 }
 
-function publicRegistrationCourseSection(array $registration) {
+function publicRegistrationCourseSection(PDO $conn, array $registration) {
     $component = normalizeProgram($registration['component'] ?? null);
-    return $component ?: 'PUBLIC';
+    $component = $component ?: 'PUBLIC';
+
+    if (autoSectionUsesAutomaticFolders($component)) {
+        return autoSectionFolderForStudent(
+            $conn,
+            $component,
+            $registration['course'] ?? '',
+            $registration['year_section'] ?? '',
+            publicRegistrationOriginalSection($registration)
+        );
+    }
+
+    return $component;
 }
 
 function publicRegistrationOriginalSection(array $registration) {
@@ -409,8 +421,8 @@ function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
     $studentName = publicRegistrationFullName($registration);
-    $courseSection = publicRegistrationCourseSection($registration);
     $originalSection = publicRegistrationOriginalSection($registration);
+    $courseSection = publicRegistrationCourseSection($conn, $registration);
     if ($originalSection === '' || $originalSection === 'N/A') {
         $originalSection = $courseSection;
     }

@@ -204,7 +204,7 @@ try {
             SELECT s.*
             FROM tbl_student s
             LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-            WHERE (s.course_section = ? OR s.course_section LIKE ?)
+            WHERE s.course_section = ?
               AND (
                   s.created_by IS NULL
                   OR creator.role <> 'facilitator'
@@ -212,7 +212,7 @@ try {
               )
             ORDER BY s.student_name ASC
         ");
-        $stmt->execute([$program, autoSectionFolderPrefix($program) . ' %', $program]);
+        $stmt->execute([$program, $program]);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $pageTitle = $program . ' Pending Assignment';
         $folderMeta = 'Students waiting for facilitator folder assignment';
