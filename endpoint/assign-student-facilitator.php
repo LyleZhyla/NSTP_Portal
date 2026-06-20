@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/section-folders.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || ($currentUser['role'] ?? '') !== 'coordinator') {
@@ -27,6 +28,8 @@ if ($studentId <= 0 || $facilitatorId <= 0 || $courseSection === '' || !$program
 }
 
 try {
+    ensureSectionFoldersTable($conn);
+
     $stmt = $conn->prepare("
         SELECT s.tbl_student_id, s.course_section, s.created_by, creator.role AS creator_role, creator.program AS creator_program
         FROM tbl_student s
@@ -73,7 +76,21 @@ try {
         exit();
     }
 
-    if (inferProgramFromText($courseSection) !== $program) {
+    $stmt = $conn->prepare("
+        SELECT program
+        FROM tbl_section_folders
+        WHERE course_section = ?
+        ORDER BY CASE WHEN program = ? THEN 0 ELSE 1 END
+        LIMIT 1
+    ");
+    $stmt->execute([$courseSection, $program]);
+    $folderProgram = normalizeProgram($stmt->fetchColumn());
+
+    if (!$folderProgram) {
+        $folderProgram = inferProgramFromText($courseSection);
+    }
+
+    if ($folderProgram !== $program) {
         echo json_encode(['success' => false, 'message' => 'Selected folder does not match your component']);
         exit();
     }
