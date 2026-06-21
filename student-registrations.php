@@ -121,7 +121,7 @@ $publicForms = getPublicRegistrationForms($conn);
 $fieldOptions = getPublicRegistrationFieldOptions();
 
 $query = "
-    SELECT r.*, u.username, u.full_name, f.form_title
+    SELECT r.*, u.username, u.full_name, u.role AS account_role, f.form_title
     FROM tbl_public_student_registrations r
     LEFT JOIN tbl_users u ON r.user_id = u.user_id
     LEFT JOIN tbl_public_registration_forms f ON r.form_id = f.form_id
@@ -505,7 +505,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                         <th>Address</th>
                                         <th>Email Status</th>
                                         <th>Submitted</th>
-                                        <th>Details</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -573,6 +573,15 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailsModal<?php echo $registrationId; ?>">
                                                     <i class="fas fa-eye"></i>
                                                 </button>
+                                                <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-sm btn-danger delete-student-account"
+                                                        data-user-id="<?php echo (int) $row['user_id']; ?>"
+                                                        data-name="<?php echo htmlspecialchars($fullName); ?>">
+                                                        <i class="fas fa-user-times"></i>
+                                                    </button>
+                                                <?php endif; ?>
                                             </td>
                                         </tr>
 
@@ -798,6 +807,15 @@ foreach ($publicForms as $formRow) {
             return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         function updateVisibleSubmissionCount() {
             $('#visibleSubmissionCount').text(registrationsTable.rows({ filter: 'applied' }).count());
         }
@@ -890,6 +908,56 @@ foreach ($publicForms as $formRow) {
                     },
                     complete: function() {
                         button.prop('disabled', false).html(originalHtml);
+                    }
+                });
+            });
+        });
+
+        $('.delete-student-account').on('click', function() {
+            const button = $(this);
+            const userId = button.data('user-id');
+            const studentName = button.data('name') || 'this student';
+            const safeStudentName = escapeHtml(studentName);
+
+            Swal.fire({
+                title: 'Delete student account?',
+                html: `
+                    <div class="text-left">
+                        <p>This will delete the login account for <strong>${safeStudentName}</strong>.</p>
+                        <p class="mb-0 text-muted">The registration and student record will stay, but the student will no longer be able to log in until a new account is created.</p>
+                    </div>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                confirmButtonText: 'Delete Account',
+                cancelButtonText: 'Cancel'
+            }).then(function(result) {
+                if (!result.isConfirmed) {
+                    return;
+                }
+
+                button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
+                $.ajax({
+                    url: 'endpoint/delete-admin.php',
+                    method: 'POST',
+                    data: { user_id: userId },
+                    dataType: 'json',
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire('Deleted', response.message || 'Student account deleted.', 'success').then(function() {
+                                window.location.reload();
+                            });
+                            return;
+                        }
+
+                        Swal.fire('Unable to Delete', response.message || 'Please try again.', 'error');
+                        button.prop('disabled', false).html('<i class="fas fa-user-times"></i>');
+                    },
+                    error: function() {
+                        Swal.fire('Request Failed', 'Unable to delete student account. Please try again.', 'error');
+                        button.prop('disabled', false).html('<i class="fas fa-user-times"></i>');
                     }
                 });
             });
