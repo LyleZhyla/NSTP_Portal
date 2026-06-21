@@ -105,9 +105,33 @@ if (!canAccessStaffTools($user_role)) {
             top: 50%;
             transform: translateY(-50%);
         }
+
+        .archive-manager-page .content-wrapper {
+            padding-bottom: 76px;
+        }
+
+        .archive-manager-page .main-footer {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 1030;
+            margin-left: 250px;
+        }
+
+        .archive-manager-page.sidebar-collapse .main-footer {
+            margin-left: 4.6rem;
+        }
+
+        @media (max-width: 768px) {
+            .archive-manager-page .main-footer,
+            .archive-manager-page.sidebar-collapse .main-footer {
+                margin-left: 0;
+            }
+        }
     </style>
 </head>
-<body class="hold-transition sidebar-mini layout-fixed">
+<body class="hold-transition sidebar-mini layout-fixed archive-manager-page">
 <div class="wrapper">
 
     <!-- Navbar -->
