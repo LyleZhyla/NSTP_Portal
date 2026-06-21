@@ -107,27 +107,13 @@ if (!canAccessStaffTools($user_role)) {
         }
 
         .archive-manager-page .content-wrapper {
-            padding-bottom: 76px;
+            min-height: calc(100vh - 118px);
+            padding-bottom: 1rem;
         }
 
         .archive-manager-page .main-footer {
-            position: fixed;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            z-index: 1030;
-            margin-left: 250px;
-        }
-
-        .archive-manager-page.sidebar-collapse .main-footer {
-            margin-left: 4.6rem;
-        }
-
-        @media (max-width: 768px) {
-            .archive-manager-page .main-footer,
-            .archive-manager-page.sidebar-collapse .main-footer {
-                margin-left: 0;
-            }
+            position: static;
+            display: block;
         }
     </style>
 </head>
