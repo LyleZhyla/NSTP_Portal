@@ -239,13 +239,25 @@ function uniqueUsernameFromBase(PDO $conn, $baseValue) {
 }
 
 function fullNameFromRegistrationParts($firstName, $middleName, $lastName, $extensionName = '') {
-    $parts = [
+    $firstName = cleanText($firstName);
+    $middleName = cleanText($middleName);
+    $lastName = cleanText($lastName);
+    $extensionName = cleanText($extensionName);
+    $middleInitial = ($middleName !== '' && strtoupper($middleName) !== 'N/A')
+        ? strtoupper(substr($middleName, 0, 1)) . '.'
+        : '';
+
+    $firstNameParts = array_values(array_filter([
         $firstName,
-        $middleName === 'N/A' ? '' : $middleName,
-        $lastName,
-        $extensionName === 'N/A' ? '' : $extensionName,
-    ];
-    return trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($parts))));
+        $middleInitial,
+        strtoupper($extensionName) === 'N/A' ? '' : $extensionName,
+    ], fn($part) => $part !== ''));
+
+    $name = $lastName !== ''
+        ? $lastName . ', ' . implode(' ', $firstNameParts)
+        : implode(' ', $firstNameParts);
+
+    return trim(preg_replace('/\s+/', ' ', $name), ' ,');
 }
 
 function createFacilitatorAccountFromPublicRegistration(PDO $conn, array $registration) {
@@ -366,16 +378,23 @@ function findLatestPublicRegistrationByStudentNumber(PDO $conn, $studentNumber) 
 }
 
 function publicRegistrationFullName(array $registration) {
-    $parts = [
-        $registration['last_name'] ?? '',
-        $registration['first_name'] ?? '',
-    ];
-    $name = trim(implode(', ', array_filter($parts)));
+    $lastName = cleanText($registration['last_name'] ?? '');
+    $firstName = cleanText($registration['first_name'] ?? '');
+    $middleName = cleanText($registration['middle_name'] ?? '');
+    $middleInitial = ($middleName !== '' && strtoupper($middleName) !== 'N/A')
+        ? strtoupper(substr($middleName, 0, 1)) . '.'
+        : '';
+
+    $firstNameParts = array_values(array_filter([$firstName, $middleInitial], fn($part) => $part !== ''));
+    $name = $lastName !== ''
+        ? $lastName . ', ' . implode(' ', $firstNameParts)
+        : implode(' ', $firstNameParts);
+
     if ($name === ',' || $name === '') {
         $name = 'Student #' . ($registration['student_number'] ?? '');
     }
 
-    return $name;
+    return trim($name, ' ,');
 }
 
 function publicRegistrationCourseSection(PDO $conn, array $registration) {

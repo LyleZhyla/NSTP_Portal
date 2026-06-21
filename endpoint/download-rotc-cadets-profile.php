@@ -59,16 +59,19 @@ function rotcCleanValue($value) {
 function rotcFullName(array $row) {
     $lastName = rotcCleanValue($row['last_name'] ?? '');
     $firstName = rotcCleanValue($row['first_name'] ?? '');
-    $middleName = rotcCleanValue($row['middle_name'] ?? '');
+    $middleInitial = rotcMiddleInitial($row['middle_name'] ?? '');
     $extensionName = rotcCleanValue($row['extension_name'] ?? '');
 
-    $name = trim($lastName . ', ' . $firstName);
-    $suffix = trim($middleName . ' ' . $extensionName);
-    if ($suffix !== '') {
-        $name .= ' ' . $suffix;
+    if ($lastName === '' && $firstName === '') {
+        return trim((string) ($row['student_name'] ?? ''));
     }
 
-    return trim($name, ' ,') ?: ($row['student_name'] ?? '');
+    $firstNameParts = array_values(array_filter([$firstName, $middleInitial, $extensionName], fn($part) => $part !== ''));
+    $name = $lastName !== ''
+        ? $lastName . ', ' . implode(' ', $firstNameParts)
+        : implode(' ', $firstNameParts);
+
+    return trim($name, ' ,') ?: trim((string) ($row['student_name'] ?? ''));
 }
 
 function rotcCompleteAddress(array $row) {

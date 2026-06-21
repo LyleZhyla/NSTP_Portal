@@ -502,13 +502,19 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                 $record['formal_picture'],
             ]);
 
-            $studentNameParts = [
-                $record['last_name'] . ',',
+            $middleInitial = !isImportNA($record['middle_name']) && trim((string) $record['middle_name']) !== ''
+                ? strtoupper(substr(trim((string) $record['middle_name']), 0, 1)) . '.'
+                : '';
+            $lastName = trim((string) $record['last_name']);
+            $firstNameParts = array_values(array_filter([
                 $record['first_name'],
-                isImportNA($record['middle_name']) ? '' : $record['middle_name'],
+                $middleInitial,
                 isImportNA($record['extension_name']) ? '' : $record['extension_name'],
-            ];
-            $studentName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($studentNameParts))));
+            ], fn($part) => trim((string) $part) !== ''));
+            $studentName = $lastName !== ''
+                ? $lastName . ', ' . implode(' ', $firstNameParts)
+                : implode(' ', $firstNameParts);
+            $studentName = trim(preg_replace('/\s+/', ' ', $studentName), ' ,');
             $originalSection = autoSectionOriginalSection($record['course'], $record['year_section'], $component);
             $studentComponent = normalizeProgram($component) ?: 'PUBLIC';
             $studentFolder = autoSectionUsesAutomaticFolders($studentComponent)
