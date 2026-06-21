@@ -41,6 +41,10 @@ if ($currentUserRole === 'super_admin') {
     $stmt->execute();
     $totalArchived = $stmt->fetchColumn();
 
+    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_users WHERE role = 'facilitator'");
+    $stmt->execute();
+    $totalFacilitators = $stmt->fetchColumn();
+
     // Recent attendance - all records
     $stmt = $conn->prepare("
         SELECT a.*, s.student_name, s.course_section, u.full_name as recorded_by 
@@ -658,20 +662,20 @@ if ($currentUserRole === 'super_admin') {
                     <div class="col-lg-3 col-6">
                         <div class="small-box bg-gradient-secondary">
                             <div class="inner">
-                                <h3><?php echo $totalArchived; ?></h3>
+                                <h3><?php echo $currentUserRole === 'super_admin' ? $totalFacilitators : $totalArchived; ?></h3>
                                 <p>
                                     <?php if ($currentUserRole === 'super_admin'): ?>
-                                        Archived Records
+                                        Facilitators
                                     <?php else: ?>
                                         My Archived Records
                                     <?php endif; ?>
                                 </p>
                             </div>
                             <div class="icon">
-                                <i class="fas fa-archive"></i>
+                                <i class="fas <?php echo $currentUserRole === 'super_admin' ? 'fa-user-tie' : 'fa-archive'; ?>"></i>
                             </div>
                             <?php if ($currentUserRole === 'super_admin'): ?>
-                                <a href="archive-manager.php" class="small-box-footer">Manage All Archive <i class="fas fa-arrow-circle-right"></i></a>
+                                <a href="admin-management.php" class="small-box-footer">Manage Facilitators <i class="fas fa-arrow-circle-right"></i></a>
                             <?php else: ?>
                                 <a href="archive-manager.php" class="small-box-footer">Manage My Archive <i class="fas fa-arrow-circle-right"></i></a>
                             <?php endif; ?>
