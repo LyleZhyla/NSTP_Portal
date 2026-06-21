@@ -106,15 +106,6 @@ if (!canAccessStaffTools($user_role)) {
             transform: translateY(-50%);
         }
 
-        .archive-manager-page .content-wrapper {
-            min-height: calc(100vh - 118px);
-            padding-bottom: 1rem;
-        }
-
-        .archive-manager-page .main-footer {
-            position: static;
-            display: block;
-        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed archive-manager-page">
@@ -365,8 +356,6 @@ if (!canAccessStaffTools($user_role)) {
         </section>
     </div>
 
-    <!-- Footer -->
-       <?php include 'footer.php'; ?>
 </div>
 
 <!-- Scripts -->
