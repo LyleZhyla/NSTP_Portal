@@ -220,29 +220,18 @@ if (isset($_SESSION['user_id'])) {
 
                 <!-- User Management -->
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator'], true)): ?>
-                <?php $isUserManagementOpen = in_array($currentPage, ['admin-management.php', 'masterlist.php'], true); ?>
-                <li class="nav-item <?= $isUserManagementOpen ? 'menu-open' : '' ?>">
-                    <a href="#" class="nav-link <?= $isUserManagementOpen ? 'active' : '' ?>">
+                <li class="nav-header">USER MANAGEMENT</li>
+                <li class="nav-item">
+                    <a href="admin-management.php" class="nav-link <?= ($currentPage == 'admin-management.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-user-shield"></i>
-                        <p>
-                            User Management
-                            <i class="right fas fa-angle-left"></i>
-                        </p>
+                        <p>Facilitator Management</p>
                     </a>
-                    <ul class="nav nav-treeview">
-                        <li class="nav-item">
-                            <a href="admin-management.php" class="nav-link <?= ($currentPage == 'admin-management.php') ? 'active' : '' ?>">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Facilitator Management</p>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a href="masterlist.php" class="nav-link <?= ($currentPage == 'masterlist.php') ? 'active' : '' ?>">
-                                <i class="far fa-circle nav-icon"></i>
-                                <p>Student Management</p>
-                            </a>
-                        </li>
-                    </ul>
+                </li>
+                <li class="nav-item">
+                    <a href="masterlist.php" class="nav-link <?= ($currentPage == 'masterlist.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-user-graduate"></i>
+                        <p>Student Management</p>
+                    </a>
                 </li>
                 <?php endif; ?>
 
