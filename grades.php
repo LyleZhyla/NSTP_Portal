@@ -101,6 +101,23 @@ function slugGradeGroup($value) {
     return $slug !== '' ? substr($slug, 0, 60) : 'additional';
 }
 
+function selectedGradeGroupLabel(array $source, $default = 'Additional Requirements') {
+    $mode = trim((string) ($source['group_mode'] ?? 'existing'));
+    $selected = trim((string) ($source['group_label_select'] ?? ''));
+    $new = trim((string) ($source['group_label_new'] ?? ''));
+    $fallback = trim((string) ($source['group_label'] ?? $default));
+
+    if ($mode === 'new') {
+        return $new !== '' ? $new : $default;
+    }
+
+    if ($selected !== '') {
+        return $selected;
+    }
+
+    return $fallback !== '' ? $fallback : $default;
+}
+
 function seedDefaultGradeColumns(PDO $conn) {
     $defaults = [
         ['bandage_head', 'Top of the head', 'bandaging', 'Bandaging Evaluation', 16, 15, 10],
@@ -479,7 +496,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'add_column' && $canManageColumns) {
         $label = trim($_POST['label'] ?? '');
-        $groupLabel = trim($_POST['group_label'] ?? 'Additional Requirements');
+        $groupLabel = selectedGradeGroupLabel($_POST);
         $maxScore = (float) ($_POST['max_score'] ?? 0);
         $weight = (float) ($_POST['weight_percent'] ?? 0);
         $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
@@ -609,7 +626,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($action === 'edit_column' && $canManageColumns) {
         $columnId = (int) ($_POST['column_id'] ?? 0);
         $label = trim($_POST['label'] ?? '');
-        $groupLabel = trim($_POST['group_label'] ?? 'Additional Requirements');
+        $groupLabel = selectedGradeGroupLabel($_POST);
         $maxScore = (float) ($_POST['max_score'] ?? 0);
         $weight = (float) ($_POST['weight_percent'] ?? 0);
         $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
@@ -621,29 +638,70 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         } elseif ($weight <= 0) {
             $errors[] = 'Weight percent must be greater than zero.';
         } else {
-            if ($userRole === 'coordinator') {
-                $stmt = $conn->prepare("
-                    UPDATE tbl_grade_columns
-                    SET label = ?, group_code = ?, group_label = ?, max_score = ?, weight_percent = ?, updated_by = ?
-                    WHERE grade_column_id = ? AND is_default = 0
-                ");
-                $stmt->execute([$label, slugGradeGroup($groupLabel), $groupLabel, $maxScore, $weight, $userId, $columnId]);
+            $activeColumnLookup = [];
+            foreach ($gradeColumns as $column) {
+                $activeColumnLookup[(int) $column['grade_column_id']] = true;
+            }
+
+            if (!isset($activeColumnLookup[$columnId])) {
+                $errors[] = 'Column not found in the current class record.';
             } else {
                 $stmt = $conn->prepare("
                     UPDATE tbl_grade_columns
                     SET label = ?, group_code = ?, group_label = ?, max_score = ?, weight_percent = ?, updated_by = ?
-                    WHERE grade_column_id = ? AND is_default = 0 AND created_by = ?
+                    WHERE grade_column_id = ?
                 ");
-                $stmt->execute([$label, slugGradeGroup($groupLabel), $groupLabel, $maxScore, $weight, $userId, $columnId, $userId]);
+                $stmt->execute([$label, slugGradeGroup($groupLabel), $groupLabel, $maxScore, $weight, $userId, $columnId]);
+                $messages[] = 'Grade column updated.';
             }
-
-            $messages[] = $stmt->rowCount() > 0 ? 'Grade column updated.' : 'Only custom columns you created can be edited.';
         }
     }
 
     if ($action === 'settings' && $canManageColumns) {
         $meetings = max(1, (int) ($_POST['total_meetings'] ?? 11));
         setGradeSetting($conn, $totalMeetingsKey, (string) $meetings, $userId);
+        $settingsColumns = $_POST['columns'] ?? [];
+
+        if (is_array($settingsColumns)) {
+            $activeColumnLookup = [];
+            foreach ($gradeColumns as $column) {
+                $activeColumnLookup[(int) $column['grade_column_id']] = true;
+            }
+
+            $updateColumn = $conn->prepare("
+                UPDATE tbl_grade_columns
+                SET label = ?, group_code = ?, group_label = ?, max_score = ?, weight_percent = ?, updated_by = ?
+                WHERE grade_column_id = ?
+            ");
+
+            foreach ($settingsColumns as $columnId => $columnSettings) {
+                $columnId = (int) $columnId;
+                if (!isset($activeColumnLookup[$columnId]) || !is_array($columnSettings)) {
+                    continue;
+                }
+
+                $label = trim((string) ($columnSettings['label'] ?? ''));
+                $groupLabel = trim((string) ($columnSettings['group_label'] ?? ''));
+                $maxScore = (float) ($columnSettings['max_score'] ?? 0);
+                $weight = (float) ($columnSettings['weight_percent'] ?? 0);
+
+                if ($label === '' || $groupLabel === '' || $maxScore <= 0 || $weight <= 0) {
+                    $errors[] = 'Skipped one column in settings because it has incomplete or invalid values.';
+                    continue;
+                }
+
+                $updateColumn->execute([
+                    $label,
+                    slugGradeGroup($groupLabel),
+                    $groupLabel,
+                    $maxScore,
+                    $weight,
+                    $userId,
+                    $columnId,
+                ]);
+            }
+        }
+
         $messages[] = 'Grade settings updated.';
     }
 
@@ -709,6 +767,15 @@ if (!empty($_SESSION['grade_errors'])) {
 $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
+$gradeCategoryOptions = [];
+foreach ($gradeColumns as $column) {
+    $categoryLabel = trim((string) ($column['group_label'] ?? ''));
+    if ($categoryLabel !== '') {
+        $gradeCategoryOptions[$categoryLabel] = true;
+    }
+}
+$gradeCategoryOptions = array_keys($gradeCategoryOptions);
+sort($gradeCategoryOptions, SORT_NATURAL | SORT_FLAG_CASE);
 
 $scoresByStudent = [];
 if (!empty($accessibleStudentIds) && !empty($gradeColumnIds)) {
@@ -1074,7 +1141,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             · <?php echo formatGradeNumber($column['weight_percent'], 0); ?>%
                                             - <?php echo (int) $column['is_default'] === 1 ? 'Default' : 'Custom'; ?>
                                         </small>
-                                        <?php if ((int) $column['is_default'] === 0): ?>
                                         <button
                                             type="button"
                                             class="btn btn-xs btn-link text-primary p-0 edit-column-btn"
@@ -1088,7 +1154,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             data-weight-percent="<?php echo htmlspecialchars((string) $column['weight_percent']); ?>">
                                             <i class="fas fa-pen"></i>
                                         </button>
-                                        <?php endif; ?>
                                         <form method="POST" class="d-inline" onsubmit="return confirm('Remove this column from the current class record? Existing scores will be kept in the database but hidden with the removed column.');">
                                             <input type="hidden" name="action" value="delete_column">
                                             <input type="hidden" name="column_id" value="<?php echo (int) $column['grade_column_id']; ?>">
@@ -1236,7 +1301,22 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 </div>
                 <div class="form-group">
                     <label>Category / Component</label>
-                    <input type="text" name="group_label" class="form-control" maxlength="120" placeholder="Example: Quizzes, Performance Task, Project" value="Additional Requirements" required>
+                    <select name="group_label_select" id="addColumnGroupSelect" class="form-control">
+                        <?php if (empty($gradeCategoryOptions)): ?>
+                            <option value="Additional Requirements">Additional Requirements</option>
+                        <?php else: ?>
+                            <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
+                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                    <div class="mt-2">
+                        <select name="group_mode" id="addColumnGroupMode" class="form-control">
+                            <option value="existing">Use selected category</option>
+                            <option value="new">Create new category</option>
+                        </select>
+                    </div>
+                    <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
                     <small class="text-muted">Columns with the same category are grouped when computing the weighted percentage.</small>
                 </div>
                 <div class="form-row">
@@ -1277,7 +1357,22 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 </div>
                 <div class="form-group">
                     <label>Category / Component</label>
-                    <input type="text" name="group_label" id="editColumnGroupLabel" class="form-control" maxlength="120" required>
+                    <select name="group_label_select" id="editColumnGroupSelect" class="form-control">
+                        <?php if (empty($gradeCategoryOptions)): ?>
+                            <option value="Additional Requirements">Additional Requirements</option>
+                        <?php else: ?>
+                            <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
+                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                    <div class="mt-2">
+                        <select name="group_mode" id="editColumnGroupMode" class="form-control">
+                            <option value="existing">Use selected category</option>
+                            <option value="new">Create new category</option>
+                        </select>
+                    </div>
+                    <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
                 </div>
                 <div class="form-row">
                     <div class="form-group col-md-6">
@@ -1299,7 +1394,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 </div>
 
 <div class="modal fade" id="settingsModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
+    <div class="modal-dialog modal-xl" role="document">
         <form method="POST" class="modal-content">
             <input type="hidden" name="action" value="settings">
             <div class="modal-header">
@@ -1312,6 +1407,71 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <input type="number" name="total_meetings" class="form-control" min="1" value="<?php echo (int) $totalMeetings; ?>" required>
                     <small class="text-muted">Used for Attendance Equivalence. The template you provided uses 11 meetings.</small>
                 </div>
+                <?php if (!empty($gradeColumns)): ?>
+                    <datalist id="gradeCategoryList">
+                        <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
+                            <option value="<?php echo htmlspecialchars($categoryLabel); ?>"></option>
+                        <?php endforeach; ?>
+                    </datalist>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-3">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th style="min-width: 220px;">Column</th>
+                                    <th style="min-width: 190px;">Category / Component</th>
+                                    <th style="width: 120px;">Max Score</th>
+                                    <th style="width: 140px;">Weight %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($gradeColumns as $column): ?>
+                                    <?php $columnId = (int) $column['grade_column_id']; ?>
+                                    <tr>
+                                        <td>
+                                            <input
+                                                type="text"
+                                                name="columns[<?php echo $columnId; ?>][label]"
+                                                class="form-control form-control-sm"
+                                                maxlength="160"
+                                                value="<?php echo htmlspecialchars($column['label']); ?>"
+                                                required>
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="text"
+                                                name="columns[<?php echo $columnId; ?>][group_label]"
+                                                class="form-control form-control-sm"
+                                                maxlength="120"
+                                                list="gradeCategoryList"
+                                                value="<?php echo htmlspecialchars($column['group_label']); ?>"
+                                                required>
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                name="columns[<?php echo $columnId; ?>][max_score]"
+                                                class="form-control form-control-sm"
+                                                min="1"
+                                                step="0.01"
+                                                value="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
+                                                required>
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                name="columns[<?php echo $columnId; ?>][weight_percent]"
+                                                class="form-control form-control-sm"
+                                                min="1"
+                                                step="0.01"
+                                                value="<?php echo htmlspecialchars((string) $column['weight_percent']); ?>"
+                                                required>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
                 <div class="alert alert-info mb-0">
                     Attendance automatically uses the remaining percentage after active score columns. With no score columns, attendance is 100%.
                 </div>
@@ -1396,13 +1556,40 @@ $('.score-input').on('input', function() {
     refreshGradeRow($(this).closest('.grade-row'));
 });
 
+function syncCategoryMode(prefix) {
+    const mode = $('#' + prefix + 'ColumnGroupMode').val();
+    const $newInput = $('#' + prefix + 'ColumnGroupNew');
+    const useNew = mode === 'new';
+    $newInput.toggleClass('d-none', !useNew).prop('required', useNew);
+    if (!useNew) {
+        $newInput.val('');
+    }
+}
+
+$('#addColumnGroupMode, #editColumnGroupMode').on('change', function() {
+    syncCategoryMode(this.id.indexOf('edit') === 0 ? 'edit' : 'add');
+});
+
 $('.edit-column-btn').on('click', function() {
+    const groupLabel = String($(this).data('group-label') || '');
     $('#editColumnId').val($(this).data('column-id'));
     $('#editColumnLabel').val($(this).data('label'));
-    $('#editColumnGroupLabel').val($(this).data('group-label'));
     $('#editColumnMaxScore').val($(this).data('max-score'));
     $('#editColumnWeightPercent').val($(this).data('weight-percent'));
+
+    if ($('#editColumnGroupSelect option').filter(function() { return this.value === groupLabel; }).length) {
+        $('#editColumnGroupMode').val('existing');
+        $('#editColumnGroupSelect').val(groupLabel);
+        $('#editColumnGroupNew').val('');
+    } else {
+        $('#editColumnGroupMode').val('new');
+        $('#editColumnGroupNew').val(groupLabel);
+    }
+    syncCategoryMode('edit');
 });
+
+syncCategoryMode('add');
+syncCategoryMode('edit');
 
 function refreshSelectedColumnControls() {
     const checkedCount = $('.grade-column-checkbox:checked').length;
