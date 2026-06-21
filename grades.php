@@ -118,6 +118,83 @@ function selectedGradeGroupLabel(array $source, $default = 'Additional Requireme
     return $fallback !== '' ? $fallback : $default;
 }
 
+function gradeTableExists(PDO $conn, $tableName) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+        ");
+        $stmt->execute([$tableName]);
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function gradeCleanNamePart($value) {
+    $value = trim(preg_replace('/\s+/', ' ', (string) ($value ?? '')));
+    return strtoupper($value) === 'N/A' ? '' : $value;
+}
+
+function gradeMiddleInitial($middleName) {
+    $middleName = gradeCleanNamePart($middleName);
+    return $middleName !== '' ? strtoupper(substr($middleName, 0, 1)) . '.' : '';
+}
+
+function gradeFormatNameParts($lastName, $firstName, $middleName = '', $extensionName = '') {
+    $lastName = gradeCleanNamePart($lastName);
+    $firstName = gradeCleanNamePart($firstName);
+    $middleInitial = gradeMiddleInitial($middleName);
+    $extensionName = gradeCleanNamePart($extensionName);
+
+    $firstNameParts = array_values(array_filter([$firstName, $middleInitial, $extensionName], fn($part) => $part !== ''));
+    $name = $lastName !== ''
+        ? $lastName . ', ' . implode(' ', $firstNameParts)
+        : implode(' ', $firstNameParts);
+
+    return trim(preg_replace('/\s+/', ' ', $name), ' ,');
+}
+
+function gradeDisplayStudentName(array $student) {
+    $registrationName = gradeFormatNameParts(
+        $student['reg_last_name'] ?? '',
+        $student['reg_first_name'] ?? '',
+        $student['reg_middle_name'] ?? '',
+        $student['reg_extension_name'] ?? ''
+    );
+
+    if ($registrationName !== '') {
+        return $registrationName;
+    }
+
+    $studentName = gradeCleanNamePart($student['student_name'] ?? '');
+    if ($studentName === '') {
+        return 'Unknown Student';
+    }
+
+    if (strpos($studentName, ',') !== false) {
+        [$lastName, $rest] = array_map('trim', explode(',', $studentName, 2));
+        $parts = preg_split('/\s+/', $rest, -1, PREG_SPLIT_NO_EMPTY);
+        $firstName = array_shift($parts) ?: '';
+        $middleName = implode(' ', $parts);
+        $formatted = gradeFormatNameParts($lastName, $firstName, $middleName);
+        return $formatted !== '' ? $formatted : $studentName;
+    }
+
+    $parts = preg_split('/\s+/', $studentName, -1, PREG_SPLIT_NO_EMPTY);
+    if (count($parts) < 2) {
+        return $studentName;
+    }
+
+    $lastName = array_pop($parts);
+    $firstName = array_shift($parts) ?: '';
+    $middleName = implode(' ', $parts);
+    $formatted = gradeFormatNameParts($lastName, $firstName, $middleName);
+    return $formatted !== '' ? $formatted : $studentName;
+}
+
 function seedDefaultGradeColumns(PDO $conn) {
     $defaults = [
         ['bandage_head', 'Top of the head', 'bandaging', 'Bandaging Evaluation', 16, 15, 10],
@@ -393,7 +470,7 @@ if ($userRole === 'coordinator') {
 
     $requestedFolderKey = trim((string) ($_GET['grade_folder'] ?? ''));
     foreach ($gradeFolderOptions as $option) {
-        if ($option['key'] === $requestedFolderKey || ($requestedFolderKey === '' && $selectedGradeFolder === '')) {
+        if ($option['key'] === $requestedFolderKey || ($requestedFolderKey === '' && count($gradeFolderOptions) === 1)) {
             $selectedGradeFacilitatorId = $option['facilitator_id'];
             $selectedGradeFolder = $option['folder'];
             $selectedGradeFolderLabel = $option['label'];
@@ -401,22 +478,6 @@ if ($userRole === 'coordinator') {
         }
     }
 } else {
-    if ($currentProgram === 'ROTC') {
-        $rotcCondition = rotcStudentSqlCondition('s');
-        $stmt = $conn->prepare("
-            SELECT COUNT(*) AS student_count
-            FROM tbl_student s
-            WHERE {$rotcCondition}
-        ");
-        $stmt->execute();
-        $gradeFolderOptions[] = [
-            'key' => 'rotc_all',
-            'facilitator_id' => $userId,
-            'folder' => '__rotc_all__',
-            'label' => 'All ROTC Students',
-            'student_count' => (int) $stmt->fetchColumn(),
-        ];
-    } else {
     $stmt = $conn->prepare("
         SELECT ads.course_section, COUNT(s.tbl_student_id) AS student_count
         FROM tbl_admin_sections ads
@@ -437,11 +498,27 @@ if ($userRole === 'coordinator') {
             'student_count' => (int) $row['student_count'],
         ];
     }
+
+    if ($currentProgram === 'ROTC' && empty($gradeFolderOptions)) {
+        $rotcCondition = rotcStudentSqlCondition('s');
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS student_count
+            FROM tbl_student s
+            WHERE {$rotcCondition}
+        ");
+        $stmt->execute();
+        $gradeFolderOptions[] = [
+            'key' => 'rotc_all',
+            'facilitator_id' => $userId,
+            'folder' => '__rotc_all__',
+            'label' => 'All ROTC Students',
+            'student_count' => (int) $stmt->fetchColumn(),
+        ];
     }
 
     $requestedFolderKey = trim((string) ($_GET['grade_folder'] ?? ''));
     foreach ($gradeFolderOptions as $option) {
-        if ($option['key'] === $requestedFolderKey || ($requestedFolderKey === '' && $selectedGradeFolder === '')) {
+        if ($option['key'] === $requestedFolderKey || ($requestedFolderKey === '' && count($gradeFolderOptions) === 1)) {
             $selectedGradeFacilitatorId = $userId;
             $selectedGradeFolder = $option['folder'];
             $selectedGradeFolderLabel = $option['label'];
@@ -458,29 +535,64 @@ $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
+$hasPublicRegistrationTable = gradeTableExists($conn, 'tbl_public_student_registrations');
+$registrationSelectSql = $hasPublicRegistrationTable ? "
+        r.last_name AS reg_last_name,
+        r.first_name AS reg_first_name,
+        r.middle_name AS reg_middle_name,
+        r.extension_name AS reg_extension_name,
+" : "
+        NULL AS reg_last_name,
+        NULL AS reg_first_name,
+        NULL AS reg_middle_name,
+        NULL AS reg_extension_name,
+";
+$registrationJoinSql = $hasPublicRegistrationTable ? "
+        LEFT JOIN (
+            SELECT student_number, MAX(registration_id) AS latest_registration_id
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+              AND student_number IS NOT NULL
+              AND student_number <> ''
+            GROUP BY student_number
+        ) latest_reg ON latest_reg.student_number = s.student_number
+        LEFT JOIN tbl_public_student_registrations r ON r.registration_id = latest_reg.latest_registration_id
+" : "";
+$studentOrderSql = $hasPublicRegistrationTable
+    ? "ORDER BY COALESCE(NULLIF(r.last_name, ''), s.student_name) ASC, COALESCE(NULLIF(r.first_name, ''), '') ASC, s.student_name ASC"
+    : "ORDER BY s.student_name ASC";
 if ($selectedGradeFolder === '__rotc_all__' && $currentProgram === 'ROTC') {
     $rotcCondition = rotcStudentSqlCondition('s');
     $studentSql = "
-        SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'ROTC') AS facilitator_name
+        SELECT s.*,
+               {$registrationSelectSql}
+               COALESCE(NULLIF(u.full_name, ''), u.username, 'ROTC') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
+        {$registrationJoinSql}
         WHERE {$rotcCondition}
-        ORDER BY s.student_name ASC
+        {$studentOrderSql}
     ";
 } elseif ($selectedGradeFolder !== '' && $selectedGradeFacilitatorId) {
     $studentSql = "
-        SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'Pending Facilitator Assignment') AS facilitator_name
+        SELECT s.*,
+               {$registrationSelectSql}
+               COALESCE(NULLIF(u.full_name, ''), u.username, 'Pending Facilitator Assignment') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
+        {$registrationJoinSql}
         WHERE s.created_by = ? AND s.course_section = ?
-        ORDER BY s.student_name ASC
+        {$studentOrderSql}
     ";
     $studentParams = [$selectedGradeFacilitatorId, $selectedGradeFolder];
 } else {
     $studentSql = "
-        SELECT s.*, COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name
+        SELECT s.*,
+               {$registrationSelectSql}
+               COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
+        {$registrationJoinSql}
         WHERE 1 = 0
     ";
 }
@@ -1040,6 +1152,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <?php if (empty($gradeFolderOptions)): ?>
                                         <option value="">No assigned folders</option>
                                     <?php else: ?>
+                                        <?php if ($selectedGradeFolder === '' && count($gradeFolderOptions) > 1): ?>
+                                            <option value="" selected disabled>Choose a folder for grading</option>
+                                        <?php endif; ?>
                                         <?php foreach ($gradeFolderOptions as $option): ?>
                                             <?php
                                                 $isSelected = $option['folder'] === $selectedGradeFolder
@@ -1055,6 +1170,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <div class="col-lg-5 col-md-4">
                                 <div class="text-muted small">Current class record is filtered by folder.</div>
                                 <strong><?php echo htmlspecialchars($selectedGradeFolderLabel); ?></strong>
+                                <?php if ($selectedGradeFolder === '' && count($gradeFolderOptions) > 1): ?>
+                                    <div class="small text-danger">Select one folder first so students do not get mixed.</div>
+                                <?php endif; ?>
                             </div>
                         </form>
                     </div>
@@ -1223,6 +1341,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                         <?php foreach ($students as $student): ?>
                                             <?php
                                             $studentId = (int) $student['tbl_student_id'];
+                                            $studentDisplayName = gradeDisplayStudentName($student);
                                             $attendanceCount = min($totalMeetings, $attendanceCounts[$studentId] ?? 0);
                                             $summary = computeStudentGradeSummary(
                                                 $gradeColumns,
@@ -1235,7 +1354,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             ?>
                                             <tr class="grade-row" data-attendance-count="<?php echo (int) $attendanceCount; ?>">
                                                 <td class="sticky-name">
-                                                    <strong><?php echo htmlspecialchars($student['student_name']); ?></strong>
+                                                    <strong><?php echo htmlspecialchars($studentDisplayName); ?></strong>
                                                     <?php if (!empty($student['student_number'])): ?>
                                                         <span class="small-label"><?php echo htmlspecialchars($student['student_number']); ?></span>
                                                     <?php endif; ?>
