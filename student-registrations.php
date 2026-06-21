@@ -509,6 +509,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    <?php $detailsModalsHtml = ''; ?>
                                     <?php foreach ($registrations as $row): ?>
                                         <?php
                                             $registrationId = (int) $row['registration_id'];
@@ -568,7 +569,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                     <span class="badge badge-warning">Email not sent</span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td><?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['created_at']))); ?></td>
+                                            <td data-order="<?php echo (int) strtotime($row['created_at']); ?>"><?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['created_at']))); ?></td>
                                             <td>
                                                 <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailsModal<?php echo $registrationId; ?>">
                                                     <i class="fas fa-eye"></i>
@@ -585,6 +586,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             </td>
                                         </tr>
 
+                                        <?php ob_start(); ?>
                                         <div class="modal fade" id="detailsModal<?php echo $registrationId; ?>" tabindex="-1">
                                             <div class="modal-dialog modal-lg">
                                                 <div class="modal-content">
@@ -701,10 +703,12 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 </div>
                                             </div>
                                         </div>
+                                        <?php $detailsModalsHtml .= ob_get_clean(); ?>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
                         </div>
+                        <?php echo $detailsModalsHtml; ?>
                     </div>
                 </div>
             </div>
@@ -800,7 +804,19 @@ foreach ($publicForms as $formRow) {
         const registrationsTable = $('#registrationsTable').DataTable({
             responsive: true,
             order: [[10, 'desc']],
-            pageLength: 25
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+            pagingType: 'simple_numbers',
+            language: {
+                lengthMenu: 'Show _MENU_ submissions',
+                info: 'Showing _START_ to _END_ of _TOTAL_ submissions',
+                infoEmpty: 'Showing 0 submissions',
+                infoFiltered: '(filtered from _MAX_ total submissions)',
+                paginate: {
+                    previous: 'Previous',
+                    next: 'Next'
+                }
+            }
         });
 
         function escapeRegex(value) {

@@ -101,7 +101,7 @@ date_default_timezone_set('Asia/Manila');
                                 <tbody>
                                     <?php foreach ($systemLogs as $log): ?>
                                         <tr>
-                                            <td><?php echo date('M d, Y h:i A', strtotime($log['created_at'])); ?></td>
+                                            <td data-order="<?php echo (int) strtotime($log['created_at']); ?>"><?php echo date('M d, Y h:i A', strtotime($log['created_at'])); ?></td>
                                             <td><?php echo htmlspecialchars($log['username'] ?: 'System'); ?></td>
                                             <td><span class="badge badge-secondary"><?php echo htmlspecialchars($log['role'] ?: 'system'); ?></span></td>
                                             <td><code><?php echo htmlspecialchars($log['action']); ?></code></td>
@@ -136,7 +136,20 @@ $(function() {
         info: true,
         autoWidth: false,
         responsive: true,
-        order: [[0, 'desc']]
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        pagingType: 'simple_numbers',
+        order: [[0, 'desc']],
+        language: {
+            lengthMenu: 'Show _MENU_ logs',
+            info: 'Showing _START_ to _END_ of _TOTAL_ logs',
+            infoEmpty: 'Showing 0 logs',
+            infoFiltered: '(filtered from _MAX_ total logs)',
+            paginate: {
+                previous: 'Previous',
+                next: 'Next'
+            }
+        }
     });
 });
 </script>

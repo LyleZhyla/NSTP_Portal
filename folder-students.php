@@ -795,7 +795,19 @@ $(function() {
             autoWidth: false,
             responsive: false,
             pageLength: 25,
-            order: [[1, 'asc']]
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+            pagingType: 'simple_numbers',
+            order: [[1, 'asc']],
+            language: {
+                lengthMenu: 'Show _MENU_ students',
+                info: 'Showing _START_ to _END_ of _TOTAL_ students',
+                infoEmpty: 'Showing 0 students',
+                infoFiltered: '(filtered from _MAX_ total students)',
+                paginate: {
+                    previous: 'Previous',
+                    next: 'Next'
+                }
+            }
         })
         : null;
 
