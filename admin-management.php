@@ -13,6 +13,7 @@ if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
 }
 $isSuperAdmin = $currentUser['role'] === 'super_admin';
 $currentProgram = normalizeProgram($currentUser['program'] ?? null);
+$managementPageTitle = $isSuperAdmin ? 'User Management' : 'Facilitator Management';
 syncSectionFoldersFromExisting($conn);
 
 if ($isSuperAdmin) {
@@ -55,7 +56,7 @@ date_default_timezone_set('Asia/Manila');
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>User Management - TAU-NSTP </title>
+    <title><?php echo htmlspecialchars($managementPageTitle); ?> - TAU-NSTP </title>
       <?php include('./include/theme-loader.php'); ?>
     <!-- 🔥 TAB LOGO - NSTP LOGO 🔥 -->
     <link rel="icon" type="image/png" href="include/logo.png">
@@ -222,13 +223,13 @@ date_default_timezone_set('Asia/Manila');
                 <div class="row mb-2">
                     <div class="col-sm-6">
                         <h1 class="m-0">
-                            <i class="fas fa-users-cog mr-2"></i>User Management
+                            <i class="fas fa-users-cog mr-2"></i><?php echo htmlspecialchars($managementPageTitle); ?>
                         </h1>
                     </div>
                     <div class="col-sm-6">
                         <ol class="breadcrumb float-sm-right">
                             <li class="breadcrumb-item"><a href="index.php">Home</a></li>
-                            <li class="breadcrumb-item active">User Management</li>
+                            <li class="breadcrumb-item active"><?php echo htmlspecialchars($managementPageTitle); ?></li>
                         </ol>
                     </div>
                 </div>
@@ -474,7 +475,7 @@ date_default_timezone_set('Asia/Manila');
         <div class="modal-content">
             <div class="modal-header bg-primary">
                 <h5 class="modal-title text-white">
-                    <i class="fas fa-user-plus mr-2"></i>Add User
+                    <i class="fas fa-user-plus mr-2"></i><?php echo $isSuperAdmin ? 'Add User' : 'Add Facilitator'; ?>
                 </h5>
                 <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
@@ -584,7 +585,7 @@ date_default_timezone_set('Asia/Manila');
         <div class="modal-content">
             <div class="modal-header bg-info">
                 <h5 class="modal-title text-white">
-                    <i class="fas fa-edit mr-2"></i>Edit User
+                    <i class="fas fa-edit mr-2"></i><?php echo $isSuperAdmin ? 'Edit User' : 'Edit Facilitator'; ?>
                 </h5>
                 <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>

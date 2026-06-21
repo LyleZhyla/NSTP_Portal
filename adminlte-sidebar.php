@@ -168,7 +168,7 @@ if (isset($_SESSION['user_id'])) {
                 <?php endif; ?>
 
                 <!-- Student Management -->
-                <?php if ($isStaffUser): ?>
+                <?php if ($isStaffUser && (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['super_admin', 'coordinator'], true))): ?>
                 <li class="nav-item">
                     <a href="masterlist.php" class="nav-link <?= ($currentPage == 'masterlist.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-user-graduate"></i>
@@ -218,13 +218,31 @@ if (isset($_SESSION['user_id'])) {
                 </li>
                 <?php endif; ?>
 
-                <!-- Admin Management -->
+                <!-- User Management -->
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator'], true)): ?>
-                <li class="nav-item">
-                    <a href="admin-management.php" class="nav-link <?= ($currentPage == 'admin-management.php') ? 'active' : '' ?>">
+                <?php $isUserManagementOpen = in_array($currentPage, ['admin-management.php', 'masterlist.php'], true); ?>
+                <li class="nav-item <?= $isUserManagementOpen ? 'menu-open' : '' ?>">
+                    <a href="#" class="nav-link <?= $isUserManagementOpen ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-user-shield"></i>
-                        <p>User Management</p>
+                        <p>
+                            User Management
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="admin-management.php" class="nav-link <?= ($currentPage == 'admin-management.php') ? 'active' : '' ?>">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Facilitator Management</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="masterlist.php" class="nav-link <?= ($currentPage == 'masterlist.php') ? 'active' : '' ?>">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Student Management</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
                 <?php endif; ?>
 
