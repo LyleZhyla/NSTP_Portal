@@ -175,6 +175,7 @@ if (isset($_SESSION['user_id'])) {
                         <p>Student Management</p>
                     </a>
                 </li>
+                <?php endif; ?>
 
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator'], true)): ?>
                 <li class="nav-item">
@@ -207,7 +208,6 @@ if (isset($_SESSION['user_id'])) {
                         <p>Archive Manager</p>
                     </a>
                 </li>
-                <?php endif; ?>
 
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['coordinator', 'facilitator'], true)): ?>
                 <li class="nav-item">
