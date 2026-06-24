@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'success' => true, 
             'message' => $emailSent
                 ? 'User account created successfully. Login credentials were sent to the email address.'
-                : 'User account created successfully, but the login credentials email was not sent. Please check SMTP settings.',
+                : 'User account created successfully, but the login credentials email was not sent. ' . (getAppMailLastError() ?: 'Please check SMTP settings.'),
             'username' => $username,
             'temporary_password' => $password
         ]);

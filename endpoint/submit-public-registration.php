@@ -910,7 +910,7 @@ try {
         $response['success'] = true;
         $response['message'] = !empty($facilitatorResult['email_sent'])
             ? 'Facilitator account created successfully. Login credentials were sent to the registered email.'
-            : 'Facilitator account created successfully, but the credentials email was not sent. Please contact the administrator.';
+            : 'Facilitator account created successfully, but the credentials email was not sent. ' . (getAppMailLastError() ?: 'Please contact the administrator.');
         echo json_encode($response);
         exit();
     }

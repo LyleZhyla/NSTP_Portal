@@ -16,11 +16,18 @@ function appMailConfig() {
         'from_name' => 'TAU NSTP National Service Training Program',
     ];
 
-    $configPath = __DIR__ . '/../config/mail.php';
-    if (is_file($configPath)) {
-        $config = require $configPath;
-        if (is_array($config)) {
-            $defaults = array_merge($defaults, $config);
+    $configPaths = [
+        __DIR__ . '/../config/mail.local.php',
+        __DIR__ . '/../config/mail.php',
+    ];
+
+    foreach ($configPaths as $configPath) {
+        if (is_file($configPath)) {
+            $config = require $configPath;
+            if (is_array($config)) {
+                $defaults = array_merge($defaults, $config);
+                break;
+            }
         }
     }
 
@@ -108,7 +115,7 @@ function sendAppMail($toEmail, $toName, $subject, $htmlBody, $textBody = '') {
     setAppMailLastError('');
 
     if (!appMailerIsConfigured()) {
-        setAppMailLastError('SMTP settings are incomplete. Check config/mail.local.php or mail environment variables.');
+        setAppMailLastError('SMTP settings are incomplete. Create config/mail.php or config/mail.local.php on this server.');
         error_log('Email not sent because SMTP settings are not configured.');
         return false;
     }
