@@ -62,6 +62,17 @@ function loadImageFromPath($path) {
     }
 }
 
+function loadFirstAvailableImage(array $paths) {
+    foreach ($paths as $path) {
+        $image = loadImageFromPath($path);
+        if ($image) {
+            return $image;
+        }
+    }
+
+    return null;
+}
+
 function firstExistingFile(array $paths) {
     foreach ($paths as $path) {
         if ($path && is_file($path) && is_readable($path)) {
@@ -173,6 +184,26 @@ function qrCardCourseMajorSection(array $student) {
     return qrCardCleanValue($student['original_section'] ?? '') ?: 'N/A';
 }
 
+function studentPicturePaths(array $student) {
+    $formalPicture = trim((string) ($student['formal_picture'] ?? ''));
+    $profilePicture = trim((string) ($student['profile_picture'] ?? ''));
+    $paths = [];
+
+    if ($formalPicture !== '' && str_replace('\\', '/', $formalPicture) !== 'include/logo.png') {
+        $paths[] = $formalPicture;
+    }
+
+    if ($profilePicture !== '') {
+        $paths[] = $profilePicture;
+    }
+
+    if ($formalPicture !== '') {
+        $paths[] = $formalPicture;
+    }
+
+    return array_values(array_unique($paths));
+}
+
 $stmt = $conn->prepare("
     SELECT s.*, u.profile_picture, r.course, r.major, r.year_section, r.formal_picture, r.contact_number,
            r.emergency_name, r.emergency_relationship, r.emergency_contact_number
@@ -240,8 +271,7 @@ imagecopyresampled($canvas, $qrImage, 606, 176, 0, 0, 238, 238, imagesx($qrImage
 imagerectangle($canvas, 606, 176, 844, 414, $line);
 drawText($canvas, 11, 626, 448, $muted, $font, 'QR Code: ' . $student['generated_code']);
 
-$studentPicturePath = $student['formal_picture'] ?: ($student['profile_picture'] ?? null);
-$picture = loadImageFromPath($studentPicturePath);
+$picture = loadFirstAvailableImage(studentPicturePaths($student));
 if ($picture) {
     imagecopyresampled($canvas, $picture, 70, 156, 0, 0, 142, 142, imagesx($picture), imagesy($picture));
     imagerectangle($canvas, 70, 156, 212, 298, $line);
