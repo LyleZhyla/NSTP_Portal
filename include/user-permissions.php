@@ -239,12 +239,12 @@ function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
         return false;
     }
 
-    if (isRotcStudentRecord($conn, $student) && getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41') {
-        return false;
-    }
-
     if (!isFacilitatorScanRestrictionEnabled($conn)) {
         return true;
+    }
+
+    if (isRotcStudentRecord($conn, $student) && getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41') {
+        return false;
     }
 
     if (normalizeProgram($actor['program'] ?? null) === 'ROTC' && isRotcStudentRecord($conn, $student)) {
