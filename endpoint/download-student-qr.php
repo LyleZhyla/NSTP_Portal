@@ -18,12 +18,33 @@ if (!extension_loaded('gd')) {
     exit('QR download requires the GD extension.');
 }
 
+function resolveLocalImagePath($path) {
+    $path = trim((string) $path);
+    if ($path === '' || preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+        return '';
+    }
+
+    $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, ltrim($path, '/\\'));
+    $candidates = [
+        __DIR__ . '/../' . $normalizedPath,
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . $normalizedPath,
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (is_file($candidate) && is_readable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return '';
+}
+
 function loadImageFromPath($path) {
-    if (!$path || !is_file('../' . $path)) {
+    $fullPath = resolveLocalImagePath($path);
+    if ($fullPath === '') {
         return null;
     }
 
-    $fullPath = '../' . $path;
     $info = @getimagesize($fullPath);
     if (!$info) {
         return null;
@@ -153,9 +174,10 @@ function qrCardCourseMajorSection(array $student) {
 }
 
 $stmt = $conn->prepare("
-    SELECT s.*, r.course, r.major, r.year_section, r.formal_picture, r.contact_number,
+    SELECT s.*, u.profile_picture, r.course, r.major, r.year_section, r.formal_picture, r.contact_number,
            r.emergency_name, r.emergency_relationship, r.emergency_contact_number
     FROM tbl_student s
+    LEFT JOIN tbl_users u ON u.user_id = s.user_id
     LEFT JOIN tbl_public_student_registrations r
       ON r.user_id = s.user_id
       OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r.student_number = s.student_number)
@@ -218,7 +240,8 @@ imagecopyresampled($canvas, $qrImage, 606, 176, 0, 0, 238, 238, imagesx($qrImage
 imagerectangle($canvas, 606, 176, 844, 414, $line);
 drawText($canvas, 11, 626, 448, $muted, $font, 'QR Code: ' . $student['generated_code']);
 
-$picture = loadImageFromPath($student['formal_picture'] ?? null);
+$studentPicturePath = $student['formal_picture'] ?: ($student['profile_picture'] ?? null);
+$picture = loadImageFromPath($studentPicturePath);
 if ($picture) {
     imagecopyresampled($canvas, $picture, 70, 156, 0, 0, 142, 142, imagesx($picture), imagesy($picture));
     imagerectangle($canvas, 70, 156, 212, 298, $line);
