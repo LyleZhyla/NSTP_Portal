@@ -15,6 +15,18 @@ function deleteAdminTableExists(PDO $conn, $tableName) {
     return (int) $stmt->fetchColumn() > 0;
 }
 
+function deleteAdminColumnExists(PDO $conn, $tableName, $columnName) {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+    ");
+    $stmt->execute([$tableName, $columnName]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
     header('Content-Type: application/json');
@@ -67,22 +79,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Start transaction
         $conn->beginTransaction();
+
+        if (deleteAdminTableExists($conn, 'tbl_student')) {
+            $unlinkCreatedStudentsStmt = $conn->prepare("UPDATE tbl_student SET created_by = NULL WHERE created_by = ?");
+            $unlinkCreatedStudentsStmt->execute([$user_id]);
+
+            $unlinkStudentAccountStmt = $conn->prepare("UPDATE tbl_student SET user_id = NULL WHERE user_id = ?");
+            $unlinkStudentAccountStmt->execute([$user_id]);
+        }
+
+        if (deleteAdminTableExists($conn, 'tbl_public_student_registrations')) {
+            $unlinkRegistrationStmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = NULL WHERE user_id = ?");
+            $unlinkRegistrationStmt->execute([$user_id]);
+        }
+
+        if (deleteAdminTableExists($conn, 'tbl_admin_sections')) {
+            $unlinkAssignedByStmt = $conn->prepare("UPDATE tbl_admin_sections SET assigned_by = NULL WHERE assigned_by = ?");
+            $unlinkAssignedByStmt->execute([$user_id]);
+        }
+
+        if (deleteAdminTableExists($conn, 'tbl_users') && deleteAdminColumnExists($conn, 'tbl_users', 'created_by')) {
+            $unlinkCreatedUsersStmt = $conn->prepare("UPDATE tbl_users SET created_by = NULL WHERE created_by = ?");
+            $unlinkCreatedUsersStmt->execute([$user_id]);
+        }
+
+        if (deleteAdminTableExists($conn, 'tbl_notifications')) {
+            $deleteNotificationsStmt = $conn->prepare("DELETE FROM tbl_notifications WHERE user_id = ?");
+            $deleteNotificationsStmt->execute([$user_id]);
+        }
+
+        if (deleteAdminTableExists($conn, 'tbl_system_logs') && deleteAdminColumnExists($conn, 'tbl_system_logs', 'user_id')) {
+            $unlinkLogsStmt = $conn->prepare("UPDATE tbl_system_logs SET user_id = NULL WHERE user_id = ?");
+            $unlinkLogsStmt->execute([$user_id]);
+        }
         
         if ($user['role'] === 'student') {
-            if (deleteAdminTableExists($conn, 'tbl_student')) {
-                $unlinkStudentStmt = $conn->prepare("UPDATE tbl_student SET user_id = NULL WHERE user_id = ?");
-                $unlinkStudentStmt->execute([$user_id]);
-            }
-
-            if (deleteAdminTableExists($conn, 'tbl_public_student_registrations')) {
-                $unlinkRegistrationStmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = NULL WHERE user_id = ?");
-                $unlinkRegistrationStmt->execute([$user_id]);
-            }
+            // Student rows are unlinked above so their attendance history can stay intact.
         }
 
         // First, delete related records in tbl_admin_sections
-        $deleteSectionsStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE user_id = ?");
-        $deleteSectionsStmt->execute([$user_id]);
+        if (deleteAdminTableExists($conn, 'tbl_admin_sections')) {
+            $deleteSectionsStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE user_id = ?");
+            $deleteSectionsStmt->execute([$user_id]);
+        }
         
         // Delete profile picture file if exists
         deleteProfilePictureFile($user['profile_picture'] ?? '', dirname(__DIR__));
@@ -102,7 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
     } catch (PDOException $e) {
         // Rollback transaction on error
-        $conn->rollBack();
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
     }
     
