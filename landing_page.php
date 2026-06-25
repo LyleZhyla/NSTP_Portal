@@ -92,6 +92,20 @@ function landingImageUrl($path) {
     return nstpComponentImageUrl(str_replace('\\', '/', (string) $path), __DIR__);
 }
 
+function landingImageIsAvailable($path) {
+    $path = trim(str_replace('\\', '/', (string) $path));
+    if ($path === '') {
+        return false;
+    }
+
+    if (preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+        return true;
+    }
+
+    $cleanPath = explode('?', ltrim($path, '/'), 2)[0];
+    return is_file(__DIR__ . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $cleanPath));
+}
+
 function initials($name) {
     $words = preg_split('/\s+/', trim((string) $name));
     $letters = '';
@@ -578,11 +592,12 @@ foreach ($gallery as $galleryItem) {
     }
 }
 $defaultHeroSlides = array_values(array_unique($defaultHeroSlides));
+$heroSlides = array_values(array_filter(array_unique($heroSlides), 'landingImageIsAvailable'));
 
-if (!$heroImagesConfigured && !$heroSlides) {
-    $heroSlides = array_merge($heroSlides, $defaultHeroSlides);
+if (!$heroSlides) {
+    $heroSlides = $defaultHeroSlides;
 }
-$heroSlides = array_values(array_unique($heroSlides));
+$heroSlides = array_values(array_filter(array_unique($heroSlides), 'landingImageIsAvailable'));
 
 if (!$heroImagesConfigured && !$heroImages && $defaultHeroSlides) {
     $landingSections['hero']['payload']['images'] = array_map(static function ($image) {
