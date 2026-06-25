@@ -59,10 +59,15 @@ if (isset($_POST['remove_picture'])) {
     $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = NULL WHERE user_id = ?");
     
     if ($stmt->execute([$user_id])) {
-        // Remove from session
-        $_SESSION['profile_picture'] = null;
-        unset($_SESSION['profile_picture']);
-        $message = "Profile picture removed successfully!";
+        $registrationPicture = syncRegistrationProfilePicture($conn, $user_id, __DIR__);
+        if ($registrationPicture !== '') {
+            $_SESSION['profile_picture'] = $registrationPicture;
+            $message = "Profile picture reset to your registration picture.";
+        } else {
+            $_SESSION['profile_picture'] = null;
+            unset($_SESSION['profile_picture']);
+            $message = "Profile picture removed successfully!";
+        }
     } else {
         $error = "Error removing profile picture.";
     }
@@ -152,6 +157,13 @@ if (isset($_POST['update_profile'])) {
 $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
+if ($user) {
+    $syncedProfilePicture = syncRegistrationProfilePicture($conn, $user_id, __DIR__);
+    if ($syncedProfilePicture !== '' && ($user['profile_picture'] ?? '') !== $syncedProfilePicture) {
+        $user['profile_picture'] = $syncedProfilePicture;
+        $_SESSION['profile_picture'] = $syncedProfilePicture;
+    }
+}
 $pendingDataEditRequest = $user ? dataEditRequestPendingForUser($conn, $user_id) : null;
 
 $isStudent = $user && ($user['role'] ?? '') === 'student';

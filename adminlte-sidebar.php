@@ -99,6 +99,15 @@ if (isset($_SESSION['user_id'])) {
                         // Update session for future use
                         $_SESSION['profile_picture'] = $dbProfilePic;
                     }
+
+                    if (!$hasProfilePic && function_exists('syncRegistrationProfilePicture')) {
+                        $registrationProfilePic = syncRegistrationProfilePicture($conn, (int) $_SESSION['user_id'], __DIR__);
+                        if ($registrationProfilePic !== '') {
+                            $hasProfilePic = true;
+                            $profilePicPath = $registrationProfilePic;
+                            $_SESSION['profile_picture'] = $registrationProfilePic;
+                        }
+                    }
                 }
                 
                 if ($hasProfilePic): ?>

@@ -49,6 +49,53 @@ function profilePictureUrl($path, $baseDir = '') {
     return $cleanPath . ($query !== '' ? '?' . $query : '');
 }
 
+function registrationProfilePictureForUser(PDO $conn, $userId, $baseDir = '') {
+    $userId = (int) $userId;
+    if ($userId <= 0) {
+        return '';
+    }
+
+    $stmt = $conn->prepare("
+        SELECT r.formal_picture
+        FROM tbl_public_student_registrations r
+        LEFT JOIN tbl_student s ON s.student_number = r.student_number
+        WHERE (r.user_id = ? OR s.user_id = ?)
+          AND r.formal_picture IS NOT NULL
+          AND r.formal_picture <> ''
+          AND r.formal_picture <> 'include/logo.png'
+        ORDER BY r.created_at DESC, r.registration_id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$userId, $userId]);
+    $formalPicture = trim((string) $stmt->fetchColumn());
+
+    return profilePictureExists($formalPicture, $baseDir) ? $formalPicture : '';
+}
+
+function syncRegistrationProfilePicture(PDO $conn, $userId, $baseDir = '') {
+    $userId = (int) $userId;
+    if ($userId <= 0) {
+        return '';
+    }
+
+    $stmt = $conn->prepare("SELECT profile_picture FROM tbl_users WHERE user_id = ? LIMIT 1");
+    $stmt->execute([$userId]);
+    $currentPicture = trim((string) $stmt->fetchColumn());
+    if ($currentPicture !== '' && profilePictureExists($currentPicture, $baseDir)) {
+        return $currentPicture;
+    }
+
+    $registrationPicture = registrationProfilePictureForUser($conn, $userId, $baseDir);
+    if ($registrationPicture === '') {
+        return '';
+    }
+
+    $updateStmt = $conn->prepare("UPDATE tbl_users SET profile_picture = ? WHERE user_id = ?");
+    $updateStmt->execute([$registrationPicture, $userId]);
+
+    return $registrationPicture;
+}
+
 function deleteProfilePictureFile($path, $baseDir = '') {
     $normalizedPath = ltrim(str_replace('\\', '/', trim((string) $path)), '/');
     $allowedPrefixes = ['uploads/profile_pictures/', 'uploads/profiles/'];
