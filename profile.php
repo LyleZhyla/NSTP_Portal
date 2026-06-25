@@ -28,16 +28,17 @@ if (isset($_POST['upload_picture'])) {
             $stmt->execute([$user_id]);
             $old_picture = $stmt->fetchColumn();
 
-            deleteProfilePictureFile($old_picture, __DIR__);
-
             // Update database
             $stmt = $conn->prepare("UPDATE tbl_users SET profile_picture = ? WHERE user_id = ?");
 
             if ($stmt->execute([$target_path, $user_id])) {
+                deleteProfilePictureFile($old_picture, __DIR__);
+
                 // Update session with new profile picture
                 $_SESSION['profile_picture'] = $target_path;
                 $message = "Profile picture updated successfully!";
             } else {
+                deleteProfilePictureFile($target_path, __DIR__);
                 $error = "Error updating database.";
             }
         } else {

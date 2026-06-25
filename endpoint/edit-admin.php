@@ -72,7 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Handle profile picture upload
         $profile_picture_update = '';
-        $params = [];
+        $uploadedPicture = null;
+        $shouldDeleteCurrentPicture = false;
         
         // Get current profile picture
         $stmt = $conn->prepare("SELECT profile_picture FROM tbl_users WHERE user_id = ?");
@@ -82,8 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Check if we need to remove the picture
         if ($remove_picture && $current_picture) {
-            deleteProfilePictureFile($current_picture, dirname(__DIR__));
             $profile_picture_update = ", profile_picture = NULL";
+            $shouldDeleteCurrentPicture = true;
         }
         
         // Handle new profile picture upload
@@ -95,9 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit();
             }
 
-            // Delete old picture if exists
             if ($current_picture && !$remove_picture) {
-                deleteProfilePictureFile($current_picture, dirname(__DIR__));
+                $shouldDeleteCurrentPicture = true;
             }
 
             $profile_picture_update = ", profile_picture = " . $conn->quote($uploadedPicture);
@@ -134,6 +134,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $stmt = $conn->prepare($sql);
             $stmt->execute([$full_name, $username, $email, $role, $program, $user_id]);
+        }
+
+        if ($shouldDeleteCurrentPicture && $current_picture) {
+            deleteProfilePictureFile($current_picture, dirname(__DIR__));
         }
     } else {
         // Password-only update
