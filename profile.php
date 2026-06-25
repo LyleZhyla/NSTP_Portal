@@ -1537,12 +1537,6 @@ if (!empty($user['full_name'])) {
                 }
             });
             
-            // After successful upload, refresh the page to update all images
-            <?php if ($message && strpos($message, 'Profile picture') !== false): ?>
-            setTimeout(function() {
-                location.reload();
-            }, 1500);
-            <?php endif; ?>
         });
     </script>
 </body>
