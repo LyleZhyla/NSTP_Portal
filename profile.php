@@ -201,7 +201,7 @@ function studentAttendanceDisplay($status, $timeIn = null) {
 
 if ($isStudent) {
     $stmt = $conn->prepare("
-        SELECT s.*, r.last_name, r.extension_name, r.first_name, r.middle_name, r.place_of_birth,
+        SELECT s.*, r.registration_id, r.last_name, r.extension_name, r.first_name, r.middle_name, r.place_of_birth,
                r.date_of_birth, r.gender, r.religion, r.blood_type, r.contact_number, r.email AS registration_email,
                r.province, r.city_municipality, r.barangay, r.street, r.house_no,
                r.emergency_name, r.emergency_relationship, r.emergency_contact_number, r.emergency_address,
@@ -217,40 +217,25 @@ if ($isStudent) {
     $studentRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
     if ($studentRecord) {
-        $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_attendance WHERE tbl_student_id = ?");
-        $stmt->execute([$studentRecord['tbl_student_id']]);
-        $studentAttendanceCount = (int) $stmt->fetchColumn();
+        if (isset($_POST['submit_registration_edit_request'])) {
+            try {
+                submitRegistrationDataEditRequest($conn, $user, $studentRecord, $_POST['registration'] ?? [], $_POST['registration_request_reason'] ?? '');
+                $message = "Your registration details edit request was sent to the super admin for review.";
+                $pendingDataEditRequest = dataEditRequestPendingForUser($conn, $user_id);
+            } catch (Throwable $registrationRequestError) {
+                $error = $registrationRequestError->getMessage();
+            }
+        }
 
-        $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? ORDER BY time_in DESC LIMIT 1");
-        $stmt->execute([$studentRecord['tbl_student_id']]);
-        $studentLatestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-
-        $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? AND DATE(time_in) = CURDATE() ORDER BY time_in DESC LIMIT 1");
-        $stmt->execute([$studentRecord['tbl_student_id']]);
-        $studentTodayAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $summaryCounts = studentAttendanceHistoricalSummary($conn, $studentRecord);
+        $studentAttendanceCount = (int) ($summaryCounts['total'] ?? 0);
+        $studentLatestAttendance = studentAttendanceTimeline($conn, $studentRecord, 1)[0] ?? null;
+        $studentTodayAttendance = studentAttendanceTimeline($conn, $studentRecord, 1, date('Y-m-d'))[0] ?? null;
         $studentAttendanceDayActive = hasAttendanceForStudentScopeOnDate($conn, $studentRecord);
 
-        $stmt = $conn->prepare("
-            SELECT *
-            FROM tbl_attendance
-            WHERE tbl_student_id = ?
-            ORDER BY time_in DESC
-            LIMIT 30
-        ");
-        $stmt->execute([$studentRecord['tbl_student_id']]);
-        $studentAttendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $stmt = $conn->prepare("
-            SELECT
-                SUM(CASE WHEN status LIKE 'Late%' THEN 1 ELSE 0 END) AS late_count,
-                SUM(CASE WHEN status IS NULL OR status = '' OR status LIKE 'On Time%' THEN 1 ELSE 0 END) AS present_count
-            FROM tbl_attendance
-            WHERE tbl_student_id = ?
-        ");
-        $stmt->execute([$studentRecord['tbl_student_id']]);
-        $summaryCounts = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        $studentAttendanceSummary['late'] = (int) ($summaryCounts['late_count'] ?? 0);
-        $studentAttendanceSummary['present'] = (int) ($summaryCounts['present_count'] ?? 0);
+        $studentAttendanceRecords = studentAttendanceTimeline($conn, $studentRecord, 30);
+        $studentAttendanceSummary['late'] = (int) ($summaryCounts['late'] ?? 0);
+        $studentAttendanceSummary['present'] = (int) ($summaryCounts['present'] ?? 0);
         $studentAttendanceSummary['absent_today'] = (!$studentTodayAttendance && $studentAttendanceDayActive) ? 1 : 0;
 
         $studentAddress = implode(', ', array_filter([
@@ -320,16 +305,12 @@ if ($isStudent) {
 
 // Get recent activity
 if ($isStudent && $studentRecord) {
-    $activity_sql = "
-        SELECT a.*, s.student_name, s.course_section
-        FROM tbl_attendance a
-        JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-        WHERE s.user_id = ?
-        ORDER BY a.time_in DESC
-        LIMIT 10
-    ";
-    $activity_stmt = $conn->prepare($activity_sql);
-    $activity_stmt->execute([$user_id]);
+    $activities = studentAttendanceTimeline($conn, $studentRecord, 10);
+    foreach ($activities as &$activity) {
+        $activity['student_name'] = $studentRecord['student_name'] ?? ($user['full_name'] ?? '');
+        $activity['course_section'] = $studentRecord['course_section'] ?? '';
+    }
+    unset($activity);
 } else {
     $activity_sql = "
         SELECT a.*, s.student_name, s.course_section
@@ -341,8 +322,8 @@ if ($isStudent && $studentRecord) {
     ";
     $activity_stmt = $conn->prepare($activity_sql);
     $activity_stmt->execute([$user_id]);
+    $activities = $activity_stmt->fetchAll();
 }
-$activities = $activity_stmt->fetchAll();
 
 // Get initials for profile
 $initials = '';
@@ -1208,6 +1189,9 @@ if (!empty($user['full_name'])) {
                                                             <span class="badge badge-<?php echo $attendanceDisplay['badge']; ?>">
                                                                 <?php echo htmlspecialchars($attendanceDisplay['status']); ?>
                                                             </span>
+                                                            <?php if (!empty($attendanceRecord['is_archived'])): ?>
+                                                                <span class="badge badge-secondary ml-1">Archived</span>
+                                                            <?php endif; ?>
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>
@@ -1460,6 +1444,9 @@ if (!empty($user['full_name'])) {
                                                                     <span class="badge badge-<?php echo $activityDisplay['badge']; ?>">
                                                                         <?php echo htmlspecialchars($activityDisplay['status']); ?>
                                                                     </span>
+                                                                    <?php if (!empty($activity['is_archived'])): ?>
+                                                                        <span class="badge badge-secondary ml-1">Archived</span>
+                                                                    <?php endif; ?>
                                                                 </div>
                                                                 <div class="activity-body">
                                                                     <div>

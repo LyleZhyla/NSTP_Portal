@@ -170,6 +170,95 @@ function getAttendanceStatusForStudent(PDO $conn, array $student, $timeIn = null
         : 'On Time - ' . $periodLabel;
 }
 
+function attendanceArchiveTableExists(PDO $conn) {
+    static $exists = null;
+
+    if ($exists !== null) {
+        return $exists;
+    }
+
+    try {
+        $stmt = $conn->query("SHOW TABLES LIKE 'tbl_attendance_archive'");
+        $exists = (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        $exists = false;
+    }
+
+    return $exists;
+}
+
+function studentAttendanceTimeline(PDO $conn, array $student, $limit = null, $date = null) {
+    $studentId = (int) ($student['tbl_student_id'] ?? 0);
+    if ($studentId <= 0) {
+        return [];
+    }
+
+    $activeWhere = 'tbl_student_id = ?';
+    $archiveWhere = 'tbl_student_id = ?';
+    $activeParams = [$studentId];
+    $archiveParams = [$studentId];
+
+    if ($date !== null) {
+        $attendanceDate = date('Y-m-d', strtotime($date));
+        $activeWhere .= ' AND DATE(time_in) = ?';
+        $archiveWhere .= ' AND DATE(time_in) = ?';
+        $activeParams[] = $attendanceDate;
+        $archiveParams[] = $attendanceDate;
+    }
+
+    $queries = [
+        "SELECT tbl_attendance_id, tbl_student_id, time_in, status, NULL AS archived_date, 0 AS is_archived
+         FROM tbl_attendance
+         WHERE {$activeWhere}",
+    ];
+    $params = $activeParams;
+
+    if (attendanceArchiveTableExists($conn)) {
+        $queries[] = "SELECT tbl_attendance_id, tbl_student_id, time_in, NULL AS status, archived_date, 1 AS is_archived
+                      FROM tbl_attendance_archive
+                      WHERE {$archiveWhere}";
+        $params = array_merge($params, $archiveParams);
+    }
+
+    $sql = implode(' UNION ALL ', $queries) . ' ORDER BY time_in DESC';
+    if ($limit !== null) {
+        $sql .= ' LIMIT ' . max(1, (int) $limit);
+    }
+
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+    $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($records as &$record) {
+        if (trim((string) ($record['status'] ?? '')) === '') {
+            $record['status'] = getAttendanceStatusForStudent($conn, $student, $record['time_in'] ?? null);
+        }
+    }
+    unset($record);
+
+    return $records;
+}
+
+function studentAttendanceHistoricalSummary(PDO $conn, array $student) {
+    $summary = [
+        'total' => 0,
+        'present' => 0,
+        'late' => 0,
+    ];
+
+    foreach (studentAttendanceTimeline($conn, $student) as $record) {
+        $summary['total']++;
+        $status = trim((string) ($record['status'] ?? ''));
+        if (stripos($status, 'Late') === 0) {
+            $summary['late']++;
+        } elseif (stripos($status, 'Absent') !== 0) {
+            $summary['present']++;
+        }
+    }
+
+    return $summary;
+}
+
 function hasAttendanceForStudentScopeOnDate(PDO $conn, array $student, $date = null) {
     $courseSection = trim((string) ($student['course_section'] ?? ''));
     if ($courseSection === '') {

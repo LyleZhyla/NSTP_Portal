@@ -76,36 +76,15 @@ function dashboardAttendanceDisplay($status, $timeIn = null) {
 }
 
 if ($student) {
-    $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? ORDER BY time_in DESC LIMIT 1");
-    $stmt->execute([$student['tbl_student_id']]);
-    $latestAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $latestAttendance = studentAttendanceTimeline($conn, $student, 1)[0] ?? null;
 
-    $stmt = $conn->prepare("SELECT * FROM tbl_attendance WHERE tbl_student_id = ? AND DATE(time_in) = CURDATE() ORDER BY time_in DESC LIMIT 1");
-    $stmt->execute([$student['tbl_student_id']]);
-    $todayAttendance = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $todayAttendance = studentAttendanceTimeline($conn, $student, 1, date('Y-m-d'))[0] ?? null;
     $attendanceDayActive = hasAttendanceForStudentScopeOnDate($conn, $student);
 
-    $stmt = $conn->prepare("
-        SELECT *
-        FROM tbl_attendance
-        WHERE tbl_student_id = ?
-        ORDER BY time_in DESC
-        LIMIT 30
-    ");
-    $stmt->execute([$student['tbl_student_id']]);
-    $attendanceRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $stmt = $conn->prepare("
-        SELECT
-            SUM(CASE WHEN status LIKE 'Late%' THEN 1 ELSE 0 END) AS late_count,
-            SUM(CASE WHEN status IS NULL OR status = '' OR status LIKE 'On Time%' THEN 1 ELSE 0 END) AS present_count
-        FROM tbl_attendance
-        WHERE tbl_student_id = ?
-    ");
-    $stmt->execute([$student['tbl_student_id']]);
-    $summaryCounts = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $attendanceSummary['late'] = (int) ($summaryCounts['late_count'] ?? 0);
-    $attendanceSummary['present'] = (int) ($summaryCounts['present_count'] ?? 0);
+    $attendanceRecords = studentAttendanceTimeline($conn, $student, 30);
+    $summaryCounts = studentAttendanceHistoricalSummary($conn, $student);
+    $attendanceSummary['late'] = (int) ($summaryCounts['late'] ?? 0);
+    $attendanceSummary['present'] = (int) ($summaryCounts['present'] ?? 0);
     $attendanceSummary['absent_today'] = (!$todayAttendance && $attendanceDayActive) ? 1 : 0;
 }
 ?>
@@ -344,6 +323,9 @@ if ($student) {
                                                     <span class="badge badge-<?php echo $attendanceDisplay['badge']; ?>">
                                                         <?php echo htmlspecialchars($attendanceDisplay['status']); ?>
                                                     </span>
+                                                    <?php if (!empty($attendanceRecord['is_archived'])): ?>
+                                                        <span class="badge badge-secondary ml-1">Archived</span>
+                                                    <?php endif; ?>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
