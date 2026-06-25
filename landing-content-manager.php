@@ -17,39 +17,7 @@ $message = '';
 $messageType = 'success';
 
 function landingUploadPhoto($fieldName) {
-    if (empty($_FILES[$fieldName]) || $_FILES[$fieldName]['error'] !== UPLOAD_ERR_OK) {
-        return null;
-    }
-
-    $allowedTypes = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/gif' => 'gif',
-        'image/webp' => 'webp',
-    ];
-
-    $mimeType = mime_content_type($_FILES[$fieldName]['tmp_name']);
-    if (!isset($allowedTypes[$mimeType])) {
-        throw new RuntimeException('Only JPG, PNG, GIF, and WEBP photos are allowed.');
-    }
-
-    if ($_FILES[$fieldName]['size'] > 3 * 1024 * 1024) {
-        throw new RuntimeException('Photo must be 3MB or smaller.');
-    }
-
-    $uploadDir = 'uploads/landing_staff/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
-    }
-
-    $fileName = 'landing_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $allowedTypes[$mimeType];
-    $targetPath = $uploadDir . $fileName;
-
-    if (!move_uploaded_file($_FILES[$fieldName]['tmp_name'], $targetPath)) {
-        throw new RuntimeException('Could not upload the photo.');
-    }
-
-    return $targetPath;
+    return uploadLandingStaffPhoto($fieldName, __DIR__);
 }
 
 function cleanLandingText($value, $maxLength) {

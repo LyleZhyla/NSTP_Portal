@@ -20,17 +20,43 @@ if (!extension_loaded('gd')) {
 
 function resolveLocalImagePath($path) {
     $path = trim((string) $path);
-    if ($path === '' || preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+    if ($path === '' || strpos($path, 'data:') === 0) {
         return '';
     }
 
-    $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, ltrim($path, '/\\'));
-    $candidates = [
-        __DIR__ . '/../' . $normalizedPath,
-        dirname(__DIR__) . DIRECTORY_SEPARATOR . $normalizedPath,
-    ];
+    $path = preg_replace('/[?#].*$/', '', $path);
+    if (preg_match('/^(https?:)?\/\//i', $path)) {
+        $urlPath = parse_url($path, PHP_URL_PATH);
+        $path = is_string($urlPath) ? urldecode($urlPath) : '';
+    }
 
-    foreach ($candidates as $candidate) {
+    $path = str_replace('\\', '/', trim($path));
+    $projectRoot = dirname(__DIR__);
+    $candidates = [];
+
+    if ($path !== '' && preg_match('/^[A-Za-z]:\//', $path)) {
+        $candidates[] = str_replace('/', DIRECTORY_SEPARATOR, $path);
+    } elseif ($path !== '' && strpos($path, '/') === 0) {
+        $candidates[] = str_replace('/', DIRECTORY_SEPARATOR, $path);
+    }
+
+    $relativePaths = [];
+    $relativePaths[] = ltrim($path, '/');
+
+    foreach (['uploads/', 'include/'] as $knownPrefix) {
+        $position = strpos($path, $knownPrefix);
+        if ($position !== false) {
+            $relativePaths[] = substr($path, $position);
+        }
+    }
+
+    foreach (array_unique(array_filter($relativePaths)) as $relativePath) {
+        $normalizedPath = str_replace('/', DIRECTORY_SEPARATOR, ltrim($relativePath, '/'));
+        $candidates[] = $projectRoot . DIRECTORY_SEPARATOR . $normalizedPath;
+        $candidates[] = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . $normalizedPath;
+    }
+
+    foreach (array_unique($candidates) as $candidate) {
         if (is_file($candidate) && is_readable($candidate)) {
             return $candidate;
         }
@@ -57,6 +83,8 @@ function loadImageFromPath($path) {
             return @imagecreatefrompng($fullPath);
         case IMAGETYPE_WEBP:
             return function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($fullPath) : null;
+        case IMAGETYPE_GIF:
+            return @imagecreatefromgif($fullPath);
         default:
             return null;
     }
@@ -189,6 +217,10 @@ function studentPicturePaths(array $student) {
     $profilePicture = trim((string) ($student['profile_picture'] ?? ''));
     $paths = [];
 
+    if ($profilePicture !== '' && str_replace('\\', '/', $profilePicture) !== 'include/logo.png') {
+        $paths[] = $profilePicture;
+    }
+
     if ($formalPicture !== '' && str_replace('\\', '/', $formalPicture) !== 'include/logo.png') {
         $paths[] = $formalPicture;
     }
@@ -209,11 +241,23 @@ $stmt = $conn->prepare("
            r.emergency_name, r.emergency_relationship, r.emergency_contact_number
     FROM tbl_student s
     LEFT JOIN tbl_users u ON u.user_id = s.user_id
-    LEFT JOIN tbl_public_student_registrations r
-      ON r.user_id = s.user_id
-      OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r.student_number = s.student_number)
+    LEFT JOIN tbl_public_student_registrations r ON r.registration_id = (
+        SELECT r2.registration_id
+        FROM tbl_public_student_registrations r2
+        WHERE r2.user_id = s.user_id
+           OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r2.student_number = s.student_number)
+        ORDER BY
+            CASE
+                WHEN r2.formal_picture IS NOT NULL
+                 AND r2.formal_picture <> ''
+                 AND r2.formal_picture <> 'include/logo.png'
+                THEN 0
+                ELSE 1
+            END,
+            r2.created_at DESC
+        LIMIT 1
+    )
     WHERE s.user_id = ?
-    ORDER BY r.created_at DESC
     LIMIT 1
 ");
 $stmt->execute([$_SESSION['user_id']]);

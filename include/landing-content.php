@@ -340,9 +340,42 @@ function cleanLandingContentText($value, $maxLength) {
     return substr(trim((string) $value), 0, $maxLength);
 }
 
+function landingUploadErrorMessage($errorCode) {
+    $messages = [
+        UPLOAD_ERR_INI_SIZE => 'Image is bigger than the server upload limit.',
+        UPLOAD_ERR_FORM_SIZE => 'Image is bigger than the form upload limit.',
+        UPLOAD_ERR_PARTIAL => 'Image upload was interrupted. Please try again.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Server upload temp folder is missing.',
+        UPLOAD_ERR_CANT_WRITE => 'Server could not write the uploaded image.',
+        UPLOAD_ERR_EXTENSION => 'A server extension blocked the image upload.',
+    ];
+
+    return $messages[$errorCode] ?? 'Image upload failed.';
+}
+
+function landingEnsureUploadDirectory($baseDir, $relativeDir) {
+    $rootDir = $baseDir !== '' ? rtrim($baseDir, '/\\') : dirname(__DIR__);
+    $uploadDir = $rootDir . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, trim($relativeDir, '/\\')) . DIRECTORY_SEPARATOR;
+
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+        throw new RuntimeException('Could not create upload folder: ' . $relativeDir);
+    }
+
+    if (!is_writable($uploadDir)) {
+        throw new RuntimeException('Upload folder is not writable: ' . $relativeDir);
+    }
+
+    return $uploadDir;
+}
+
 function uploadLandingStaffPhoto($fieldName, $baseDir = '') {
-    if (empty($_FILES[$fieldName]) || $_FILES[$fieldName]['error'] !== UPLOAD_ERR_OK) {
+    if (empty($_FILES[$fieldName]) || ($_FILES[$fieldName]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return null;
+    }
+
+    $errorCode = $_FILES[$fieldName]['error'] ?? UPLOAD_ERR_OK;
+    if ($errorCode !== UPLOAD_ERR_OK) {
+        throw new RuntimeException(landingUploadErrorMessage($errorCode));
     }
 
     $allowedTypes = [
@@ -352,7 +385,12 @@ function uploadLandingStaffPhoto($fieldName, $baseDir = '') {
         'image/webp' => 'webp',
     ];
 
-    $mimeType = mime_content_type($_FILES[$fieldName]['tmp_name']);
+    $tmpName = $_FILES[$fieldName]['tmp_name'] ?? '';
+    if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+        throw new RuntimeException('The uploaded photo was not received by the server.');
+    }
+
+    $mimeType = mime_content_type($tmpName);
     if (!isset($allowedTypes[$mimeType])) {
         throw new RuntimeException('Only JPG, PNG, GIF, and WEBP photos are allowed.');
     }
@@ -362,19 +400,16 @@ function uploadLandingStaffPhoto($fieldName, $baseDir = '') {
     }
 
     $relativeDir = 'uploads/landing_staff/';
-    $uploadDir = rtrim($baseDir, '/\\');
-    $uploadDir = $uploadDir !== '' ? $uploadDir . DIRECTORY_SEPARATOR . $relativeDir : $relativeDir;
+    $uploadDir = landingEnsureUploadDirectory($baseDir, $relativeDir);
 
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
-    }
-
-    $fileName = 'landing_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $allowedTypes[$mimeType];
+    $fileName = 'landing_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . $allowedTypes[$mimeType];
     $targetPath = $uploadDir . $fileName;
 
-    if (!move_uploaded_file($_FILES[$fieldName]['tmp_name'], $targetPath)) {
+    if (!move_uploaded_file($tmpName, $targetPath)) {
         throw new RuntimeException('Could not upload the photo.');
     }
+
+    @chmod($targetPath, 0644);
 
     return $relativeDir . $fileName;
 }

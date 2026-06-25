@@ -200,18 +200,25 @@ function uploadLandingSectionImage($file, $index, $baseDir = '') {
         return null;
     }
 
-    if (($file['error'][$index] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
-        throw new RuntimeException('Image upload failed.');
+    $errorCode = $file['error'][$index] ?? UPLOAD_ERR_OK;
+    if ($errorCode !== UPLOAD_ERR_OK) {
+        throw new RuntimeException(landingUploadErrorMessage($errorCode));
     }
 
     $allowedTypes = [
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
         'image/webp' => 'webp',
+        'image/gif' => 'gif',
     ];
-    $mimeType = mime_content_type($file['tmp_name'][$index]);
+    $tmpName = $file['tmp_name'][$index] ?? '';
+    if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+        throw new RuntimeException('The uploaded image was not received by the server.');
+    }
+
+    $mimeType = mime_content_type($tmpName);
     if (!isset($allowedTypes[$mimeType])) {
-        throw new RuntimeException('Image must be JPG, PNG, or WebP.');
+        throw new RuntimeException('Image must be JPG, PNG, GIF, or WebP.');
     }
 
     if (($file['size'][$index] ?? 0) > 4 * 1024 * 1024) {
@@ -219,16 +226,15 @@ function uploadLandingSectionImage($file, $index, $baseDir = '') {
     }
 
     $relativeDir = 'uploads/landing_sections/';
-    $uploadDir = rtrim($baseDir, '/\\') . DIRECTORY_SEPARATOR . $relativeDir;
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
-    }
+    $uploadDir = landingEnsureUploadDirectory($baseDir, $relativeDir);
 
-    $fileName = uniqid('section_', true) . '.' . $allowedTypes[$mimeType];
+    $fileName = 'section_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . $allowedTypes[$mimeType];
     $targetPath = $uploadDir . $fileName;
-    if (!move_uploaded_file($file['tmp_name'][$index], $targetPath)) {
+    if (!move_uploaded_file($tmpName, $targetPath)) {
         throw new RuntimeException('Could not save uploaded image.');
     }
+
+    @chmod($targetPath, 0644);
 
     return $relativeDir . $fileName;
 }
