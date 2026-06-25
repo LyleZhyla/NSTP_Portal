@@ -427,10 +427,18 @@ date_default_timezone_set('Asia/Manila');
                                                     </button>
                                                     <button class="btn btn-sm btn-warning change-password" 
                                                             data-id="<?php echo $admin['user_id']; ?>"
-                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>">
+                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>"
+                                                            title="Change password">
                                                         <i class="fas fa-key"></i>
                                                     </button>
                                                     <?php if ($admin['role'] === 'facilitator'): ?>
+                                                    <button class="btn btn-sm btn-primary send-credentials"
+                                                            data-id="<?php echo $admin['user_id']; ?>"
+                                                            data-name="<?php echo htmlspecialchars($admin['full_name']); ?>"
+                                                            data-email="<?php echo htmlspecialchars($admin['email']); ?>"
+                                                            title="Send login credentials">
+                                                        <i class="fas fa-envelope"></i>
+                                                    </button>
                                                     <?php $hasProgramFolder = !empty($folderPrograms[$admin['program'] ?? '']); ?>
                                                     <button class="btn btn-sm btn-success assign-section" 
                                                             data-id="<?php echo $admin['user_id']; ?>"
@@ -1607,6 +1615,108 @@ $('#changePasswordForm').on('submit', function(e) {
         }
     });
 });     
+
+    // Send new login credentials to an existing facilitator
+    $('.send-credentials').on('click', function() {
+        const button = $(this);
+        const userId = button.data('id');
+        const userName = button.data('name');
+        const userEmail = button.data('email');
+
+        Swal.fire({
+            title: 'Send Login Credentials?',
+            html: `
+                <div class="text-center">
+                    <i class="fas fa-envelope fa-3x text-primary mb-3"></i>
+                    <p>This will create a new temporary password and send it to:</p>
+                    <p class="mb-1"><strong>${escapeHtml(userName)}</strong></p>
+                    <p class="text-muted">${escapeHtml(userEmail)}</p>
+                    <div class="alert alert-warning small mb-0">
+                        Their current password will be replaced.
+                    </div>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: '<i class="fas fa-paper-plane mr-2"></i>Send',
+            cancelButtonText: '<i class="fas fa-times mr-2"></i>Cancel',
+            reverseButtons: true
+        }).then((result) => {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            Swal.fire({
+                title: 'Sending...',
+                html: `
+                    <div class="text-center">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                        <p>Please wait while the credentials are emailed.</p>
+                    </div>
+                `,
+                allowOutsideClick: false,
+                showConfirmButton: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            $.ajax({
+                url: 'endpoint/send-admin-account-email.php',
+                method: 'POST',
+                data: { user_id: userId },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        const temporaryPassword = escapeHtml(response.temporary_password || '');
+                        const username = escapeHtml(response.username || '');
+
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Credentials Sent',
+                            html: `
+                                <div class="text-left">
+                                    <p>${escapeHtml(response.message)}</p>
+                                    <div class="alert alert-success">
+                                        <div class="mb-2">
+                                            <small class="text-muted d-block">Username</small>
+                                            <strong>${username}</strong>
+                                        </div>
+                                        <div>
+                                            <small class="text-muted d-block">Temporary Password</small>
+                                            <div class="input-group mt-1">
+                                                <input type="text" class="form-control font-weight-bold" value="${temporaryPassword}" readonly>
+                                                <div class="input-group-append">
+                                                    <button type="button" class="btn btn-success" id="copySentPassword">
+                                                        <i class="fas fa-copy mr-1"></i>Copy
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">The facilitator should change this password after logging in.</small>
+                                </div>
+                            `,
+                            confirmButtonText: 'OK',
+                            didOpen: function() {
+                                $('#copySentPassword').on('click', function() {
+                                    navigator.clipboard.writeText(response.temporary_password || '');
+                                    $(this).html('<i class="fas fa-check mr-1"></i>Copied');
+                                });
+                            }
+                        });
+                    } else {
+                        Swal.fire('Error', response.message || 'Failed to send credentials.', 'error');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Send credentials error:', error);
+                    console.error('Response:', xhr.responseText);
+                    Swal.fire('Error', 'Failed to send credentials. Please try again.', 'error');
+                }
+            });
+        });
+    });
     
     // Handle delete button click
     $('.delete-admin').on('click', function() {
