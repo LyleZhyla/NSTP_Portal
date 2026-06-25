@@ -4,6 +4,7 @@ session_start();
 require_once 'conn/conn.php';
 require_once 'include/attendance-settings.php';
 require_once 'include/profile-picture-utils.php';
+require_once 'include/data-edit-requests.php';
 
 
 // Check if user is logged in
@@ -104,27 +105,46 @@ if (isset($_POST['update_profile'])) {
     $full_name = trim($_POST['full_name']);
     $email = trim($_POST['email']);
     $username = trim($_POST['username']);
-    
-    $check_sql = "SELECT user_id FROM tbl_users WHERE (username = ? OR email = ?) AND user_id != ?";
-    $check_stmt = $conn->prepare($check_sql);
-    $check_stmt->execute([$username, $email, $user_id]);
-    
-    if ($check_stmt->rowCount() == 0) {
-        $update_sql = "UPDATE tbl_users SET full_name = ?, email = ?, username = ? WHERE user_id = ?";
-        $update_stmt = $conn->prepare($update_sql);
-        
-        if ($update_stmt->execute([$full_name, $email, $username, $user_id])) {
-            $sync_stmt = $conn->prepare("UPDATE tbl_student SET student_name = ? WHERE user_id = ?");
-            $sync_stmt->execute([$full_name, $user_id]);
-            $_SESSION['full_name'] = $full_name;
-            $_SESSION['username'] = $username;
-            $_SESSION['email'] = $email;
-            $message = "Profile updated successfully!";
-        } else {
-            $error = "Error updating profile.";
+
+    $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $currentUserForUpdate = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$currentUserForUpdate) {
+        $error = "User account not found.";
+    } elseif (($currentUserForUpdate['role'] ?? '') !== 'super_admin') {
+        try {
+            submitDataEditRequest($conn, $currentUserForUpdate, [
+                'full_name' => $full_name,
+                'username' => $username,
+                'email' => $email,
+            ], $_POST['request_reason'] ?? '');
+            $message = "Your data edit request was sent to the super admin for review.";
+        } catch (Throwable $requestError) {
+            $error = $requestError->getMessage();
         }
     } else {
-        $error = "Username or email already exists.";
+        $check_sql = "SELECT user_id FROM tbl_users WHERE (username = ? OR email = ?) AND user_id != ?";
+        $check_stmt = $conn->prepare($check_sql);
+        $check_stmt->execute([$username, $email, $user_id]);
+
+        if ($check_stmt->rowCount() == 0) {
+            $update_sql = "UPDATE tbl_users SET full_name = ?, email = ?, username = ? WHERE user_id = ?";
+            $update_stmt = $conn->prepare($update_sql);
+
+            if ($update_stmt->execute([$full_name, $email, $username, $user_id])) {
+                $sync_stmt = $conn->prepare("UPDATE tbl_student SET student_name = ? WHERE user_id = ?");
+                $sync_stmt->execute([$full_name, $user_id]);
+                $_SESSION['full_name'] = $full_name;
+                $_SESSION['username'] = $username;
+                $_SESSION['email'] = $email;
+                $message = "Profile updated successfully!";
+            } else {
+                $error = "Error updating profile.";
+            }
+        } else {
+            $error = "Username or email already exists.";
+        }
     }
 }
 
@@ -132,6 +152,7 @@ if (isset($_POST['update_profile'])) {
 $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
+$pendingDataEditRequest = $user ? dataEditRequestPendingForUser($conn, $user_id) : null;
 
 $isStudent = $user && ($user['role'] ?? '') === 'student';
 $studentRecord = null;
@@ -1257,6 +1278,23 @@ if (!empty($user['full_name'])) {
                                     <div class="tab-content">
                                         <!-- Edit Profile Tab -->
                                         <div class="tab-pane fade show active" id="profile" role="tabpanel">
+                                            <?php if ($pendingDataEditRequest): ?>
+                                                <?php $pendingRequestedData = dataEditRequestDecode($pendingDataEditRequest['requested_data'] ?? ''); ?>
+                                                <div class="alert alert-info">
+                                                    <i class="fas fa-hourglass-half mr-2"></i>
+                                                    You have a pending data edit request submitted on
+                                                    <?php echo date('M d, Y h:i A', strtotime($pendingDataEditRequest['created_at'])); ?>.
+                                                    <div class="small mt-2">
+                                                        Requested:
+                                                        <?php echo htmlspecialchars(($pendingRequestedData['full_name'] ?? '') . ' / ' . ($pendingRequestedData['username'] ?? '') . ' / ' . ($pendingRequestedData['email'] ?? '')); ?>
+                                                    </div>
+                                                </div>
+                                            <?php elseif (($user['role'] ?? '') !== 'super_admin'): ?>
+                                                <div class="alert alert-warning">
+                                                    <i class="fas fa-user-check mr-2"></i>
+                                                    Profile changes are sent to the super admin for approval before they update your account.
+                                                </div>
+                                            <?php endif; ?>
                                             <form action="" method="POST" id="profileForm">
                                                 <div class="form-group">
                                                     <label for="full_name">Full Name</label>
@@ -1297,10 +1335,18 @@ if (!empty($user['full_name'])) {
                                                                value="<?php echo htmlspecialchars($user['email'] ?? ''); ?>" required>
                                                     </div>
                                                 </div>
+
+                                                <?php if (($user['role'] ?? '') !== 'super_admin'): ?>
+                                                <div class="form-group">
+                                                    <label for="request_reason">Reason for Request</label>
+                                                    <textarea class="form-control" id="request_reason" name="request_reason" rows="3" placeholder="Briefly explain why this data needs to be changed."></textarea>
+                                                </div>
+                                                <?php endif; ?>
                                                 
                                                 <div class="mt-4">
-                                                    <button type="submit" name="update_profile" class="btn btn-primary">
-                                                        <i class="fas fa-save mr-2"></i>Save Changes
+                                                    <button type="submit" name="update_profile" class="btn btn-primary" <?php echo $pendingDataEditRequest ? 'disabled' : ''; ?>>
+                                                        <i class="fas <?php echo (($user['role'] ?? '') === 'super_admin') ? 'fa-save' : 'fa-paper-plane'; ?> mr-2"></i>
+                                                        <?php echo (($user['role'] ?? '') === 'super_admin') ? 'Save Changes' : 'Submit Request'; ?>
                                                     </button>
                                                     <button type="reset" class="btn btn-secondary ml-2">
                                                         <i class="fas fa-undo mr-2"></i>Reset

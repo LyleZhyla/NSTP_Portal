@@ -257,6 +257,12 @@ if (isset($_SESSION['user_id'])) {
 
                 <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin'): ?>
                 <li class="nav-item">
+                    <a href="data-edit-requests.php" class="nav-link <?= ($currentPage == 'data-edit-requests.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-user-check"></i>
+                        <p>Data Edit Requests</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a href="system-logs.php" class="nav-link <?= ($currentPage == 'system-logs.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-clipboard-list"></i>
                         <p>System Logs</p>

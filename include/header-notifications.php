@@ -38,7 +38,13 @@ if (isset($_SESSION['user_id'])) {
                 <?php foreach ($headerNotifications as $notification): ?>
                     <?php
                         $notificationType = (string) ($notification['type'] ?? '');
-                        $iconClass = $notificationType === 'late_attendance' ? 'fa-clock text-warning' : 'fa-bullhorn text-info';
+                        if ($notificationType === 'late_attendance') {
+                            $iconClass = 'fa-clock text-warning';
+                        } elseif (strpos($notificationType, 'data_edit_request') === 0) {
+                            $iconClass = 'fa-user-check text-success';
+                        } else {
+                            $iconClass = 'fa-bullhorn text-info';
+                        }
                         $notificationTitle = $notification['title'] ?? 'Notification';
                         $notificationMessage = $notification['message'] ?? '';
                         $notificationTime = date('M d, Y h:i A', strtotime($notification['created_at'] ?? 'now'));
