@@ -85,6 +85,10 @@ function syncRegistrationProfilePicture(PDO $conn, $userId, $baseDir = '') {
         return $currentPicture;
     }
 
+    if ($currentPicture !== '') {
+        return '';
+    }
+
     $registrationPicture = registrationProfilePictureForUser($conn, $userId, $baseDir);
     if ($registrationPicture === '') {
         return '';
