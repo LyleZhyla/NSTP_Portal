@@ -211,12 +211,14 @@ if (isset($_SESSION['user_id'])) {
                 <?php endif; ?>
 
                 <!-- Archive Manager -->
+                <?php if ($isStaffUser): ?>
                 <li class="nav-item">
                     <a href="archive-manager.php" class="nav-link <?= ($currentPage == 'archive-manager.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-archive"></i>
                         <p>Archive Manager</p>
                     </a>
                 </li>
+                <?php endif; ?>
 
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['coordinator', 'facilitator'], true)): ?>
                 <li class="nav-item">
