@@ -159,14 +159,6 @@ $studentRecord = null;
 $studentRegistrationSections = [];
 $studentAttendanceCount = 0;
 $studentLatestAttendance = null;
-$studentTodayAttendance = null;
-$studentAttendanceDayActive = false;
-$studentAttendanceRecords = [];
-$studentAttendanceSummary = [
-    'present' => 0,
-    'late' => 0,
-    'absent_today' => 0,
-];
 
 function studentAttendanceDisplay($status, $timeIn = null) {
     $rawStatus = trim((string) $status);
@@ -230,13 +222,6 @@ if ($isStudent) {
         $summaryCounts = studentAttendanceHistoricalSummary($conn, $studentRecord);
         $studentAttendanceCount = (int) ($summaryCounts['total'] ?? 0);
         $studentLatestAttendance = studentAttendanceTimeline($conn, $studentRecord, 1)[0] ?? null;
-        $studentTodayAttendance = studentAttendanceTimeline($conn, $studentRecord, 1, date('Y-m-d'))[0] ?? null;
-        $studentAttendanceDayActive = hasAttendanceForStudentScopeOnDate($conn, $studentRecord);
-
-        $studentAttendanceRecords = studentAttendanceTimeline($conn, $studentRecord, 30);
-        $studentAttendanceSummary['late'] = (int) ($summaryCounts['late'] ?? 0);
-        $studentAttendanceSummary['present'] = (int) ($summaryCounts['present'] ?? 0);
-        $studentAttendanceSummary['absent_today'] = (!$studentTodayAttendance && $studentAttendanceDayActive) ? 1 : 0;
 
         $studentAddress = implode(', ', array_filter([
             $studentRecord['house_no'] ?? '',
@@ -1112,98 +1097,6 @@ if (!empty($user['full_name'])) {
                                             Select your NSTP component in the Component tab to generate your QR code.
                                         </div>
                                     <?php endif; ?>
-                                </div>
-                            </div>
-                            <?php endif; ?>
-
-                            <?php if ($isStudent && $studentRecord): ?>
-                            <?php
-                                $todayDisplay = $studentTodayAttendance
-                                    ? studentAttendanceDisplay($studentTodayAttendance['status'] ?? '', $studentTodayAttendance['time_in'] ?? null)
-                                    : ($studentAttendanceDayActive ? [
-                                        'status' => 'Absent',
-                                        'badge' => 'danger',
-                                        'session' => ((int) date('G') < 12) ? 'Morning' : 'Afternoon',
-                                    ] : [
-                                        'status' => 'No Attendance',
-                                        'badge' => 'secondary',
-                                        'session' => '',
-                                    ]);
-                            ?>
-                            <div class="profile-card">
-                                <div class="card-header bg-white d-flex align-items-center justify-content-between">
-                                    <h5 class="mb-0"><i class="fas fa-calendar-check mr-2"></i>My Attendance</h5>
-                                    <span class="badge badge-<?php echo $todayDisplay['badge']; ?>">
-                                        Today: <?php echo htmlspecialchars($todayDisplay['status']); ?>
-                                    </span>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row text-center mb-3">
-                                        <div class="col-md-4 mb-2 mb-md-0">
-                                            <div class="info-item mb-0">
-                                                <div class="info-label"><i class="fas fa-check-circle"></i> Present</div>
-                                                <div class="info-value"><?php echo $studentAttendanceSummary['present']; ?></div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4 mb-2 mb-md-0">
-                                            <div class="info-item mb-0">
-                                                <div class="info-label"><i class="fas fa-exclamation-circle"></i> Late</div>
-                                                <div class="info-value"><?php echo $studentAttendanceSummary['late']; ?></div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="info-item mb-0">
-                                                <div class="info-label"><i class="fas fa-times-circle"></i> Absent Today</div>
-                                                <div class="info-value"><?php echo $studentAttendanceSummary['absent_today']; ?></div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="table-responsive">
-                                        <table class="table table-sm table-hover mb-0">
-                                            <thead>
-                                                <tr>
-                                                    <th>Date</th>
-                                                    <th>Time</th>
-                                                    <th>Session</th>
-                                                    <th>Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php if (!$studentTodayAttendance && $studentAttendanceDayActive): ?>
-                                                    <tr>
-                                                        <td><?php echo date('M d, Y'); ?></td>
-                                                        <td>No scan</td>
-                                                        <td><?php echo htmlspecialchars($todayDisplay['session']); ?></td>
-                                                        <td><span class="badge badge-danger">Absent</span></td>
-                                                    </tr>
-                                                <?php endif; ?>
-
-                                                <?php foreach ($studentAttendanceRecords as $attendanceRecord): ?>
-                                                    <?php $attendanceDisplay = studentAttendanceDisplay($attendanceRecord['status'] ?? '', $attendanceRecord['time_in'] ?? null); ?>
-                                                    <tr>
-                                                        <td><?php echo date('M d, Y', strtotime($attendanceRecord['time_in'])); ?></td>
-                                                        <td><?php echo date('h:i A', strtotime($attendanceRecord['time_in'])); ?></td>
-                                                        <td><?php echo htmlspecialchars($attendanceDisplay['session'] ?: 'N/A'); ?></td>
-                                                        <td>
-                                                            <span class="badge badge-<?php echo $attendanceDisplay['badge']; ?>">
-                                                                <?php echo htmlspecialchars($attendanceDisplay['status']); ?>
-                                                            </span>
-                                                            <?php if (!empty($attendanceRecord['is_archived'])): ?>
-                                                                <span class="badge badge-secondary ml-1">Archived</span>
-                                                            <?php endif; ?>
-                                                        </td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-
-                                                <?php if (count($studentAttendanceRecords) === 0 && !(!$studentTodayAttendance && $studentAttendanceDayActive)): ?>
-                                                    <tr>
-                                                        <td colspan="4" class="text-center text-muted py-4">No attendance records yet</td>
-                                                    </tr>
-                                                <?php endif; ?>
-                                            </tbody>
-                                        </table>
-                                    </div>
                                 </div>
                             </div>
                             <?php endif; ?>
