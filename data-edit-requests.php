@@ -45,6 +45,18 @@ function requestStatusBadge($status) {
 function requestValue(array $data, $key) {
     return htmlspecialchars((string) ($data[$key] ?? ''), ENT_QUOTES, 'UTF-8');
 }
+
+function requestFieldLabels($requestType) {
+    if ($requestType === 'registration') {
+        return registrationEditRequestFields();
+    }
+
+    return [
+        'full_name' => 'Full Name',
+        'username' => 'Username',
+        'email' => 'Email',
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -154,6 +166,7 @@ function requestValue(array $data, $key) {
                                     <tr>
                                         <th>Date</th>
                                         <th>User</th>
+                                        <th>Type</th>
                                         <th>Requested Changes</th>
                                         <th>Reason</th>
                                         <th>Status</th>
@@ -177,19 +190,21 @@ function requestValue(array $data, $key) {
                                                 <span class="badge badge-secondary"><?php echo htmlspecialchars(str_replace('_', ' ', $request['role'] ?? 'user')); ?></span>
                                             </td>
                                             <td>
+                                                <span class="badge badge-<?php echo ($request['request_type'] ?? 'account') === 'registration' ? 'info' : 'primary'; ?>">
+                                                    <?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', $request['request_type'] ?? 'account'))); ?>
+                                                </span>
+                                            </td>
+                                            <td>
                                                 <div class="change-grid">
                                                     <div class="label">Field</div>
                                                     <div class="label current">Current</div>
                                                     <div class="label requested">Requested</div>
-                                                    <div class="label">Full Name</div>
-                                                    <div class="current"><?php echo requestValue($currentData, 'full_name'); ?></div>
-                                                    <div class="requested"><?php echo requestValue($requestedData, 'full_name'); ?></div>
-                                                    <div class="label">Username</div>
-                                                    <div class="current"><?php echo requestValue($currentData, 'username'); ?></div>
-                                                    <div class="requested"><?php echo requestValue($requestedData, 'username'); ?></div>
-                                                    <div class="label">Email</div>
-                                                    <div class="current"><?php echo requestValue($currentData, 'email'); ?></div>
-                                                    <div class="requested"><?php echo requestValue($requestedData, 'email'); ?></div>
+                                                    <?php foreach (requestFieldLabels($request['request_type'] ?? 'account') as $fieldKey => $fieldLabel): ?>
+                                                        <?php if (($currentData[$fieldKey] ?? '') === ($requestedData[$fieldKey] ?? '')) { continue; } ?>
+                                                        <div class="label"><?php echo htmlspecialchars($fieldLabel); ?></div>
+                                                        <div class="current"><?php echo requestValue($currentData, $fieldKey); ?></div>
+                                                        <div class="requested"><?php echo requestValue($requestedData, $fieldKey); ?></div>
+                                                    <?php endforeach; ?>
                                                 </div>
                                             </td>
                                             <td><?php echo htmlspecialchars($request['reason'] ?: '-'); ?></td>

@@ -1231,6 +1231,52 @@ if (!empty($user['full_name'])) {
                                             </div>
                                         <?php endforeach; ?>
                                     </div>
+
+                                    <hr>
+                                    <?php if ($pendingDataEditRequest): ?>
+                                        <div class="alert alert-info mb-0">
+                                            <i class="fas fa-hourglass-half mr-2"></i>
+                                            You already have a pending data edit request. You can submit another request after the super admin reviews it.
+                                        </div>
+                                    <?php else: ?>
+                                        <button class="btn btn-outline-primary" type="button" data-toggle="collapse" data-target="#registrationEditRequestForm" aria-expanded="false" aria-controls="registrationEditRequestForm">
+                                            <i class="fas fa-paper-plane mr-2"></i>Request Changes to Registration Details
+                                        </button>
+                                        <div class="collapse mt-3" id="registrationEditRequestForm">
+                                            <form method="POST">
+                                                <div class="row">
+                                                    <?php foreach (registrationEditRequestFields() as $fieldKey => $fieldLabel): ?>
+                                                        <?php
+                                                            $fieldValue = $fieldKey === 'email'
+                                                                ? ($studentRecord['registration_email'] ?? '')
+                                                                : ($studentRecord[$fieldKey] ?? '');
+                                                            $inputType = $fieldKey === 'date_of_birth' ? 'date' : ($fieldKey === 'email' ? 'email' : 'text');
+                                                        ?>
+                                                        <div class="col-md-6">
+                                                            <div class="form-group">
+                                                                <label for="registration_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo htmlspecialchars($fieldLabel); ?></label>
+                                                                <input
+                                                                    type="<?php echo $inputType; ?>"
+                                                                    class="form-control"
+                                                                    id="registration_<?php echo htmlspecialchars($fieldKey); ?>"
+                                                                    name="registration[<?php echo htmlspecialchars($fieldKey); ?>]"
+                                                                    value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>"
+                                                                    <?php echo in_array($fieldKey, ['first_name', 'last_name', 'email'], true) ? 'required' : ''; ?>
+                                                                >
+                                                            </div>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="registration_request_reason">Reason for Request</label>
+                                                    <textarea class="form-control" id="registration_request_reason" name="registration_request_reason" rows="3" placeholder="Briefly explain which registration details need correction."></textarea>
+                                                </div>
+                                                <button type="submit" name="submit_registration_edit_request" class="btn btn-primary">
+                                                    <i class="fas fa-paper-plane mr-2"></i>Submit Registration Edit Request
+                                                </button>
+                                            </form>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                             <?php endif; ?>

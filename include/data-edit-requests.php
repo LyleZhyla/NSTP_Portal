@@ -8,6 +8,7 @@ function ensureDataEditRequestsTable(PDO $conn) {
         CREATE TABLE IF NOT EXISTS tbl_data_edit_requests (
             request_id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
+            request_type VARCHAR(40) NOT NULL DEFAULT 'account',
             current_data JSON NOT NULL,
             requested_data JSON NOT NULL,
             reason TEXT NULL,
@@ -22,6 +23,18 @@ function ensureDataEditRequestsTable(PDO $conn) {
             INDEX idx_reviewed_by (reviewed_by)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'tbl_data_edit_requests'
+          AND COLUMN_NAME = 'request_type'
+    ");
+    $stmt->execute();
+    if ((int) $stmt->fetchColumn() === 0) {
+        $conn->exec("ALTER TABLE tbl_data_edit_requests ADD COLUMN request_type VARCHAR(40) NOT NULL DEFAULT 'account' AFTER user_id");
+    }
 }
 
 function dataEditRequestClean($value, $maxLength = 255) {
@@ -100,8 +113,8 @@ function submitDataEditRequest(PDO $conn, array $user, array $requestedData, $re
     }
 
     $stmt = $conn->prepare("
-        INSERT INTO tbl_data_edit_requests (user_id, current_data, requested_data, reason)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO tbl_data_edit_requests (user_id, request_type, current_data, requested_data, reason)
+        VALUES (?, 'account', ?, ?, ?)
     ");
     $stmt->execute([
         $userId,
@@ -120,11 +133,114 @@ function submitDataEditRequest(PDO $conn, array $user, array $requestedData, $re
             'Data Edit Request',
             $requesterName . ' requested changes to their account data.',
             'tbl_data_edit_requests',
-            $requestId
+        $requestId
         );
     }
 
     logSystemEvent($conn, 'data_edit_request_submitted', 'User #' . $userId . ' submitted data edit request #' . $requestId);
+    return $requestId;
+}
+
+function registrationEditRequestFields() {
+    return [
+        'last_name' => 'Last Name',
+        'extension_name' => 'Extension Name',
+        'first_name' => 'First Name',
+        'middle_name' => 'Middle Name',
+        'place_of_birth' => 'Place of Birth',
+        'date_of_birth' => 'Date of Birth',
+        'gender' => 'Gender',
+        'religion' => 'Religion',
+        'blood_type' => 'Blood Type',
+        'contact_number' => 'Contact Number',
+        'email' => 'Email',
+        'province' => 'Province',
+        'city_municipality' => 'City/Municipality',
+        'barangay' => 'Barangay',
+        'street' => 'Street',
+        'house_no' => 'House No.',
+        'emergency_name' => 'Emergency Name',
+        'emergency_relationship' => 'Emergency Relationship',
+        'emergency_contact_number' => 'Emergency Contact Number',
+        'emergency_address' => 'Emergency Address',
+        'college' => 'College',
+        'course' => 'Course',
+        'major' => 'Major',
+        'year_section' => 'Year and Section',
+        'component' => 'Component',
+    ];
+}
+
+function submitRegistrationDataEditRequest(PDO $conn, array $user, array $registration, array $requestedData, $reason = '') {
+    ensureDataEditRequestsTable($conn);
+
+    $userId = (int) ($user['user_id'] ?? 0);
+    $registrationId = (int) ($registration['registration_id'] ?? 0);
+    if ($userId <= 0 || $registrationId <= 0) {
+        throw new InvalidArgumentException('Registration record not found.');
+    }
+
+    if (dataEditRequestPendingForUser($conn, $userId)) {
+        throw new RuntimeException('You already have a pending data edit request.');
+    }
+
+    $fields = registrationEditRequestFields();
+    $currentData = [
+        '_registration_id' => $registrationId,
+    ];
+    $newData = [
+        '_registration_id' => $registrationId,
+    ];
+
+    foreach ($fields as $field => $label) {
+        $currentValue = $field === 'email'
+            ? ($registration['email'] ?? $registration['registration_email'] ?? '')
+            : ($registration[$field] ?? '');
+        $currentData[$field] = dataEditRequestClean($currentValue, 500);
+        $newData[$field] = dataEditRequestClean($requestedData[$field] ?? '', 500);
+    }
+
+    if (!filter_var($newData['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
+        throw new InvalidArgumentException('Please enter a valid registration email address.');
+    }
+
+    $changed = false;
+    foreach (array_keys($fields) as $field) {
+        if (($currentData[$field] ?? '') !== ($newData[$field] ?? '')) {
+            $changed = true;
+            break;
+        }
+    }
+    if (!$changed) {
+        throw new InvalidArgumentException('No registration detail changes were requested.');
+    }
+
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_data_edit_requests (user_id, request_type, current_data, requested_data, reason)
+        VALUES (?, 'registration', ?, ?, ?)
+    ");
+    $stmt->execute([
+        $userId,
+        json_encode($currentData, JSON_UNESCAPED_SLASHES),
+        json_encode($newData, JSON_UNESCAPED_SLASHES),
+        dataEditRequestClean($reason, 2000),
+    ]);
+    $requestId = (int) $conn->lastInsertId();
+
+    $requesterName = dataEditRequestClean($user['full_name'] ?? $user['username'] ?? 'User');
+    foreach (dataEditRequestSuperAdmins($conn) as $superAdmin) {
+        createUserNotification(
+            $conn,
+            (int) $superAdmin['user_id'],
+            'data_edit_request',
+            'Registration Edit Request',
+            $requesterName . ' requested changes to their registration details.',
+            'tbl_data_edit_requests',
+            $requestId
+        );
+    }
+
+    logSystemEvent($conn, 'registration_edit_request_submitted', 'User #' . $userId . ' submitted registration edit request #' . $requestId);
     return $requestId;
 }
 
@@ -192,7 +308,44 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
 
     $conn->beginTransaction();
     try {
-        if ($action === 'approve') {
+        if ($action === 'approve' && ($request['request_type'] ?? 'account') === 'registration') {
+            $registrationId = (int) ($newData['_registration_id'] ?? 0);
+            if ($registrationId <= 0) {
+                throw new RuntimeException('Registration record not found.');
+            }
+
+            $fields = registrationEditRequestFields();
+            $setParts = [];
+            $params = [];
+            foreach (array_keys($fields) as $field) {
+                $setParts[] = "{$field} = ?";
+                $params[] = $newData[$field] ?? '';
+            }
+            $params[] = $registrationId;
+
+            $updateStmt = $conn->prepare("
+                UPDATE tbl_public_student_registrations
+                SET " . implode(', ', $setParts) . "
+                WHERE registration_id = ?
+            ");
+            $updateStmt->execute($params);
+
+            if ($updateStmt->rowCount() === 0) {
+                throw new RuntimeException('Registration record could not be updated.');
+            }
+
+            $fullName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter([
+                $newData['first_name'] ?? '',
+                ($newData['middle_name'] ?? 'N/A') === 'N/A' ? '' : ($newData['middle_name'] ?? ''),
+                $newData['last_name'] ?? '',
+                ($newData['extension_name'] ?? 'N/A') === 'N/A' ? '' : ($newData['extension_name'] ?? ''),
+            ]))));
+
+            if ($fullName !== '') {
+                $syncStmt = $conn->prepare("UPDATE tbl_student SET student_name = ?, original_section = ? WHERE user_id = ?");
+                $syncStmt->execute([$fullName, $newData['year_section'] ?? '', (int) $request['user_id']]);
+            }
+        } elseif ($action === 'approve') {
             $checkStmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE (username = ? OR email = ?) AND user_id != ? LIMIT 1");
             $checkStmt->execute([$newData['username'] ?? '', $newData['email'] ?? '', (int) $request['user_id']]);
             if ($checkStmt->fetchColumn()) {
@@ -224,8 +377,8 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
             'data_edit_request_' . $status,
             'Data Edit Request ' . ucfirst($status),
             $action === 'approve'
-                ? 'Your account data edit request was approved.'
-                : 'Your account data edit request was rejected.' . ($note !== '' ? ' Note: ' . $note : ''),
+                ? 'Your data edit request was approved.'
+                : 'Your data edit request was rejected.' . ($note !== '' ? ' Note: ' . $note : ''),
             'tbl_data_edit_requests',
             $requestId
         );
