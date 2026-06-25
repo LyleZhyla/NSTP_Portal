@@ -1116,8 +1116,13 @@ if (!empty($user['full_name'])) {
 
                             <?php if ($isStudent && $studentRecord): ?>
                             <div class="profile-card">
-                                <div class="card-header bg-white">
+                                <div class="card-header bg-white d-flex align-items-center justify-content-between flex-wrap">
                                     <h5 class="mb-0"><i class="fas fa-address-card mr-2"></i>Registration Details</h5>
+                                    <?php if (!$pendingDataEditRequest): ?>
+                                        <button class="btn btn-success btn-sm mt-2 mt-sm-0" type="button" data-toggle="collapse" data-target="#registrationEditRequestForm" aria-expanded="false" aria-controls="registrationEditRequestForm">
+                                            <i class="fas fa-paper-plane mr-2"></i>Request Changes
+                                        </button>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="card-body">
                                     <div class="row">
@@ -1145,9 +1150,6 @@ if (!empty($user['full_name'])) {
                                             You already have a pending data edit request. You can submit another request after the super admin reviews it.
                                         </div>
                                     <?php else: ?>
-                                        <button class="btn btn-outline-primary" type="button" data-toggle="collapse" data-target="#registrationEditRequestForm" aria-expanded="false" aria-controls="registrationEditRequestForm">
-                                            <i class="fas fa-paper-plane mr-2"></i>Request Changes to Registration Details
-                                        </button>
                                         <div class="collapse mt-3" id="registrationEditRequestForm">
                                             <form method="POST">
                                                 <div class="row">

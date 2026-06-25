@@ -750,7 +750,7 @@ if ($admin_role === 'super_admin') {
         <div class="row">
             <!-- Left Column: Scanner -->
             <div class="col-lg-4">
-                <div class="card card-primary">
+                <div class="card card-success">
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="fas fa-camera mr-2"></i>QR Code Scanner
