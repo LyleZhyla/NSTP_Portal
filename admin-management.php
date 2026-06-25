@@ -301,6 +301,11 @@ date_default_timezone_set('Asia/Manila');
                             <div class="card-header">
                                 <h3 class="card-title"><?php echo $isSuperAdmin ? 'User Accounts' : htmlspecialchars($currentProgram . ' Facilitator Accounts'); ?></h3>
                                 <div class="card-tools">
+                                    <?php if ($isSuperAdmin): ?>
+                                    <button type="button" class="btn btn-outline-primary mr-2" id="sendFacilitatorEmailsBtn">
+                                        <i class="fas fa-envelope mr-2"></i>Send Facilitator Emails
+                                    </button>
+                                    <?php endif; ?>
                                     <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addAdminModal">
                                         <i class="fas fa-plus mr-2"></i><?php echo $isSuperAdmin ? 'Add User' : 'Add Facilitator'; ?>
                                     </button>
@@ -1373,6 +1378,62 @@ $(document).ready(function() {
                 Swal.fire('Error', 'Failed to create admin. Please try again.', 'error');
                 console.error('Add admin error:', error);
             }
+        });
+    });
+
+    $('#sendFacilitatorEmailsBtn').on('click', function() {
+        const button = $(this);
+
+        Swal.fire({
+            title: 'Send Facilitator Emails?',
+            html: `
+                <div class="text-left">
+                    <p>This will send new login credentials to existing facilitator accounts.</p>
+                    <p class="text-muted mb-2">Their current passwords will be replaced.</p>
+                    <label class="mb-1" for="facilitatorEmailProgram">Program</label>
+                    <select id="facilitatorEmailProgram" class="form-control">
+                        <option value="">All Programs</option>
+                        <option value="CWTS">CWTS</option>
+                        <option value="LTS">LTS</option>
+                        <option value="ROTC">ROTC</option>
+                    </select>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Send Emails',
+            cancelButtonText: 'Cancel',
+            preConfirm: () => $('#facilitatorEmailProgram').val()
+        }).then(function(result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            const selectedProgram = result.value || '';
+            const originalHtml = button.html();
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i>Sending');
+
+            $.ajax({
+                url: 'endpoint/send-facilitator-account-emails.php',
+                method: 'POST',
+                dataType: 'json',
+                data: { program: selectedProgram },
+                success: function(response) {
+                    if (response.success) {
+                        Swal.fire('Done', response.message, 'success');
+                    } else {
+                        Swal.fire('Unable to Send', response.message || 'Please try again.', 'error');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Bulk facilitator email error:', error);
+                    console.error('Response:', xhr.responseText);
+                    Swal.fire('Request Failed', 'Unable to send facilitator account emails. Please try again.', 'error');
+                },
+                complete: function() {
+                    button.prop('disabled', false).html(originalHtml);
+                }
+            });
         });
     });
     
