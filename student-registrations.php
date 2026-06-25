@@ -577,6 +577,14 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
                                                     <button
                                                         type="button"
+                                                        class="btn btn-sm btn-success resend-student-credentials"
+                                                        data-registration-id="<?php echo (int) $registrationId; ?>"
+                                                        data-name="<?php echo htmlspecialchars($fullName); ?>"
+                                                        data-email="<?php echo htmlspecialchars($displayEmail); ?>">
+                                                        <i class="fas fa-envelope"></i>
+                                                    </button>
+                                                    <button
+                                                        type="button"
                                                         class="btn btn-sm btn-danger delete-student-account"
                                                         data-user-id="<?php echo (int) $row['user_id']; ?>"
                                                         data-name="<?php echo htmlspecialchars($fullName); ?>">
@@ -921,6 +929,61 @@ foreach ($publicForms as $formRow) {
                     },
                     error: function() {
                         Swal.fire('Request Failed', 'Unable to send account emails. Please try again.', 'error');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false).html(originalHtml);
+                    }
+                });
+            });
+        });
+
+        $('.resend-student-credentials').on('click', function() {
+            const button = $(this);
+            const registrationId = button.data('registration-id');
+            const studentName = button.data('name') || 'this student';
+            const studentEmail = button.data('email') || 'their registered email';
+            const safeStudentName = escapeHtml(studentName);
+            const safeStudentEmail = escapeHtml(studentEmail);
+
+            Swal.fire({
+                title: 'Resend credentials?',
+                html: `
+                    <div class="text-left">
+                        <p>This will generate a new temporary password for <strong>${safeStudentName}</strong>.</p>
+                        <p class="mb-0 text-muted">The credentials will be sent to <strong>${safeStudentEmail}</strong>.</p>
+                    </div>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#198754',
+                confirmButtonText: 'Send Credentials',
+                cancelButtonText: 'Cancel'
+            }).then(function(result) {
+                if (!result.isConfirmed) {
+                    return;
+                }
+
+                const originalHtml = button.html();
+                button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
+                $.ajax({
+                    url: 'endpoint/send-single-student-account-email.php',
+                    method: 'POST',
+                    dataType: 'json',
+                    data: {
+                        registration_id: registrationId
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire('Sent', response.message, 'success').then(function() {
+                                window.location.reload();
+                            });
+                        } else {
+                            Swal.fire('Unable to Send', response.message || 'Please try again.', 'error');
+                        }
+                    },
+                    error: function() {
+                        Swal.fire('Request Failed', 'Unable to send credentials. Please try again.', 'error');
                     },
                     complete: function() {
                         button.prop('disabled', false).html(originalHtml);
