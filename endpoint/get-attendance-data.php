@@ -15,14 +15,12 @@ $admin_id = $_SESSION['user_id'];
 $admin_role = $_SESSION['role'] ?? 'facilitator';
 $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
-$isRotcFacilitator = $admin_role === 'facilitator'
-    && normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null)) === 'ROTC';
-$facilitatorStudentAccessCondition = "(s.created_by = ? OR ads.user_id = ?"
-    . ($isRotcFacilitator ? " OR " . rotcMs1StudentSqlCondition('s') : "")
-    . ")";
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $admin_role === 'super_admin'
     || ($admin_role === 'facilitator' && !$facilitatorScanRestrictionEnabled);
+$attendanceAccess = studentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
+$attendanceAccessCondition = $attendanceAccess['condition'];
+$attendanceAccessParams = $attendanceAccess['params'];
 
 try {
     // Get statistics
@@ -72,9 +70,9 @@ try {
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE DATE(a.time_in) = CURDATE() 
-            AND {$facilitatorStudentAccessCondition}
+            AND {$attendanceAccessCondition}
         ");
-        $totalStmt->execute([$admin_id, $admin_id]);
+        $totalStmt->execute($attendanceAccessParams);
         $total = $totalStmt->fetchColumn();
         
         // On time
@@ -85,9 +83,9 @@ try {
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE DATE(a.time_in) = CURDATE() 
             AND a.status LIKE 'On Time%'
-            AND {$facilitatorStudentAccessCondition}
+            AND {$attendanceAccessCondition}
         ");
-        $onTimeStmt->execute([$admin_id, $admin_id]);
+        $onTimeStmt->execute($attendanceAccessParams);
         $onTime = $onTimeStmt->fetchColumn();
         
         // Late
@@ -98,9 +96,9 @@ try {
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE DATE(a.time_in) = CURDATE() 
             AND a.status LIKE 'Late%'
-            AND {$facilitatorStudentAccessCondition}
+            AND {$attendanceAccessCondition}
         ");
-        $lateStmt->execute([$admin_id, $admin_id]);
+        $lateStmt->execute($attendanceAccessParams);
         $late = $lateStmt->fetchColumn();
         
         // Get attendance records with student info
@@ -111,10 +109,10 @@ try {
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE DATE(a.time_in) = CURDATE() 
-            AND {$facilitatorStudentAccessCondition}
+            AND {$attendanceAccessCondition}
             ORDER BY a.time_in DESC
         ");
-        $recordsStmt->execute([$admin_id, $admin_id]);
+        $recordsStmt->execute($attendanceAccessParams);
     }
     
     $records = $recordsStmt->fetchAll(PDO::FETCH_ASSOC);

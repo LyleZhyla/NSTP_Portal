@@ -220,6 +220,113 @@ function getRotcAttendanceGroup(PDO $conn, array $student) {
     return in_array($msLevel, ['MS-31', 'MS-41'], true) ? 'ROTC_MS31_MS41' : 'ROTC_MS1';
 }
 
+function studentProgramForAttendance(PDO $conn, array $student) {
+    $courseProgram = normalizeProgram($student['course_section'] ?? null)
+        ?: inferProgramFromText($student['course_section'] ?? '');
+    if ($courseProgram) {
+        return $courseProgram;
+    }
+
+    if (isRotcStudentRecord($conn, $student)) {
+        return 'ROTC';
+    }
+
+    $studentId = (int) ($student['tbl_student_id'] ?? 0);
+    if ($studentId <= 0) {
+        return null;
+    }
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT COALESCE(student_user.program, creator_user.program, registration.component)
+            FROM tbl_student s
+            LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id
+            LEFT JOIN tbl_users creator_user ON creator_user.user_id = s.created_by
+            LEFT JOIN tbl_public_student_registrations registration
+              ON registration.student_number = s.student_number
+             AND registration.registration_id = (
+                    SELECT MAX(latest_registration.registration_id)
+                    FROM tbl_public_student_registrations latest_registration
+                    WHERE latest_registration.student_number = s.student_number
+                )
+            WHERE s.tbl_student_id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$studentId]);
+
+        return normalizeProgram($stmt->fetchColumn());
+    } catch (Throwable $error) {
+        return null;
+    }
+}
+
+function studentAttendanceAccessSqlForUser(array $actor, $studentAlias = 's') {
+    $studentAlias = preg_replace('/[^A-Za-z0-9_]/', '', (string) $studentAlias) ?: 's';
+    $role = $actor['role'] ?? '';
+    $actorId = (int) ($actor['user_id'] ?? 0);
+
+    if ($role === 'super_admin') {
+        return ['condition' => '1=1', 'params' => []];
+    }
+
+    if ($role === 'coordinator') {
+        $program = normalizeProgram($actor['program'] ?? null);
+        if (!$program) {
+            return ['condition' => '1=0', 'params' => []];
+        }
+
+        if ($program === 'ROTC') {
+            return [
+                'condition' => '(' . rotcStudentSqlCondition($studentAlias) . " OR EXISTS (
+                    SELECT 1 FROM tbl_users creator_user
+                    WHERE creator_user.user_id = {$studentAlias}.created_by
+                      AND creator_user.program = ?
+                ))",
+                'params' => [$program],
+            ];
+        }
+
+        return [
+            'condition' => "(
+                UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE ?
+                OR EXISTS (
+                    SELECT 1 FROM tbl_users student_user
+                    WHERE student_user.user_id = {$studentAlias}.user_id
+                      AND student_user.program = ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM tbl_users creator_user
+                    WHERE creator_user.user_id = {$studentAlias}.created_by
+                      AND creator_user.program = ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM tbl_public_student_registrations registration
+                    WHERE registration.student_number = {$studentAlias}.student_number
+                      AND registration.component = ?
+                      AND registration.registration_id = (
+                            SELECT MAX(latest_registration.registration_id)
+                            FROM tbl_public_student_registrations latest_registration
+                            WHERE latest_registration.student_number = {$studentAlias}.student_number
+                        )
+                )
+            )",
+            'params' => ['%' . $program . '%', $program, $program, $program],
+        ];
+    }
+
+    if ($role === 'facilitator') {
+        $condition = "({$studentAlias}.created_by = ? OR ads.user_id = ?";
+        if (normalizeProgram($actor['program'] ?? null) === 'ROTC') {
+            $condition .= " OR " . rotcMs1StudentSqlCondition($studentAlias);
+        }
+        $condition .= ")";
+
+        return ['condition' => $condition, 'params' => [$actorId, $actorId]];
+    }
+
+    return ['condition' => '1=0', 'params' => []];
+}
+
 function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
     $role = $actor['role'] ?? '';
 
@@ -229,8 +336,7 @@ function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
 
     if ($role === 'coordinator') {
         $actorProgram = normalizeProgram($actor['program'] ?? null);
-        $studentProgram = normalizeProgram($student['course_section'] ?? null)
-            ?: inferProgramFromText($student['course_section'] ?? '');
+        $studentProgram = studentProgramForAttendance($conn, $student);
 
         return $actorProgram && $actorProgram === $studentProgram;
     }

@@ -50,9 +50,12 @@ try {
     }
 
     if (!canRecordStudentAttendance($conn, $currentUser, $student)) {
+        $message = ($currentUser['role'] ?? '') === 'coordinator'
+            ? 'This student is outside your NSTP program. Attendance was not recorded.'
+            : 'This student is assigned to another facilitator. Attendance was not recorded.';
         echo json_encode([
             'success' => false,
-            'message' => 'This student is assigned to another facilitator. Attendance was not recorded.'
+            'message' => $message
         ]);
         exit;
     }

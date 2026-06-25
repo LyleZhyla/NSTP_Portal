@@ -68,9 +68,12 @@ try {
     
     if ($student) {
         if (!canRecordStudentAttendance($conn, $currentUser, $student)) {
+            $message = ($currentUser['role'] ?? '') === 'coordinator'
+                ? 'This student is outside your NSTP program'
+                : 'This student is assigned to another facilitator';
             echo json_encode([
                 'valid' => false,
-                'message' => 'This student is assigned to another facilitator'
+                'message' => $message
             ]);
             exit;
         }
