@@ -4,6 +4,7 @@ session_start();
 require_once 'conn/conn.php';
 require_once 'include/user-permissions.php';
 require_once 'include/attendance-settings.php';
+require_once 'include/profile-picture-utils.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
@@ -20,15 +21,23 @@ $userId = $_SESSION['user_id'];
 $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
+if ($user) {
+    $syncedProfilePicture = syncRegistrationProfilePicture($conn, $userId, __DIR__);
+    if ($syncedProfilePicture !== '' && ($user['profile_picture'] ?? '') !== $syncedProfilePicture) {
+        $user['profile_picture'] = $syncedProfilePicture;
+        $_SESSION['profile_picture'] = $syncedProfilePicture;
+    }
+}
 
 $stmt = $conn->prepare("
-    SELECT s.*, r.last_name, r.extension_name, r.first_name, r.middle_name, r.place_of_birth,
+    SELECT s.*, u.profile_picture, r.last_name, r.extension_name, r.first_name, r.middle_name, r.place_of_birth,
            r.date_of_birth, r.gender, r.religion, r.blood_type, r.contact_number, r.email,
            r.province, r.city_municipality, r.barangay, r.street, r.house_no,
            r.emergency_name, r.emergency_relationship, r.emergency_contact_number, r.emergency_address,
            r.student_number AS registration_student_number, r.college, r.course, r.major, r.year_section,
            r.component, r.formal_picture, r.created_at AS registration_date
     FROM tbl_student s
+    LEFT JOIN tbl_users u ON u.user_id = s.user_id
     LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
     WHERE s.user_id = ?
     ORDER BY r.created_at DESC
@@ -73,6 +82,34 @@ function dashboardAttendanceDisplay($status, $timeIn = null) {
         'badge' => $badgeClass,
         'session' => $session,
     ];
+}
+
+function dashboardStudentImageUrl(array $student) {
+    $paths = [
+        $student['profile_picture'] ?? '',
+        $student['formal_picture'] ?? '',
+    ];
+
+    foreach ($paths as $path) {
+        $path = trim((string) $path);
+        if ($path !== '' && $path !== 'include/logo.png' && profilePictureExists($path, __DIR__)) {
+            return profilePictureUrl($path, __DIR__);
+        }
+    }
+
+    return '';
+}
+
+function dashboardCourseSection(array $student) {
+    $parts = array_filter([
+        trim((string) ($student['course'] ?? '')),
+        trim((string) ($student['major'] ?? '')),
+        trim((string) ($student['year_section'] ?? '')),
+    ], fn($value) => $value !== '' && strtoupper($value) !== 'N/A');
+
+    return !empty($parts)
+        ? implode(' - ', $parts)
+        : (trim((string) ($student['course_section'] ?? '')) ?: 'N/A');
 }
 
 if ($student) {
@@ -135,6 +172,102 @@ if ($student) {
         .download-actions .btn {
             min-width: 126px;
         }
+        .nstp-id-panel {
+            border: 0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        }
+        .nstp-id-header {
+            background: #0f5132;
+            color: #fff;
+            padding: 16px 20px;
+            border-bottom: 6px solid #f7c948;
+        }
+        .nstp-id-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.15rem;
+            font-weight: 800;
+            margin: 0;
+        }
+        .nstp-id-body {
+            display: grid;
+            grid-template-columns: minmax(160px, 220px) 1fr minmax(190px, 240px);
+            gap: 22px;
+            padding: 22px;
+            align-items: center;
+            background: #fff;
+        }
+        .nstp-id-photo {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1px solid #dbe8ed;
+            background: #f8fafc;
+        }
+        .nstp-id-initial {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            border: 1px solid #dbe8ed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #eef8f1;
+            color: #0f5132;
+            font-size: 4rem;
+            font-weight: 800;
+        }
+        .nstp-id-name {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #1f2937;
+            margin-bottom: 12px;
+            line-height: 1.2;
+        }
+        .nstp-id-fields {
+            display: grid;
+            gap: 10px;
+        }
+        .nstp-id-field span {
+            display: block;
+            font-size: 0.72rem;
+            color: #6b7280;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .nstp-id-field strong {
+            display: block;
+            color: #1f2937;
+            overflow-wrap: anywhere;
+        }
+        .nstp-id-qr {
+            text-align: center;
+            border-left: 1px solid #e5e7eb;
+            padding-left: 22px;
+        }
+        .nstp-id-qr img {
+            width: min(100%, 190px);
+            border: 1px solid #dbe8ed;
+            border-radius: 8px;
+            padding: 8px;
+            background: #fff;
+        }
+        .nstp-id-code {
+            margin-top: 10px;
+            color: #6b7280;
+            font-size: 0.82rem;
+            overflow-wrap: anywhere;
+        }
+        .nstp-id-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 18px;
+        }
         .detail-card {
             border: 1px solid rgba(47, 111, 126, 0.14);
             border-radius: 8px;
@@ -165,9 +298,39 @@ if ($student) {
             color: #1f2937;
         }
         @media (max-width: 575.98px) {
+            .nstp-id-body {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            .nstp-id-photo,
+            .nstp-id-initial {
+                max-width: 190px;
+                margin: 0 auto;
+            }
+            .nstp-id-qr {
+                border-left: 0;
+                border-top: 1px solid #e5e7eb;
+                padding-left: 0;
+                padding-top: 16px;
+            }
+            .nstp-id-actions .btn {
+                flex: 1 1 120px;
+            }
             .detail-row {
                 grid-template-columns: 1fr;
                 gap: 2px;
+            }
+        }
+        @media (min-width: 576px) and (max-width: 991.98px) {
+            .nstp-id-body {
+                grid-template-columns: 180px 1fr;
+            }
+            .nstp-id-qr {
+                grid-column: 1 / -1;
+                border-left: 0;
+                border-top: 1px solid #e5e7eb;
+                padding-left: 0;
+                padding-top: 18px;
             }
         }
     </style>
@@ -229,16 +392,54 @@ if ($student) {
                 </div>
 
                 <?php if ($student): ?>
-                <div class="card">
-                    <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
-                        <h3 class="card-title mb-0"><i class="fas fa-id-card mr-2"></i>NSTP ID</h3>
-                        <div class="download-actions mt-2 mt-sm-0">
-                            <a href="endpoint/download-student-qr.php?format=png" class="btn btn-sm btn-primary">
-                                <i class="fas fa-file-image mr-1"></i> PNG
-                            </a>
-                            <a href="endpoint/download-student-qr.php?format=jpg" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-download mr-1"></i> JPG
-                            </a>
+                <?php
+                    $studentImageUrl = dashboardStudentImageUrl($student);
+                    $studentQrImage = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' . urlencode($student['generated_code']);
+                    $studentNumber = $student['student_number'] ?? ($student['registration_student_number'] ?? 'N/A');
+                    $studentComponent = normalizeProgram($student['component'] ?? '') ?: inferProgramFromText($student['course_section'] ?? '') ?: ($student['component'] ?? 'N/A');
+                ?>
+                <div class="nstp-id-panel mb-4">
+                    <div class="nstp-id-header">
+                        <h3 class="nstp-id-title"><i class="fas fa-id-card"></i>NSTP ID</h3>
+                    </div>
+                    <div class="nstp-id-body">
+                        <div>
+                            <?php if ($studentImageUrl): ?>
+                                <img src="<?php echo htmlspecialchars($studentImageUrl); ?>" alt="Student Picture" class="nstp-id-photo">
+                            <?php else: ?>
+                                <div class="nstp-id-initial"><?php echo htmlspecialchars(strtoupper(substr($student['student_name'] ?? 'S', 0, 1))); ?></div>
+                            <?php endif; ?>
+                        </div>
+
+                        <div>
+                            <div class="nstp-id-name"><?php echo htmlspecialchars($student['student_name'] ?? 'Student'); ?></div>
+                            <div class="nstp-id-fields">
+                                <div class="nstp-id-field">
+                                    <span>Student Number</span>
+                                    <strong><?php echo htmlspecialchars($studentNumber ?: 'N/A'); ?></strong>
+                                </div>
+                                <div class="nstp-id-field">
+                                    <span>Course / Major / Section</span>
+                                    <strong><?php echo htmlspecialchars(dashboardCourseSection($student)); ?></strong>
+                                </div>
+                                <div class="nstp-id-field">
+                                    <span>NSTP Component</span>
+                                    <strong><?php echo htmlspecialchars($studentComponent ?: 'N/A'); ?></strong>
+                                </div>
+                            </div>
+                            <div class="nstp-id-actions">
+                                <a href="endpoint/download-student-qr.php?format=png" class="btn btn-primary">
+                                    <i class="fas fa-file-image mr-1"></i> Download PNG
+                                </a>
+                                <a href="endpoint/download-student-qr.php?format=jpg" class="btn btn-outline-primary">
+                                    <i class="fas fa-download mr-1"></i> Download JPG
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="nstp-id-qr">
+                            <img src="<?php echo htmlspecialchars($studentQrImage); ?>" alt="Student QR Code">
+                            <div class="nstp-id-code">QR Code: <?php echo htmlspecialchars($student['generated_code'] ?? ''); ?></div>
                         </div>
                     </div>
                 </div>
