@@ -40,6 +40,8 @@ if (isset($_SESSION['user_id'])) {
                         $notificationType = (string) ($notification['type'] ?? '');
                         if ($notificationType === 'late_attendance') {
                             $iconClass = 'fa-clock text-warning';
+                        } elseif ($notificationType === 'absent_attendance') {
+                            $iconClass = 'fa-user-times text-danger';
                         } elseif (strpos($notificationType, 'data_edit_request') === 0) {
                             $iconClass = 'fa-user-check text-success';
                         } else {

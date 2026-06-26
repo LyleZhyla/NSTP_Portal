@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/user-permissions.php';
+require_once __DIR__ . '/attendance-settings.php';
 require_once __DIR__ . '/mailer.php';
 
 function ensureNotificationTables(PDO $conn) {
@@ -55,6 +56,26 @@ function ensureNotificationTables(PDO $conn) {
             $conn->exec($sql);
         }
     }
+}
+
+function ensureAbsentNotificationTable(PDO $conn) {
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_absent_notifications (
+            absent_notification_id INT AUTO_INCREMENT PRIMARY KEY,
+            tbl_student_id INT NOT NULL,
+            user_id INT NULL,
+            attendance_date DATE NOT NULL,
+            cutoff_time DATETIME NOT NULL,
+            notify_after DATETIME NOT NULL,
+            notification_id INT NULL,
+            email_sent TINYINT(1) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_student_attendance_date (tbl_student_id, attendance_date),
+            INDEX idx_attendance_date (attendance_date),
+            INDEX idx_user_id (user_id),
+            INDEX idx_notification_id (notification_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
 }
 
 function cleanNotificationText($value, $maxLength = 5000) {
@@ -205,6 +226,185 @@ HTML;
     }
 
     return false;
+}
+
+function absentNotificationGraceHours(PDO $conn) {
+    $hours = (int) getSystemSetting($conn, 'absent_notification_grace_hours', '5');
+    return max(1, min(24, $hours));
+}
+
+function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendanceDate, $cutoffDateTime, $notifyAfter, $graceHours = 5) {
+    ensureNotificationTables($conn);
+    ensureAbsentNotificationTable($conn);
+
+    $studentId = (int) ($student['tbl_student_id'] ?? 0);
+    if ($studentId <= 0) {
+        return ['created' => false, 'reason' => 'invalid_student'];
+    }
+
+    $attendanceDate = date('Y-m-d', strtotime($attendanceDate));
+    $cutoffDateTime = date('Y-m-d H:i:s', strtotime($cutoffDateTime));
+    $notifyAfter = date('Y-m-d H:i:s', strtotime($notifyAfter));
+    $userId = !empty($student['user_id']) ? (int) $student['user_id'] : null;
+
+    $stmt = $conn->prepare("
+        INSERT IGNORE INTO tbl_absent_notifications
+            (tbl_student_id, user_id, attendance_date, cutoff_time, notify_after)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([$studentId, $userId, $attendanceDate, $cutoffDateTime, $notifyAfter]);
+
+    if ((int) $conn->lastInsertId() <= 0) {
+        return ['created' => false, 'reason' => 'already_notified'];
+    }
+
+    $absentNotificationId = (int) $conn->lastInsertId();
+    $dateLabel = date('F d, Y', strtotime($attendanceDate));
+    $cutoffLabel = date('h:i A', strtotime($cutoffDateTime));
+    $notifyAfterLabel = date('h:i A', strtotime($notifyAfter));
+    $studentName = trim((string) ($student['student_name'] ?? 'Student'));
+    $title = 'Absent Attendance Notice';
+    $message = "You did not record attendance for {$dateLabel} by {$notifyAfterLabel}. You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.";
+    $notificationId = 0;
+
+    if ($userId) {
+        $notificationId = createUserNotification(
+            $conn,
+            $userId,
+            'absent_attendance',
+            $title,
+            $message,
+            'tbl_absent_notifications',
+            $absentNotificationId
+        );
+
+        if ($notificationId > 0) {
+            $updateStmt = $conn->prepare("
+                UPDATE tbl_absent_notifications
+                SET notification_id = ?
+                WHERE absent_notification_id = ?
+            ");
+            $updateStmt->execute([$notificationId, $absentNotificationId]);
+        }
+    }
+
+    $emailSent = false;
+    $recipient = notificationStudentEmail($conn, $student);
+    if ($recipient) {
+        $safeName = htmlspecialchars($recipient['name'] ?: $studentName, ENT_QUOTES, 'UTF-8');
+        $safeDate = htmlspecialchars($dateLabel, ENT_QUOTES, 'UTF-8');
+        $safeCutoff = htmlspecialchars($cutoffLabel, ENT_QUOTES, 'UTF-8');
+        $safeNotifyAfter = htmlspecialchars($notifyAfterLabel, ENT_QUOTES, 'UTF-8');
+        $safeGraceHours = htmlspecialchars((string) $graceHours, ENT_QUOTES, 'UTF-8');
+        $bodyHtml = <<<HTML
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">No attendance scan was recorded for {$safeDate} within the allowed time.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;">
+    <tr><td style="padding:16px 18px;"><strong>Date:</strong> {$safeDate}<br><strong>Late start time:</strong> {$safeCutoff}<br><strong>Absent notification time:</strong> {$safeNotifyAfter}<br><strong>Grace period:</strong> {$safeGraceHours} hour(s)</td></tr>
+</table>
+<p style="margin:0;font-size:15px;line-height:1.7;color:#42515c;">You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.</p>
+HTML;
+
+        $htmlBody = renderAppEmailTemplate($title, 'You are considered absent for today.', $bodyHtml);
+        $textBody = "Hello {$recipient['name']},\n\nNo attendance scan was recorded for {$dateLabel} by {$notifyAfterLabel}. You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.\n\nTAU NSTP Portal";
+
+        if (sendAppMail($recipient['email'], $recipient['name'], $title, $htmlBody, $textBody)) {
+            $emailSent = true;
+            if ($notificationId > 0) {
+                markNotificationEmailed($conn, $notificationId);
+            }
+
+            $emailStmt = $conn->prepare("
+                UPDATE tbl_absent_notifications
+                SET email_sent = 1
+                WHERE absent_notification_id = ?
+            ");
+            $emailStmt->execute([$absentNotificationId]);
+        }
+    }
+
+    return [
+        'created' => true,
+        'absent_notification_id' => $absentNotificationId,
+        'notification_id' => $notificationId,
+        'email_sent' => $emailSent,
+    ];
+}
+
+function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null, $now = null) {
+    ensureAbsentNotificationTable($conn);
+
+    $nowTimestamp = $now ? strtotime($now) : time();
+    if (!$nowTimestamp) {
+        $nowTimestamp = time();
+    }
+
+    $attendanceDate = $attendanceDate ? date('Y-m-d', strtotime($attendanceDate)) : date('Y-m-d', $nowTimestamp);
+    $graceHours = absentNotificationGraceHours($conn);
+    $cutoffs = getAttendanceCutoffs($conn);
+
+    $stmt = $conn->prepare("
+        SELECT s.*
+        FROM tbl_student s
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM tbl_attendance a
+            WHERE a.tbl_student_id = s.tbl_student_id
+              AND DATE(a.time_in) = ?
+        )
+        ORDER BY s.tbl_student_id ASC
+    ");
+    $stmt->execute([$attendanceDate]);
+    $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $summary = [
+        'attendance_date' => $attendanceDate,
+        'grace_hours' => $graceHours,
+        'checked' => 0,
+        'not_due' => 0,
+        'created' => 0,
+        'already_notified' => 0,
+        'email_sent' => 0,
+        'skipped' => 0,
+    ];
+
+    foreach ($students as $student) {
+        $summary['checked']++;
+        $component = attendanceComponentForStudent($conn, $student);
+        $morningCutoff = $cutoffs[$component]['morning'] ?? '08:00';
+        $cutoffDateTime = $attendanceDate . ' ' . $morningCutoff . ':00';
+        $notifyAfterTimestamp = strtotime($cutoffDateTime . ' +' . $graceHours . ' hours');
+
+        if (!$notifyAfterTimestamp || $nowTimestamp < $notifyAfterTimestamp) {
+            $summary['not_due']++;
+            continue;
+        }
+
+        $result = sendAbsentAttendanceNotification(
+            $conn,
+            $student,
+            $attendanceDate,
+            $cutoffDateTime,
+            date('Y-m-d H:i:s', $notifyAfterTimestamp),
+            $graceHours
+        );
+
+        if (!empty($result['created'])) {
+            $summary['created']++;
+            if (!empty($result['email_sent'])) {
+                $summary['email_sent']++;
+            }
+            continue;
+        }
+
+        if (($result['reason'] ?? '') === 'already_notified') {
+            $summary['already_notified']++;
+        } else {
+            $summary['skipped']++;
+        }
+    }
+
+    return $summary;
 }
 
 function normalizeAnnouncementRecipientScope($recipientScope) {
