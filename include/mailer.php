@@ -13,7 +13,7 @@ function appMailConfig() {
         'port' => 587,
         'encryption' => 'tls',
         'from_email' => 'noreply@tau-nstp.local',
-        'from_name' => 'TAU NSTP National Service Training Program',
+        'from_name' => 'TAU NSTP Office',
     ];
 
     $configPaths = [
@@ -52,7 +52,7 @@ function getAppMailLastError() {
 function renderAppEmailTemplate($title, $preheader, $bodyHtml, $footerNote = '') {
     $safeTitle = htmlspecialchars((string) $title, ENT_QUOTES, 'UTF-8');
     $safePreheader = htmlspecialchars((string) $preheader, ENT_QUOTES, 'UTF-8');
-    $safeFooterNote = htmlspecialchars((string) ($footerNote ?: 'This is an automated message from TAU NSTP National Service Training Program.'), ENT_QUOTES, 'UTF-8');
+    $safeFooterNote = htmlspecialchars((string) ($footerNote ?: 'This is an automated message from TAU NSTP Office.'), ENT_QUOTES, 'UTF-8');
     $year = date('Y');
 
     return <<<HTML
@@ -201,7 +201,7 @@ HTML;
         . "Password: {$password}\n\n"
         . "You can now use these credentials to access the system.\n"
         . "For your security, please change your password after logging in.\n\n"
-        . "Best regards,\nTAU NSTP Portal";
+        . "Best regards,\nTAU NSTP Office";
 
     return sendAppMail($email, $fullName, $subject, $htmlBody, $textBody);
 }
