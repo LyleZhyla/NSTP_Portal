@@ -83,7 +83,7 @@ function renderAppEmailTemplate($title, $preheader, $bodyHtml, $footerNote = '')
                     <tr>
                         <td style="background:#f7fafb;border-top:1px solid #e3edf1;padding:20px 32px;text-align:center;">
                             <p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:#667784;">{$safeFooterNote}</p>
-                            <p style="margin:0;font-size:12px;line-height:1.5;color:#8a98a3;">&copy; {$year} TAU NSTP National Service Training Program</p>
+                            <p style="margin:0;font-size:12px;line-height:1.5;color:#8a98a3;">&copy; {$year} TAU NSTP</p>
                         </td>
                     </tr>
                 </table>
