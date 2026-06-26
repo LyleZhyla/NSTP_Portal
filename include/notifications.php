@@ -229,8 +229,7 @@ HTML;
 }
 
 function absentNotificationGraceHours(PDO $conn) {
-    $hours = (int) getSystemSetting($conn, 'absent_notification_grace_hours', '5');
-    return max(1, min(24, $hours));
+    return getAbsentNotificationGraceHours($conn);
 }
 
 function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendanceDate, $cutoffDateTime, $notifyAfter, $graceHours = 5) {

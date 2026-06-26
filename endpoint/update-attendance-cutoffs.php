@@ -33,9 +33,16 @@ try {
     }
 
     saveAttendanceCutoffsForComponents($conn, $cutoffs, $allowedComponents);
-    logSystemEvent($conn, 'attendance_cutoffs_updated', 'Updated morning and afternoon late start times.');
+    $details = 'Updated morning and afternoon late start times.';
 
-    echo json_encode(['success' => true, 'message' => 'Late start times were updated successfully.']);
+    if (($currentUser['role'] ?? '') === 'super_admin' && isset($_POST['absent_notification_grace_hours'])) {
+        saveAbsentNotificationGraceHours($conn, $_POST['absent_notification_grace_hours']);
+        $details .= ' Updated absent notification delay to ' . (int) $_POST['absent_notification_grace_hours'] . ' hour(s).';
+    }
+
+    logSystemEvent($conn, 'attendance_cutoffs_updated', $details);
+
+    echo json_encode(['success' => true, 'message' => 'Attendance time settings were updated successfully.']);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => $error->getMessage()]);
 }

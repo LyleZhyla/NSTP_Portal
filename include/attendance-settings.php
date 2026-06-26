@@ -117,6 +117,26 @@ function saveAttendanceCutoffsForComponents(PDO $conn, array $cutoffs, array $co
     }
 }
 
+function getAbsentNotificationGraceHours(PDO $conn) {
+    $hours = (int) getSystemSetting($conn, 'absent_notification_grace_hours', '5');
+    return max(1, min(24, $hours));
+}
+
+function saveAbsentNotificationGraceHours(PDO $conn, $hours) {
+    $hours = filter_var($hours, FILTER_VALIDATE_INT, [
+        'options' => [
+            'min_range' => 1,
+            'max_range' => 24,
+        ],
+    ]);
+
+    if ($hours === false) {
+        throw new InvalidArgumentException('Please enter a valid absent notification delay from 1 to 24 hours.');
+    }
+
+    setSystemSetting($conn, 'absent_notification_grace_hours', (string) $hours);
+}
+
 function attendanceComponentForStudent(PDO $conn, array $student) {
     if (isRotcStudentRecord($conn, $student)) {
         return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'

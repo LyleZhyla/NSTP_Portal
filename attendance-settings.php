@@ -16,6 +16,7 @@ $componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
 $cutoffComponents = attendanceCutoffComponentsForUser($currentUser);
+$absentNotificationGraceHours = getAbsentNotificationGraceHours($conn);
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
 $autoSectionEnabledForCurrentUser = $autoSectionComponent !== 'ROTC';
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
@@ -227,6 +228,31 @@ date_default_timezone_set('Asia/Manila');
                             <form id="attendanceCutoffForm">
                                 <div class="card-body">
                                     <p class="text-muted">Set what time late attendance starts for each morning and afternoon session.</p>
+                                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
+                                        <div class="setting-summary mb-3">
+                                            <i class="fas fa-user-times"></i>
+                                            <div class="flex-fill">
+                                                <strong>Absent notification delay</strong>
+                                                <span class="text-muted small">
+                                                    Students without attendance will be notified this many hours after their morning late start time.
+                                                </span>
+                                            </div>
+                                            <div style="width: 160px;">
+                                                <label class="small mb-1" for="absent_notification_grace_hours">Hours</label>
+                                                <input
+                                                    type="number"
+                                                    class="form-control"
+                                                    id="absent_notification_grace_hours"
+                                                    name="absent_notification_grace_hours"
+                                                    min="1"
+                                                    max="24"
+                                                    step="1"
+                                                    value="<?php echo (int) $absentNotificationGraceHours; ?>"
+                                                    required
+                                                >
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                     <?php foreach ($cutoffComponents as $component): ?>
                                         <?php $key = strtolower($component); ?>
                                         <div class="cutoff-row">
