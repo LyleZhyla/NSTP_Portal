@@ -63,15 +63,15 @@ function renderAppEmailTemplate($title, $preheader, $bodyHtml, $footerNote = '')
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{$safeTitle}</title>
 </head>
-<body style="margin:0;padding:0;background:#eef4f7;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;color:#1f2933;">
+<body style="margin:0;padding:0;background:#e8f6ee;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;color:#1f2937;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">{$safePreheader}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4f7;margin:0;padding:32px 12px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#e8f6ee;margin:0;padding:32px 12px;">
         <tr>
             <td align="center">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #d7e4ea;box-shadow:0 12px 32px rgba(32,72,84,0.12);">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #cce8d6;box-shadow:0 12px 32px rgba(15,81,50,0.14);">
                     <tr>
-                        <td style="background:#2f6f7e;padding:28px 32px;color:#ffffff;">
-                            <div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#d8eef3;">TAU NSTP Portal</div>
+                        <td style="background:#0f5132;padding:28px 32px;color:#ffffff;">
+                            <div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b7dfc6;">TAU NSTP Portal</div>
                             <h1 style="margin:10px 0 0;font-size:24px;line-height:1.25;font-weight:800;color:#ffffff;">{$safeTitle}</h1>
                         </td>
                     </tr>
@@ -81,9 +81,9 @@ function renderAppEmailTemplate($title, $preheader, $bodyHtml, $footerNote = '')
                         </td>
                     </tr>
                     <tr>
-                        <td style="background:#f7fafb;border-top:1px solid #e3edf1;padding:20px 32px;text-align:center;">
-                            <p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:#667784;">{$safeFooterNote}</p>
-                            <p style="margin:0;font-size:12px;line-height:1.5;color:#8a98a3;">&copy; {$year} TAU NSTP</p>
+                        <td style="background:#f3faf6;border-top:1px solid #cce8d6;padding:20px 32px;text-align:center;">
+                            <p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:#5f7468;">{$safeFooterNote}</p>
+                            <p style="margin:0;font-size:12px;line-height:1.5;color:#0f5132;">&copy; {$year} TAU NSTP</p>
                         </td>
                     </tr>
                 </table>
@@ -102,7 +102,7 @@ function renderEmailButton($label, $url) {
     return <<<HTML
 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:26px 0;">
     <tr>
-        <td style="border-radius:8px;background:#2f6f7e;">
+        <td style="border-radius:8px;background:#198754;">
             <a href="{$safeUrl}" style="display:inline-block;padding:13px 22px;font-size:15px;line-height:1.2;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{$safeLabel}</a>
         </td>
     </tr>
@@ -170,24 +170,24 @@ function sendAccountCredentialsEmail($email, $fullName, $username, $password, $r
 
     $subject = 'Your TAU NSTP Portal Account';
     $bodyHtml = <<<HTML
-<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
-<p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#42515c;">Your {$safeRole} account for TAU NSTP Portal has been created. Use the temporary credentials below to sign in.</p>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#f4f8fa;border:1px solid #dbe8ed;border-radius:10px;">
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#1f2937;">Hello {$safeName},</p>
+<p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#40534a;">Your {$safeRole} account for TAU NSTP Portal has been created. Use the temporary credentials below to sign in.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#f3faf6;border:1px solid #cce8d6;border-left:6px solid #198754;border-radius:10px;">
     <tr>
-        <td style="padding:18px 20px;border-bottom:1px solid #dbe8ed;">
-            <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#667784;">Username</div>
-            <div style="margin-top:6px;font-size:18px;font-weight:800;color:#1f2933;">{$safeUsername}</div>
+        <td style="padding:18px 20px;border-bottom:1px solid #cce8d6;">
+            <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#198754;">Username</div>
+            <div style="margin-top:6px;font-size:18px;font-weight:800;color:#0f5132;">{$safeUsername}</div>
         </td>
     </tr>
     <tr>
         <td style="padding:18px 20px;">
-            <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#667784;">Temporary Password</div>
-            <div style="margin-top:6px;font-size:18px;font-weight:800;color:#1f2933;">{$safePassword}</div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#198754;">Temporary Password</div>
+            <div style="margin-top:6px;font-size:18px;font-weight:800;color:#0f5132;">{$safePassword}</div>
         </td>
     </tr>
 </table>
-<p style="margin:0 0 14px;font-size:15px;line-height:1.7;color:#42515c;">For your security, please change your password after logging in.</p>
-<p style="margin:0;font-size:15px;line-height:1.7;color:#42515c;">Best regards,<br><strong>TAU NSTP Portal</strong></p>
+<p style="margin:0 0 14px;font-size:15px;line-height:1.7;color:#40534a;">For your security, please change your password after logging in.</p>
+<p style="margin:0;font-size:15px;line-height:1.7;color:#40534a;">Best regards,<br><strong style="color:#0f5132;">TAU NSTP Portal</strong></p>
 HTML;
     $htmlBody = renderAppEmailTemplate(
         'Your TAU NSTP Portal Account',

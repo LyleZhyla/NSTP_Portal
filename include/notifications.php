@@ -209,12 +209,12 @@ function sendLateAttendanceNotification(PDO $conn, array $student, array $attend
     $safeTime = htmlspecialchars($timeLabel, ENT_QUOTES, 'UTF-8');
     $safeStatus = htmlspecialchars($status, ENT_QUOTES, 'UTF-8');
     $bodyHtml = <<<HTML
-<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
-<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">Your attendance scan for {$safeDate} was recorded as late.</p>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff8e6;border:1px solid #f4d685;border-radius:10px;">
-    <tr><td style="padding:16px 18px;"><strong>Date:</strong> {$safeDate}<br><strong>Time:</strong> {$safeTime}<br><strong>Status:</strong> {$safeStatus}</td></tr>
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#1f2937;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#40534a;">Your attendance scan for {$safeDate} was recorded as late.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff8e6;border:1px solid #f4d685;border-left:6px solid #f59e0b;border-radius:10px;">
+    <tr><td style="padding:16px 18px;color:#1f2937;"><strong style="color:#0f5132;">Date:</strong> {$safeDate}<br><strong style="color:#0f5132;">Time:</strong> {$safeTime}<br><strong style="color:#0f5132;">Status:</strong> {$safeStatus}</td></tr>
 </table>
-<p style="margin:0;font-size:15px;line-height:1.7;color:#42515c;">Please coordinate with your facilitator if you need clarification.</p>
+<p style="margin:0;font-size:15px;line-height:1.7;color:#40534a;">Please coordinate with your facilitator if you need clarification.</p>
 HTML;
 
     $htmlBody = renderAppEmailTemplate($title, 'Your attendance scan today was marked late.', $bodyHtml);
@@ -296,12 +296,12 @@ function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendance
         $safeNotifyAfter = htmlspecialchars($notifyAfterLabel, ENT_QUOTES, 'UTF-8');
         $safeGraceHours = htmlspecialchars((string) $graceHours, ENT_QUOTES, 'UTF-8');
         $bodyHtml = <<<HTML
-<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
-<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">No attendance scan was recorded for {$safeDate} within the allowed time.</p>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;">
-    <tr><td style="padding:16px 18px;"><strong>Date:</strong> {$safeDate}<br><strong>Late start time:</strong> {$safeCutoff}<br><strong>Absent notification time:</strong> {$safeNotifyAfter}<br><strong>Grace period:</strong> {$safeGraceHours} hour(s)</td></tr>
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#1f2937;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#40534a;">No attendance scan was recorded for {$safeDate} within the allowed time.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff1f2;border:1px solid #fecdd3;border-left:6px solid #b23a48;border-radius:10px;">
+    <tr><td style="padding:16px 18px;color:#1f2937;"><strong style="color:#0f5132;">Date:</strong> {$safeDate}<br><strong style="color:#0f5132;">Late start time:</strong> {$safeCutoff}<br><strong style="color:#0f5132;">Absent notification time:</strong> {$safeNotifyAfter}<br><strong style="color:#0f5132;">Grace period:</strong> {$safeGraceHours} hour(s)</td></tr>
 </table>
-<p style="margin:0;font-size:15px;line-height:1.7;color:#42515c;">You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.</p>
+<p style="margin:0;font-size:15px;line-height:1.7;color:#40534a;">You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.</p>
 HTML;
 
         $htmlBody = renderAppEmailTemplate($title, 'You are considered absent for today.', $bodyHtml);
@@ -539,11 +539,11 @@ function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgra
         $safeTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $safeBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
         $bodyHtml = <<<HTML
-<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#26343d;">Hello {$safeName},</p>
-<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#42515c;">A new NSTP announcement has been posted:</p>
-<div style="margin:22px 0;padding:18px 20px;background:#f4f8fa;border:1px solid #dbe8ed;border-radius:10px;">
-    <h2 style="margin:0 0 10px;font-size:18px;color:#1f2933;">{$safeTitle}</h2>
-    <div style="font-size:15px;line-height:1.7;color:#42515c;">{$safeBody}</div>
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#1f2937;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#40534a;">A new NSTP announcement has been posted:</p>
+<div style="margin:22px 0;padding:18px 20px;background:#f3faf6;border:1px solid #cce8d6;border-left:6px solid #198754;border-radius:10px;">
+    <h2 style="margin:0 0 10px;font-size:18px;color:#0f5132;">{$safeTitle}</h2>
+    <div style="font-size:15px;line-height:1.7;color:#40534a;">{$safeBody}</div>
 </div>
 HTML;
         $htmlBody = renderAppEmailTemplate('NSTP Announcement', 'A new announcement was posted in the TAU NSTP Portal.', $bodyHtml);
