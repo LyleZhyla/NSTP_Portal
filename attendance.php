@@ -1148,6 +1148,7 @@ if ($admin_role === 'super_admin') {
     const adminId = <?= $admin_id ?>;
     const adminRole = '<?= $admin_role ?>';
     let dataTable = null;
+    let absentNotificationRequestRunning = false;
     
     // Initialize on document ready
     $(document).ready(function() {
@@ -1198,6 +1199,8 @@ if ($admin_role === 'super_admin') {
         $('#attendanceSuccessSection').hide();
         updateExportPeriodFields();
         $('#exportPeriod').on('change', updateExportPeriodFields);
+        processAbsentNotifications();
+        setInterval(processAbsentNotifications, 60000);
         
         // Check if library is loaded
         if (typeof Html5QrcodeScanner === 'undefined') {
@@ -1233,6 +1236,44 @@ if ($admin_role === 'super_admin') {
         } else {
             $('#exportDayField').removeClass('d-none');
         }
+    }
+
+    function processAbsentNotifications() {
+        if (absentNotificationRequestRunning) {
+            return;
+        }
+
+        absentNotificationRequestRunning = true;
+
+        $.ajax({
+            url: './endpoint/process-absent-notifications.php',
+            method: 'POST',
+            dataType: 'json',
+            timeout: 20000,
+            success: function(response) {
+                if (!response || !response.success || !response.summary) {
+                    return;
+                }
+
+                const summary = response.summary;
+                if ((summary.created || 0) > 0) {
+                    showToast(
+                        'info',
+                        'Absent notices processed',
+                        `${summary.created} absent notification(s) created.`
+                    );
+                }
+            },
+            error: function(xhr) {
+                if (xhr && xhr.status === 403) {
+                    return;
+                }
+                console.warn('Absent notification check failed.');
+            },
+            complete: function() {
+                absentNotificationRequestRunning = false;
+            }
+        });
     }
     
     // Start scanner

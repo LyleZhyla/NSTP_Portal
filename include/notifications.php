@@ -330,7 +330,7 @@ HTML;
     ];
 }
 
-function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null, $now = null) {
+function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null, $now = null, ?array $actor = null) {
     ensureAbsentNotificationTable($conn);
 
     $nowTimestamp = $now ? strtotime($now) : time();
@@ -341,19 +341,31 @@ function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null,
     $attendanceDate = $attendanceDate ? date('Y-m-d', strtotime($attendanceDate)) : date('Y-m-d', $nowTimestamp);
     $graceHours = absentNotificationGraceHours($conn);
     $cutoffs = getAttendanceCutoffs($conn);
+    $accessJoin = '';
+    $accessWhere = '';
+    $accessParams = [];
+
+    if ($actor !== null) {
+        $access = studentAttendanceAccessSqlForUser($actor, 's');
+        $accessJoin = 'LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section';
+        $accessWhere = 'AND ' . $access['condition'];
+        $accessParams = $access['params'];
+    }
 
     $stmt = $conn->prepare("
-        SELECT s.*
+        SELECT DISTINCT s.*
         FROM tbl_student s
+        {$accessJoin}
         WHERE NOT EXISTS (
             SELECT 1
             FROM tbl_attendance a
             WHERE a.tbl_student_id = s.tbl_student_id
               AND DATE(a.time_in) = ?
         )
+        {$accessWhere}
         ORDER BY s.tbl_student_id ASC
     ");
-    $stmt->execute([$attendanceDate]);
+    $stmt->execute(array_merge([$attendanceDate], $accessParams));
     $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $summary = [

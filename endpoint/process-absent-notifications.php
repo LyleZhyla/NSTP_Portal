@@ -25,7 +25,7 @@ function absentNotificationRequestAuthorized(PDO $conn) {
     }
 
     $currentUser = getCurrentUserRecord($conn);
-    return $currentUser && in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true);
+    return $currentUser && canAccessStaffTools($currentUser['role'] ?? '');
 }
 
 try {
@@ -46,7 +46,12 @@ try {
         $attendanceDate = $argv[1];
     }
 
-    $summary = processAbsentAttendanceNotifications($conn, $attendanceDate);
+    $actor = null;
+    if (PHP_SAPI !== 'cli' && !empty($_SESSION['user_id'])) {
+        $actor = getCurrentUserRecord($conn);
+    }
+
+    $summary = processAbsentAttendanceNotifications($conn, $attendanceDate, null, $actor);
     $response = ['success' => true, 'summary' => $summary];
 
     if (PHP_SAPI === 'cli') {
