@@ -106,11 +106,11 @@ function selectedGradeGroupLabel(array $source, $default = 'Additional Requireme
     $new = trim((string) ($source['group_label_new'] ?? ''));
     $fallback = trim((string) ($source['group_label'] ?? $default));
 
-    if ($new !== '') {
+    if ($selected === '__new' && $new !== '') {
         return $new;
     }
 
-    if ($selected !== '') {
+    if ($selected !== '' && $selected !== '__new') {
         return $selected;
     }
 
@@ -1505,8 +1505,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <option value="<?php echo htmlspecialchars($categoryLabel); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                        <option value="__new">Create new category</option>
                     </select>
-                    <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2" maxlength="120" placeholder="Or type a new category name">
+                    <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
                     <small class="text-muted">Columns with the same category are grouped when computing the weighted percentage.</small>
                 </div>
                 <div class="form-row">
@@ -1555,8 +1556,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <option value="<?php echo htmlspecialchars($categoryLabel); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                        <option value="__new">Create new category</option>
                     </select>
-                    <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2" maxlength="120" placeholder="Or type a new category name">
+                    <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
                 </div>
                 <div class="form-row">
                     <div class="form-group col-md-6">
@@ -1740,6 +1742,17 @@ $('.score-input').on('input', function() {
     refreshGradeRow($(this).closest('.grade-row'));
 });
 
+function syncNewCategoryInput(prefix) {
+    const isNew = $('#' + prefix + 'ColumnGroupSelect').val() === '__new';
+    $('#' + prefix + 'ColumnGroupNew')
+        .toggleClass('d-none', !isNew)
+        .prop('required', isNew);
+}
+
+$('#addColumnGroupSelect, #editColumnGroupSelect').on('change', function() {
+    syncNewCategoryInput(this.id.indexOf('edit') === 0 ? 'edit' : 'add');
+});
+
 $('.edit-column-btn').on('click', function() {
     const groupLabel = String($(this).data('group-label') || '');
     $('#editColumnId').val($(this).data('column-id'));
@@ -1751,9 +1764,14 @@ $('.edit-column-btn').on('click', function() {
         $('#editColumnGroupSelect').val(groupLabel);
         $('#editColumnGroupNew').val('');
     } else {
+        $('#editColumnGroupSelect').val('__new');
         $('#editColumnGroupNew').val(groupLabel);
     }
+    syncNewCategoryInput('edit');
 });
+
+syncNewCategoryInput('add');
+syncNewCategoryInput('edit');
 
 function refreshSelectedColumnControls() {
     const checkedCount = $('.grade-column-checkbox:checked').length;
