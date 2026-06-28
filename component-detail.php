@@ -352,41 +352,35 @@ function e($value) {
         .activity-modal-dialog {
             position: relative;
             z-index: 1;
-            width: min(980px, 100%);
-            max-height: min(86vh, 780px);
+            width: min(1180px, 100%);
+            max-height: min(92vh, 860px);
             overflow: hidden;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) 280px;
             border-radius: 8px;
-            background: #fff;
+            background: #0f172a;
             box-shadow: 0 24px 70px rgba(15, 23, 42, 0.36);
         }
 
         .activity-modal-media {
-            min-height: 420px;
+            position: relative;
+            display: grid;
+            place-items: center;
+            min-height: min(78vh, 720px);
+            padding: 24px 24px 104px;
             background: #0f172a;
         }
 
         .activity-modal-media img {
             width: 100%;
-            height: 100%;
-            min-height: 420px;
-            object-fit: cover;
-        }
-
-        .activity-modal-content {
-            display: grid;
-            grid-template-rows: auto minmax(0, 1fr);
-            gap: 16px;
-            padding: 22px;
-            overflow: hidden;
+            height: min(70vh, 650px);
+            object-fit: contain;
+            border-radius: 8px;
         }
 
         .activity-modal-close {
             position: absolute;
             top: 12px;
             right: 12px;
-            z-index: 2;
+            z-index: 3;
             width: 42px;
             height: 42px;
             border: 0;
@@ -397,80 +391,71 @@ function e($value) {
             font-size: 1.1rem;
         }
 
-        .activity-modal-label {
-            display: inline-flex;
-            width: fit-content;
-            margin-bottom: 10px;
-            padding: 5px 9px;
-            border-radius: 5px;
-            background: #e8f5ee;
-            color: #0f5132;
-            font-size: 0.74rem;
-            font-weight: 900;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
+        .activity-slide-button {
+            position: absolute;
+            top: 50%;
+            z-index: 2;
+            width: 48px;
+            height: 48px;
+            border: 0;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            background: rgba(15, 23, 42, 0.68);
+            cursor: pointer;
+            font-size: 1.2rem;
+            transform: translateY(-50%);
         }
 
-        .activity-modal-content h3 {
-            margin: 0 0 10px;
-            line-height: 1.15;
+        .activity-slide-button:hover,
+        .activity-modal-close:hover {
+            background: rgba(25, 135, 84, 0.92);
         }
 
-        .activity-modal-content p {
-            margin: 0;
-            color: #475569;
-            font-weight: 650;
+        .activity-slide-prev {
+            left: 24px;
+        }
+
+        .activity-slide-next {
+            right: 24px;
         }
 
         .activity-thumbs {
-            display: grid;
+            position: absolute;
+            left: 24px;
+            right: 24px;
+            bottom: 20px;
+            z-index: 2;
+            display: flex;
             gap: 10px;
-            align-content: start;
-            overflow: auto;
-            padding-right: 4px;
+            overflow-x: auto;
+            padding: 8px;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.72);
         }
 
         .activity-thumb {
-            display: grid;
-            grid-template-columns: 72px minmax(0, 1fr);
-            gap: 10px;
-            align-items: center;
-            border: 1px solid var(--line);
+            flex: 0 0 auto;
+            width: 88px;
+            height: 66px;
+            border: 2px solid transparent;
             border-radius: 8px;
-            padding: 8px;
-            background: #fff;
-            color: var(--ink);
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
             cursor: pointer;
-            text-align: left;
-            font: inherit;
         }
 
         .activity-thumb.is-active {
-            border-color: var(--<?php echo e($component['accent']); ?>);
-            background: #f0fdf4;
+            border-color: #fff;
         }
 
         .activity-thumb img {
-            width: 72px;
-            height: 56px;
+            width: 100%;
+            height: 100%;
             object-fit: cover;
-            border-radius: 6px;
-        }
-
-        .activity-thumb strong {
             display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-size: 0.9rem;
-            line-height: 1.2;
-        }
-
-        .activity-thumb span {
-            display: block;
-            color: var(--muted);
-            font-size: 0.75rem;
-            font-weight: 800;
         }
 
         .footer {
@@ -623,7 +608,6 @@ function e($value) {
         @media (max-width: 860px) {
             .detail-grid,
             .activity-grid,
-            .activity-modal-dialog,
             .editor-grid,
             .activity-editor-fields {
                 grid-template-columns: 1fr;
@@ -635,12 +619,38 @@ function e($value) {
 
             .activity-modal-dialog {
                 max-height: 90vh;
-                overflow: auto;
             }
 
-            .activity-modal-media,
+            .activity-modal-media {
+                min-height: 74vh;
+                padding: 18px 16px 94px;
+            }
+
             .activity-modal-media img {
-                min-height: 280px;
+                height: 62vh;
+            }
+
+            .activity-slide-button {
+                width: 42px;
+                height: 42px;
+            }
+
+            .activity-slide-prev {
+                left: 14px;
+            }
+
+            .activity-slide-next {
+                right: 14px;
+            }
+
+            .activity-thumbs {
+                left: 14px;
+                right: 14px;
+            }
+
+            .activity-thumb {
+                width: 72px;
+                height: 54px;
             }
 
             .nav-shell {
@@ -705,7 +715,7 @@ function e($value) {
             <div class="section-inner">
                 <div class="panel">
                     <h3><?php echo e($component['name']); ?> Activity Images</h3>
-                    <p>Press an activity image to view related photos and details.</p>
+                    <p>Press an activity image to open the slideshow.</p>
                 </div>
                 <div class="activity-grid">
                     <?php foreach ($component['activities'] as $index => $activity): ?>
@@ -722,21 +732,20 @@ function e($value) {
             </div>
         </section>
 
-        <div class="activity-modal" id="activityModal" role="dialog" aria-modal="true" aria-labelledby="activityModalTitle" aria-hidden="true">
+        <div class="activity-modal" id="activityModal" role="dialog" aria-modal="true" aria-label="Activity image slideshow" aria-hidden="true">
             <div class="activity-modal-backdrop" data-close-activity-modal></div>
             <div class="activity-modal-dialog">
                 <button class="activity-modal-close" type="button" data-close-activity-modal aria-label="Close activity gallery">
                     <i class="fas fa-times"></i>
                 </button>
                 <div class="activity-modal-media">
+                    <button class="activity-slide-button activity-slide-prev" type="button" aria-label="Previous image">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
                     <img id="activityModalImage" src="" alt="">
-                </div>
-                <div class="activity-modal-content">
-                    <div>
-                        <span class="activity-modal-label" id="activityModalLabel"></span>
-                        <h3 id="activityModalTitle"></h3>
-                        <p id="activityModalDetail"></p>
-                    </div>
+                    <button class="activity-slide-button activity-slide-next" type="button" aria-label="Next image">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
                     <div class="activity-thumbs" id="activityModalThumbs" aria-label="Related activity images"></div>
                 </div>
             </div>
@@ -910,10 +919,9 @@ function e($value) {
 
             const modal = document.getElementById('activityModal');
             const modalImage = document.getElementById('activityModalImage');
-            const modalLabel = document.getElementById('activityModalLabel');
-            const modalTitle = document.getElementById('activityModalTitle');
-            const modalDetail = document.getElementById('activityModalDetail');
             const modalThumbs = document.getElementById('activityModalThumbs');
+            const prevButton = modal ? modal.querySelector('.activity-slide-prev') : null;
+            const nextButton = modal ? modal.querySelector('.activity-slide-next') : null;
             let activeIndex = 0;
             let lastFocusedElement = null;
 
@@ -924,13 +932,18 @@ function e($value) {
                 activeIndex = index;
                 modalImage.src = activity.image;
                 modalImage.alt = activity.title;
-                modalLabel.textContent = activity.label;
-                modalTitle.textContent = activity.title;
-                modalDetail.textContent = activity.detail;
 
                 Array.from(modalThumbs.querySelectorAll('.activity-thumb')).forEach((button) => {
                     button.classList.toggle('is-active', Number(button.dataset.activityIndex) === activeIndex);
                 });
+            }
+
+            function showNextActivity() {
+                setActiveActivity((activeIndex + 1) % activities.length);
+            }
+
+            function showPreviousActivity() {
+                setActiveActivity((activeIndex - 1 + activities.length) % activities.length);
             }
 
             function buildThumbs() {
@@ -943,15 +956,9 @@ function e($value) {
 
                     const image = document.createElement('img');
                     image.src = activity.image;
-                    image.alt = '';
-
-                    const textWrap = document.createElement('span');
-                    const title = document.createElement('strong');
-                    const label = document.createElement('span');
-                    title.textContent = activity.title;
-                    label.textContent = activity.label;
-                    textWrap.append(title, label);
-                    button.append(image, textWrap);
+                    image.alt = activity.title;
+                    button.setAttribute('aria-label', `Show ${activity.title}`);
+                    button.append(image);
 
                     button.addEventListener('click', () => setActiveActivity(index));
                     modalThumbs.appendChild(button);
@@ -989,6 +996,14 @@ function e($value) {
                 element.addEventListener('click', closeModal);
             });
 
+            if (prevButton) {
+                prevButton.addEventListener('click', showPreviousActivity);
+            }
+
+            if (nextButton) {
+                nextButton.addEventListener('click', showNextActivity);
+            }
+
             document.addEventListener('keydown', (event) => {
                 if (!modal || !modal.classList.contains('is-open')) return;
 
@@ -998,12 +1013,12 @@ function e($value) {
                 }
 
                 if (event.key === 'ArrowRight') {
-                    setActiveActivity((activeIndex + 1) % activities.length);
+                    showNextActivity();
                     return;
                 }
 
                 if (event.key === 'ArrowLeft') {
-                    setActiveActivity((activeIndex - 1 + activities.length) % activities.length);
+                    showPreviousActivity();
                 }
             });
         })();
