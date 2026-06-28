@@ -166,6 +166,7 @@ if ($user) {
     }
 }
 $pendingDataEditRequest = $user ? dataEditRequestPendingForUser($conn, $user_id) : null;
+$showRegistrationEditForm = false;
 
 $isStudent = $user && ($user['role'] ?? '') === 'student';
 $studentRecord = null;
@@ -229,6 +230,7 @@ if ($isStudent) {
                 $pendingDataEditRequest = dataEditRequestPendingForUser($conn, $user_id);
             } catch (Throwable $registrationRequestError) {
                 $error = $registrationRequestError->getMessage();
+                $showRegistrationEditForm = true;
             }
         }
 
@@ -539,6 +541,21 @@ if (!empty($user['full_name'])) {
             font-weight: 500;
             padding-left: 22px;
             word-break: break-word;
+        }
+
+        .registration-edit-view .info-section {
+            padding-top: 0;
+        }
+
+        .registration-edit-view .form-group {
+            margin-bottom: 14px;
+        }
+
+        .registration-edit-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
         }
         
         .section-badge {
@@ -1115,75 +1132,124 @@ if (!empty($user['full_name'])) {
                             <?php endif; ?>
 
                             <?php if ($isStudent && $studentRecord): ?>
+                            <?php
+                                $registrationEditFieldGroups = [
+                                    'Personal Information' => ['last_name', 'extension_name', 'first_name', 'middle_name', 'gender', 'date_of_birth', 'place_of_birth', 'religion', 'blood_type'],
+                                    'Contact Information' => ['email', 'contact_number', 'house_no', 'street', 'barangay', 'city_municipality', 'province'],
+                                    'Emergency Contact' => ['emergency_name', 'emergency_relationship', 'emergency_contact_number', 'emergency_address'],
+                                    'Academic Information' => ['college', 'course', 'major', 'year_section', 'component'],
+                                ];
+                                $registrationEditFields = registrationEditRequestFields();
+                            ?>
                             <div class="profile-card">
                                 <div class="card-header bg-white d-flex align-items-center justify-content-between flex-wrap">
                                     <h5 class="mb-0"><i class="fas fa-address-card mr-2"></i>Registration Details</h5>
                                     <?php if (!$pendingDataEditRequest): ?>
-                                        <button class="btn btn-success btn-sm mt-2 mt-sm-0" type="button" data-toggle="collapse" data-target="#registrationEditRequestForm" aria-expanded="false" aria-controls="registrationEditRequestForm">
-                                            <i class="fas fa-paper-plane mr-2"></i>Request Changes
+                                        <button class="btn btn-success btn-sm mt-2 mt-sm-0" type="button" id="toggleRegistrationEdit" aria-expanded="<?php echo $showRegistrationEditForm ? 'true' : 'false'; ?>">
+                                            <i class="fas <?php echo $showRegistrationEditForm ? 'fa-eye' : 'fa-edit'; ?> mr-2"></i><?php echo $showRegistrationEditForm ? 'View Details' : 'Request Changes'; ?>
                                         </button>
                                     <?php endif; ?>
                                 </div>
                                 <div class="card-body">
-                                    <div class="row">
-                                        <?php foreach ($studentRegistrationSections as $sectionTitle => $details): ?>
-                                            <div class="col-lg-6 mb-3">
-                                                <div class="info-section h-100 mb-0">
-                                                    <div class="info-title">
-                                                        <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($sectionTitle); ?>
-                                                    </div>
-                                                    <?php foreach ($details as $label => $value): ?>
-                                                        <div class="info-item">
-                                                            <div class="info-label"><?php echo htmlspecialchars($label); ?></div>
-                                                            <div class="info-value"><?php echo htmlspecialchars($value ?: 'N/A'); ?></div>
-                                                        </div>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-
-                                    <hr>
                                     <?php if ($pendingDataEditRequest): ?>
+                                        <div class="row">
+                                            <?php foreach ($studentRegistrationSections as $sectionTitle => $details): ?>
+                                                <div class="col-lg-6 mb-3">
+                                                    <div class="info-section h-100 mb-0">
+                                                        <div class="info-title">
+                                                            <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($sectionTitle); ?>
+                                                        </div>
+                                                        <?php foreach ($details as $label => $value): ?>
+                                                            <div class="info-item">
+                                                                <div class="info-label"><?php echo htmlspecialchars($label); ?></div>
+                                                                <div class="info-value"><?php echo htmlspecialchars($value ?: 'N/A'); ?></div>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <hr>
                                         <div class="alert alert-info mb-0">
                                             <i class="fas fa-hourglass-half mr-2"></i>
                                             You already have a pending data edit request. You can submit another request after the super admin reviews it.
                                         </div>
                                     <?php else: ?>
-                                        <div class="collapse mt-3" id="registrationEditRequestForm">
-                                            <form method="POST">
-                                                <div class="row">
-                                                    <?php foreach (registrationEditRequestFields() as $fieldKey => $fieldLabel): ?>
-                                                        <?php
-                                                            $fieldValue = $fieldKey === 'email'
-                                                                ? ($studentRecord['registration_email'] ?? '')
-                                                                : ($studentRecord[$fieldKey] ?? '');
-                                                            $inputType = $fieldKey === 'date_of_birth' ? 'date' : ($fieldKey === 'email' ? 'email' : 'text');
-                                                        ?>
-                                                        <div class="col-md-6">
-                                                            <div class="form-group">
-                                                                <label for="registration_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo htmlspecialchars($fieldLabel); ?></label>
-                                                                <input
-                                                                    type="<?php echo $inputType; ?>"
-                                                                    class="form-control"
-                                                                    id="registration_<?php echo htmlspecialchars($fieldKey); ?>"
-                                                                    name="registration[<?php echo htmlspecialchars($fieldKey); ?>]"
-                                                                    value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>"
-                                                                    <?php echo in_array($fieldKey, ['first_name', 'last_name', 'email'], true) ? 'required' : ''; ?>
-                                                                >
+                                        <div class="registration-read-view <?php echo $showRegistrationEditForm ? 'd-none' : ''; ?>">
+                                            <div class="row">
+                                                <?php foreach ($studentRegistrationSections as $sectionTitle => $details): ?>
+                                                    <div class="col-lg-6 mb-3">
+                                                        <div class="info-section h-100 mb-0">
+                                                            <div class="info-title">
+                                                                <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($sectionTitle); ?>
+                                                            </div>
+                                                            <?php foreach ($details as $label => $value): ?>
+                                                                <div class="info-item">
+                                                                    <div class="info-label"><?php echo htmlspecialchars($label); ?></div>
+                                                                    <div class="info-value"><?php echo htmlspecialchars($value ?: 'N/A'); ?></div>
+                                                                </div>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+
+                                        <form method="POST" class="registration-edit-view <?php echo $showRegistrationEditForm ? '' : 'd-none'; ?>" id="registrationEditRequestForm">
+                                            <div class="row">
+                                                <?php foreach ($registrationEditFieldGroups as $sectionTitle => $fieldKeys): ?>
+                                                    <div class="col-lg-6 mb-3">
+                                                        <div class="info-section h-100 mb-0">
+                                                            <div class="info-title">
+                                                                <i class="fas fa-pen"></i> <?php echo htmlspecialchars($sectionTitle); ?>
+                                                            </div>
+                                                            <div class="row">
+                                                                <?php foreach ($fieldKeys as $fieldKey): ?>
+                                                                    <?php
+                                                                        if (!isset($registrationEditFields[$fieldKey])) {
+                                                                            continue;
+                                                                        }
+                                                                        $postedRegistration = $_POST['registration'] ?? [];
+                                                                        $fieldValue = array_key_exists($fieldKey, $postedRegistration)
+                                                                            ? $postedRegistration[$fieldKey]
+                                                                            : ($fieldKey === 'email'
+                                                                                ? ($studentRecord['registration_email'] ?? '')
+                                                                                : ($studentRecord[$fieldKey] ?? ''));
+                                                                        $inputType = $fieldKey === 'date_of_birth' ? 'date' : ($fieldKey === 'email' ? 'email' : 'text');
+                                                                    ?>
+                                                                    <div class="col-md-6">
+                                                                        <div class="form-group">
+                                                                            <label for="registration_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo htmlspecialchars($registrationEditFields[$fieldKey]); ?></label>
+                                                                            <input
+                                                                                type="<?php echo $inputType; ?>"
+                                                                                class="form-control"
+                                                                                id="registration_<?php echo htmlspecialchars($fieldKey); ?>"
+                                                                                name="registration[<?php echo htmlspecialchars($fieldKey); ?>]"
+                                                                                value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>"
+                                                                                <?php echo in_array($fieldKey, ['first_name', 'last_name', 'email'], true) ? 'required' : ''; ?>
+                                                                            >
+                                                                        </div>
+                                                                    </div>
+                                                                <?php endforeach; ?>
                                                             </div>
                                                         </div>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                                <div class="form-group">
-                                                    <label for="registration_request_reason">Reason for Request</label>
-                                                    <textarea class="form-control" id="registration_request_reason" name="registration_request_reason" rows="3" placeholder="Briefly explain which registration details need correction."></textarea>
-                                                </div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label for="registration_request_reason">Reason for Request</label>
+                                                <textarea class="form-control" id="registration_request_reason" name="registration_request_reason" rows="3" placeholder="Briefly explain which registration details need correction."><?php echo htmlspecialchars($_POST['registration_request_reason'] ?? ''); ?></textarea>
+                                            </div>
+                                            <div class="registration-edit-actions">
                                                 <button type="submit" name="submit_registration_edit_request" class="btn btn-primary">
-                                                    <i class="fas fa-paper-plane mr-2"></i>Submit Registration Edit Request
+                                                    <i class="fas fa-paper-plane mr-2"></i>Submit Request
                                                 </button>
-                                            </form>
-                                        </div>
+                                                <button type="button" class="btn btn-secondary" id="cancelRegistrationEdit">
+                                                    <i class="fas fa-times mr-2"></i>Cancel
+                                                </button>
+                                            </div>
+                                        </form>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -1475,6 +1541,29 @@ if (!empty($user['full_name'])) {
             // Auto upload when file is selected
             $('#profilePictureInput').change(function() {
                 $('#uploadForm').submit();
+            });
+
+            $('#toggleRegistrationEdit').click(function() {
+                const editView = $('.registration-edit-view');
+                const isEditing = !editView.hasClass('d-none');
+
+                if (isEditing) {
+                    editView.addClass('d-none');
+                    $('.registration-read-view').removeClass('d-none');
+                    $(this).attr('aria-expanded', 'false').html('<i class="fas fa-edit mr-2"></i>Request Changes');
+                } else {
+                    $('.registration-read-view').addClass('d-none');
+                    editView.removeClass('d-none');
+                    $(this).attr('aria-expanded', 'true').html('<i class="fas fa-eye mr-2"></i>View Details');
+                }
+            });
+
+            $('#cancelRegistrationEdit').click(function() {
+                $('.registration-edit-view').addClass('d-none');
+                $('.registration-read-view').removeClass('d-none');
+                $('#toggleRegistrationEdit')
+                    .attr('aria-expanded', 'false')
+                    .html('<i class="fas fa-edit mr-2"></i>Request Changes');
             });
             
             // Password strength checker
