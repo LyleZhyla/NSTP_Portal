@@ -1399,9 +1399,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                 </th>
                                             <?php endforeach; ?>
                                             <th class="computed-cell">Attendance <span class="small-label">/ <?php echo (int) $totalMeetings; ?></span></th>
-                                            <th class="computed-cell">Total Score</th>
-                                            <th class="computed-cell">Max Score</th>
-                                            <th class="computed-cell">Score %</th>
+                                            <?php if (!empty($gradeColumns)): ?>
+                                                <th class="computed-cell">Total Score</th>
+                                                <th class="computed-cell">Max Score</th>
+                                                <th class="computed-cell">Score %</th>
+                                            <?php endif; ?>
                                             <th class="computed-cell">Weighted %</th>
                                             <th class="final-cell">Final Grade</th>
                                         </tr>
@@ -1409,7 +1411,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <tbody>
                                         <?php if (empty($students)): ?>
                                             <tr>
-                                                <td colspan="<?php echo count($gradeColumns) + 9; ?>" class="text-center text-muted py-5">
+                                                <td colspan="<?php echo count($gradeColumns) + (empty($gradeColumns) ? 6 : 9); ?>" class="text-center text-muted py-5">
                                                     <i class="fas fa-user-graduate fa-2x d-block mb-2"></i>
                                                     No students available for this account.
                                                 </td>
@@ -1459,9 +1461,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                     </td>
                                                 <?php endforeach; ?>
                                                 <td class="computed-cell"><?php echo (int) $attendanceCount; ?></td>
-                                                <td class="computed-cell js-raw-total"><?php echo formatGradeNumber($summary['raw_total']); ?></td>
-                                                <td class="computed-cell js-max-total"><?php echo formatGradeNumber($summary['max_total']); ?></td>
-                                                <td class="computed-cell js-score-percent"><?php echo formatGradeNumber($summary['score_percent']); ?>%</td>
+                                                <?php if (!empty($gradeColumns)): ?>
+                                                    <td class="computed-cell js-raw-total"><?php echo formatGradeNumber($summary['raw_total']); ?></td>
+                                                    <td class="computed-cell js-max-total"><?php echo formatGradeNumber($summary['max_total']); ?></td>
+                                                    <td class="computed-cell js-score-percent"><?php echo formatGradeNumber($summary['score_percent']); ?>%</td>
+                                                <?php endif; ?>
                                                 <td class="computed-cell js-weighted-percent"><?php echo formatGradeNumber($summary['weighted_percent']); ?>%</td>
                                                 <td class="final-cell js-final-grade"><?php echo formatGradeNumber($summary['final_grade']); ?></td>
                                             </tr>
