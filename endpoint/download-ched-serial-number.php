@@ -13,12 +13,16 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $currentUser = getCurrentUserRecord($conn);
-if (!$currentUser || ($currentUser['role'] ?? '') !== 'coordinator') {
+if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true)) {
     die('Unauthorized access');
 }
 
+$role = $currentUser['role'] ?? '';
+$requestedComponent = normalizeProgram($_GET['component'] ?? null);
 $coordinatorProgram = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
-if (!in_array($coordinatorProgram, ['CWTS', 'LTS'], true)) {
+$component = $role === 'super_admin' ? $requestedComponent : $coordinatorProgram;
+
+if (!in_array($component, ['CWTS', 'LTS'], true)) {
     die('Unauthorized access');
 }
 
@@ -287,9 +291,6 @@ function chedComputeGradeSummary(array $gradeColumns, array $scores, array $grad
         'final_grade' => chedTransmuteGrade($weightedPercent),
     ];
 }
-
-$role = $currentUser['role'] ?? '';
-$component = $coordinatorProgram;
 
 if (!$component) {
     die('Invalid NSTP component for this CHED template');

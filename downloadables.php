@@ -1182,7 +1182,7 @@ if ($role === 'super_admin') {
                     </div>
                     <?php endif; ?>
 
-                    <?php if ($role === 'coordinator' && in_array($program, ['CWTS', 'LTS'], true)): ?>
+                    <?php if (($role === 'coordinator' && in_array($program, ['CWTS', 'LTS'], true)) || $role === 'super_admin'): ?>
                     <div class="col-12 mb-3">
                         <form class="card download-card" method="get" action="endpoint/download-ched-serial-number.php">
                             <div class="card-header">
@@ -1195,8 +1195,15 @@ if ($role === 'super_admin') {
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
-                                    <label>NSTP Component</label>
-                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($program); ?>" disabled>
+                                    <label for="chedComponent">NSTP Component</label>
+                                    <?php if ($role === 'super_admin'): ?>
+                                        <select class="form-control" id="chedComponent" name="component" required>
+                                            <option value="CWTS">CWTS</option>
+                                            <option value="LTS">LTS</option>
+                                        </select>
+                                    <?php else: ?>
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($program); ?>" disabled>
+                                    <?php endif; ?>
                                 </div>
                                 <p class="muted-note">Exports passed students in the selected LTS/CWTS component using the CHED serial number template.</p>
                                 <button type="submit" class="btn btn-success btn-block">
