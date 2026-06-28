@@ -884,12 +884,12 @@ if ($role === 'super_admin') {
 
                 <div class="row">
                     <div class="col-12 mb-3">
-                        <form class="card download-card" method="get" action="endpoint/download-attendance-excel.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-attendance-excel.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>Attendance Report</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -935,12 +935,12 @@ if ($role === 'super_admin') {
                     </div>
 
                     <div class="col-12 mb-3">
-                        <form class="card download-card" method="get" action="endpoint/download-grades-excel.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-grades-excel.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-award mr-2"></i>Student Grades</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1018,12 +1018,12 @@ if ($role === 'super_admin') {
 
                     <?php if ($canDownloadRotcProfiles): ?>
                     <div class="col-12 mb-3">
-                        <form class="card download-card" method="get" action="endpoint/download-rotc-cadets-profile.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-rotc-cadets-profile.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-id-card mr-2"></i>ROTC Cadets' Profile</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1110,12 +1110,12 @@ if ($role === 'super_admin') {
                     <?php endif; ?>
 
                     <div class="col-12 mb-3">
-                        <form class="card download-card" method="get" action="endpoint/download-archived-attendance.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-archived-attendance.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-archive mr-2"></i>Archived Attendance</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1140,12 +1140,12 @@ if ($role === 'super_admin') {
 
                     <?php if (in_array($role, ['super_admin', 'coordinator'], true)): ?>
                     <div class="col-12 mb-3">
-                        <form class="card download-card" method="get" action="endpoint/download-public-registration-attendance.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-public-registration-attendance.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-clipboard-list mr-2"></i>Public Registration Attendance</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1184,12 +1184,12 @@ if ($role === 'super_admin') {
 
                     <?php if (($role === 'coordinator' && in_array($program, ['CWTS', 'LTS'], true)) || $role === 'super_admin'): ?>
                     <div class="col-12 mb-3">
-                        <form class="card download-card" method="get" action="endpoint/download-ched-serial-number.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-ched-serial-number.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>CHED Serial Number</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1215,12 +1215,12 @@ if ($role === 'super_admin') {
                     <?php endif; ?>
 
                     <div class="col-12 mb-3">
-                        <div class="card download-card">
+                        <div class="card download-card collapsed-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>QR Codes ZIP</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1255,12 +1255,12 @@ if ($role === 'super_admin') {
 
                     <?php if ($role === 'super_admin'): ?>
                     <div class="col-12 mb-3">
-                        <div class="card download-card">
+                        <div class="card download-card collapsed-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-database mr-2"></i>Database Backup</h3>
                                 <div class="card-tools">
                                     <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-minus"></i>
+                                        <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                             </div>
