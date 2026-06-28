@@ -109,21 +109,42 @@ function assignSectionFolderToFacilitator(PDO $conn, $facilitatorId, $courseSect
         throw new RuntimeException('No folder found yet. Create the folder first, then assign a facilitator.');
     }
 
+    $removeOtherAssignmentsStmt = $conn->prepare("
+        DELETE ads
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users assigned
+            ON assigned.user_id = ads.user_id
+           AND assigned.role = 'facilitator'
+           AND assigned.program = ?
+        WHERE ads.course_section = ?
+          AND ads.user_id <> ?
+    ");
+    $removeOtherAssignmentsStmt->execute([$program, $courseSection, $facilitatorId]);
+
     $checkStmt = $conn->prepare("
         SELECT admin_section_id
         FROM tbl_admin_sections
         WHERE user_id = ? AND course_section = ?
     ");
     $checkStmt->execute([$facilitatorId, $courseSection]);
-    if ($checkStmt->fetchColumn()) {
-        throw new RuntimeException('This folder is already assigned to this facilitator.');
-    }
+    $existingAssignmentId = (int) $checkStmt->fetchColumn();
 
-    $insertStmt = $conn->prepare("
-        INSERT INTO tbl_admin_sections (user_id, course_section, assigned_by, assigned_at)
-        VALUES (?, ?, ?, NOW())
-    ");
-    $insertStmt->execute([$facilitatorId, $courseSection, $actor['user_id'] ?? null]);
+    if ($existingAssignmentId > 0) {
+        $updateAssignmentStmt = $conn->prepare("
+            UPDATE tbl_admin_sections
+            SET assigned_by = ?, assigned_at = NOW()
+            WHERE admin_section_id = ?
+        ");
+        $updateAssignmentStmt->execute([$actor['user_id'] ?? null, $existingAssignmentId]);
+        $assignmentId = $existingAssignmentId;
+    } else {
+        $insertStmt = $conn->prepare("
+            INSERT INTO tbl_admin_sections (user_id, course_section, assigned_by, assigned_at)
+            VALUES (?, ?, ?, NOW())
+        ");
+        $insertStmt->execute([$facilitatorId, $courseSection, $actor['user_id'] ?? null]);
+        $assignmentId = (int) $conn->lastInsertId();
+    }
 
     $moveStmt = $conn->prepare("
         UPDATE tbl_student s
@@ -133,13 +154,13 @@ function assignSectionFolderToFacilitator(PDO $conn, $facilitatorId, $courseSect
           AND (
               s.created_by IS NULL
               OR creator.role <> 'facilitator'
-              OR creator.program <> ?
+              OR creator.program = ?
           )
     ");
     $moveStmt->execute([$facilitatorId, $courseSection, $program]);
 
     return [
-        'assignment_id' => (int) $conn->lastInsertId(),
+        'assignment_id' => $assignmentId,
         'moved_students' => $moveStmt->rowCount(),
     ];
 }

@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         echo json_encode([
             'success' => true,
-            'message' => 'Folder assigned successfully',
+            'message' => 'Folder facilitator saved successfully',
             'assignment_id' => $assignment['assignment_id'],
             'moved_students' => $assignment['moved_students']
         ]);

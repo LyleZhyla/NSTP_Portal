@@ -1645,25 +1645,23 @@ if ($user_role === 'super_admin') {
                                                             data-student-count="<?php echo (int) $folder['student_count']; ?>">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
-                                                    <?php if (empty($folder['facilitator_id'])): ?>
-                                                        <form class="assign-folder-to-facilitator-form d-inline-flex" style="gap: 8px;">
-                                                            <input type="hidden" name="course_section" value="<?php echo htmlspecialchars($folder['course_section']); ?>">
-                                                            <select class="form-control form-control-sm" name="user_id" required>
-                                                                <option value="">Select facilitator</option>
-                                                                <?php foreach ($folderAssignableFacilitators as $facilitator): ?>
-                                                                    <?php if (normalizeProgram($facilitator['program'] ?? null) !== normalizeProgram($folder['program'] ?? null)) continue; ?>
-                                                                    <option value="<?php echo (int) $facilitator['user_id']; ?>">
-                                                                        <?php echo htmlspecialchars(($facilitator['full_name'] ?: $facilitator['username']) . ' (' . $facilitator['program'] . ')'); ?>
-                                                                    </option>
-                                                                <?php endforeach; ?>
-                                                            </select>
-                                                            <button type="submit" class="btn btn-sm btn-primary">
-                                                                <i class="fas fa-user-plus"></i>
-                                                            </button>
-                                                        </form>
-                                                    <?php else: ?>
-                                                        <span class="text-muted small">Already assigned</span>
-                                                    <?php endif; ?>
+                                                    <form class="assign-folder-to-facilitator-form d-inline-flex align-items-center" style="gap: 8px;">
+                                                        <input type="hidden" name="course_section" value="<?php echo htmlspecialchars($folder['course_section'], ENT_QUOTES, 'UTF-8'); ?>">
+                                                        <select class="form-control form-control-sm" name="user_id" required>
+                                                            <option value="">Select facilitator</option>
+                                                            <?php foreach ($folderAssignableFacilitators as $facilitator): ?>
+                                                                <?php if (normalizeProgram($facilitator['program'] ?? null) !== normalizeProgram($folder['program'] ?? null)) continue; ?>
+                                                                <option value="<?php echo (int) $facilitator['user_id']; ?>" <?php echo (int) $folder['facilitator_id'] === (int) $facilitator['user_id'] ? 'selected' : ''; ?>>
+                                                                    <?php echo htmlspecialchars(($facilitator['full_name'] ?: $facilitator['username']) . ' (' . $facilitator['program'] . ')'); ?>
+                                                                </option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                        <button type="submit"
+                                                                class="btn btn-sm <?php echo empty($folder['facilitator_id']) ? 'btn-primary' : 'btn-outline-primary'; ?>"
+                                                                title="<?php echo empty($folder['facilitator_id']) ? 'Assign facilitator' : 'Update facilitator'; ?>">
+                                                            <i class="fas <?php echo empty($folder['facilitator_id']) ? 'fa-user-plus' : 'fa-user-edit'; ?>"></i>
+                                                        </button>
+                                                    </form>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -3359,7 +3357,7 @@ $(document).ready(function() {
                 if (response.success) {
                     Swal.fire({
                         icon: 'success',
-                        title: 'Facilitator Assigned',
+                        title: 'Facilitator Saved',
                         text: `${response.message} ${response.moved_students || 0} student(s) moved.`,
                         timer: 1600,
                         showConfirmButton: false
