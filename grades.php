@@ -986,6 +986,28 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             justify-content: space-between;
         }
 
+        .class-record-tools-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .class-record-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .class-record-actions .btn {
+            min-height: 34px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+
         .grade-card {
             border-radius: 8px;
             border: 1px solid #dee2e6;
@@ -1094,6 +1116,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .grade-toolbar {
                 align-items: stretch;
             }
+
+            .class-record-tools-header,
+            .class-record-actions {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .class-record-actions .btn,
+            .class-record-actions form {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -1125,28 +1158,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <?php endif; ?>
                             · <?php echo count($students); ?> student(s)
                         </div>
-                    </div>
-                    <div class="d-flex flex-wrap" style="gap: 8px;">
-                        <?php if ($canManageColumns): ?>
-                            <button class="btn btn-primary" data-toggle="modal" data-target="#addColumnModal">
-                                <i class="fas fa-plus mr-1"></i>Add Column
-                            </button>
-                            <form method="POST" class="d-inline" onsubmit="return confirm('Create a new blank class record? This will remove all current columns from your view. Saved scores remain in the database but will be hidden with the removed columns.');">
-                                <input type="hidden" name="action" value="new_class_record">
-                                <button class="btn btn-outline-danger">
-                                    <i class="fas fa-file-circle-plus mr-1"></i>New Class Record
-                                </button>
-                            </form>
-                            <form method="POST" class="d-inline">
-                                <input type="hidden" name="action" value="restore_default_record">
-                                <button class="btn btn-outline-info">
-                                    <i class="fas fa-rotate-left mr-1"></i>Restore Defaults
-                                </button>
-                            </form>
-                            <button class="btn btn-outline-secondary" data-toggle="modal" data-target="#settingsModal">
-                                <i class="fas fa-sliders-h mr-1"></i>Settings
-                            </button>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1246,16 +1257,39 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
                 <?php if ($canManageColumns): ?>
                     <div class="card grade-card">
-                        <div class="card-header">
-                            <button type="button"
-                                    class="btn btn-link btn-sm p-0 collapse-toggle"
-                                    data-toggle="collapse"
-                                    data-target="#activeColumnsPanel"
-                                    aria-expanded="false"
-                                    aria-controls="activeColumnsPanel">
-                                <i class="fas fa-chevron-right mr-1" id="activeColumnsIcon"></i>
-                                <i class="fas fa-list mr-2"></i>Active Class Record Columns
-                            </button>
+                        <div class="card-header class-record-tools-header">
+                            <div>
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0 collapse-toggle"
+                                        data-toggle="collapse"
+                                        data-target="#activeColumnsPanel"
+                                        aria-expanded="false"
+                                        aria-controls="activeColumnsPanel">
+                                    <i class="fas fa-chevron-right mr-1" id="activeColumnsIcon"></i>
+                                    <i class="fas fa-list mr-2"></i>Class Record Columns
+                                </button>
+                                <div class="small text-muted mt-1">Coordinator controls for the active grading sheet.</div>
+                            </div>
+                            <div class="class-record-actions">
+                                <button class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addColumnModal">
+                                    <i class="fas fa-plus mr-1"></i>Add Column
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" data-toggle="modal" data-target="#settingsModal">
+                                    <i class="fas fa-sliders-h mr-1"></i>Settings
+                                </button>
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Create a new blank class record? This will remove all current columns from your view. Saved scores remain in the database but will be hidden with the removed columns.');">
+                                    <input type="hidden" name="action" value="new_class_record">
+                                    <button class="btn btn-outline-danger btn-sm">
+                                        <i class="fas fa-file-circle-plus mr-1"></i>New Record
+                                    </button>
+                                </form>
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="restore_default_record">
+                                    <button class="btn btn-outline-info btn-sm">
+                                        <i class="fas fa-rotate-left mr-1"></i>Restore
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                         <div class="card-body collapse" id="activeColumnsPanel">
                             <?php if (empty($gradeColumns)): ?>
