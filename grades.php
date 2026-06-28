@@ -102,13 +102,12 @@ function slugGradeGroup($value) {
 }
 
 function selectedGradeGroupLabel(array $source, $default = 'Additional Requirements') {
-    $mode = trim((string) ($source['group_mode'] ?? 'existing'));
     $selected = trim((string) ($source['group_label_select'] ?? ''));
     $new = trim((string) ($source['group_label_new'] ?? ''));
     $fallback = trim((string) ($source['group_label'] ?? $default));
 
-    if ($mode === 'new') {
-        return $new !== '' ? $new : $default;
+    if ($new !== '') {
+        return $new;
     }
 
     if ($selected !== '') {
@@ -1507,13 +1506,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </select>
-                    <div class="mt-2">
-                        <select name="group_mode" id="addColumnGroupMode" class="form-control">
-                            <option value="existing">Use selected category</option>
-                            <option value="new">Create new category</option>
-                        </select>
-                    </div>
-                    <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
+                    <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2" maxlength="120" placeholder="Or type a new category name">
                     <small class="text-muted">Columns with the same category are grouped when computing the weighted percentage.</small>
                 </div>
                 <div class="form-row">
@@ -1563,13 +1556,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </select>
-                    <div class="mt-2">
-                        <select name="group_mode" id="editColumnGroupMode" class="form-control">
-                            <option value="existing">Use selected category</option>
-                            <option value="new">Create new category</option>
-                        </select>
-                    </div>
-                    <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
+                    <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2" maxlength="120" placeholder="Or type a new category name">
                 </div>
                 <div class="form-row">
                     <div class="form-group col-md-6">
@@ -1753,20 +1740,6 @@ $('.score-input').on('input', function() {
     refreshGradeRow($(this).closest('.grade-row'));
 });
 
-function syncCategoryMode(prefix) {
-    const mode = $('#' + prefix + 'ColumnGroupMode').val();
-    const $newInput = $('#' + prefix + 'ColumnGroupNew');
-    const useNew = mode === 'new';
-    $newInput.toggleClass('d-none', !useNew).prop('required', useNew);
-    if (!useNew) {
-        $newInput.val('');
-    }
-}
-
-$('#addColumnGroupMode, #editColumnGroupMode').on('change', function() {
-    syncCategoryMode(this.id.indexOf('edit') === 0 ? 'edit' : 'add');
-});
-
 $('.edit-column-btn').on('click', function() {
     const groupLabel = String($(this).data('group-label') || '');
     $('#editColumnId').val($(this).data('column-id'));
@@ -1775,18 +1748,12 @@ $('.edit-column-btn').on('click', function() {
     $('#editColumnWeightPercent').val($(this).data('weight-percent'));
 
     if ($('#editColumnGroupSelect option').filter(function() { return this.value === groupLabel; }).length) {
-        $('#editColumnGroupMode').val('existing');
         $('#editColumnGroupSelect').val(groupLabel);
         $('#editColumnGroupNew').val('');
     } else {
-        $('#editColumnGroupMode').val('new');
         $('#editColumnGroupNew').val(groupLabel);
     }
-    syncCategoryMode('edit');
 });
-
-syncCategoryMode('add');
-syncCategoryMode('edit');
 
 function refreshSelectedColumnControls() {
     const checkedCount = $('.grade-column-checkbox:checked').length;
