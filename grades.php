@@ -994,18 +994,34 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             flex-wrap: wrap;
         }
 
+        .class-record-title {
+            min-width: 240px;
+            flex: 1 1 auto;
+        }
+
         .class-record-actions {
             display: flex;
             align-items: center;
             justify-content: flex-end;
             gap: 8px;
             flex-wrap: wrap;
+            margin-left: auto;
+        }
+
+        .class-record-actions form {
+            display: flex;
+            margin: 0;
         }
 
         .class-record-actions .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             min-height: 34px;
+            min-width: 108px;
             border-radius: 6px;
             font-weight: 700;
+            white-space: nowrap;
         }
 
         .grade-card {
@@ -1121,6 +1137,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .class-record-actions {
                 align-items: stretch;
                 flex-direction: column;
+                margin-left: 0;
             }
 
             .class-record-actions .btn,
@@ -1258,7 +1275,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <?php if ($canManageColumns): ?>
                     <div class="card grade-card">
                         <div class="card-header class-record-tools-header">
-                            <div>
+                            <div class="class-record-title">
                                 <button type="button"
                                         class="btn btn-link btn-sm p-0 collapse-toggle"
                                         data-toggle="collapse"
