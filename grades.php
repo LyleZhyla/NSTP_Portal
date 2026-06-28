@@ -1060,9 +1060,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             left: 0;
             z-index: 7;
             background: #fff;
-            min-width: 260px;
-            max-width: 260px;
-            white-space: normal;
+            width: max-content;
+            min-width: 150px;
+            max-width: 320px;
+            white-space: nowrap;
             box-shadow: 1px 0 0 #dee2e6;
         }
 
