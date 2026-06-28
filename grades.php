@@ -411,7 +411,23 @@ $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
 $canComputeGrades = $userRole === 'facilitator';
-$canManageColumns = $canComputeGrades;
+$canManageColumns = $userRole === 'coordinator';
+$columnOwnerId = $userId;
+
+if ($currentProgram && $userRole !== 'coordinator') {
+    $coordinatorStmt = $conn->prepare("
+        SELECT user_id
+        FROM tbl_users
+        WHERE role = 'coordinator' AND program = ?
+        ORDER BY user_id ASC
+        LIMIT 1
+    ");
+    $coordinatorStmt->execute([$currentProgram]);
+    $coordinatorId = (int) $coordinatorStmt->fetchColumn();
+    if ($coordinatorId > 0) {
+        $columnOwnerId = $coordinatorId;
+    }
+}
 
 $columnsStmt = $conn->prepare("
     SELECT *
@@ -527,9 +543,7 @@ if ($userRole === 'coordinator') {
     }
 }
 
-$sheetOwnerId = ($userRole === 'coordinator' && $selectedGradeFacilitatorId)
-    ? (int) $selectedGradeFacilitatorId
-    : $userId;
+$sheetOwnerId = $columnOwnerId;
 $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
@@ -605,6 +619,19 @@ $accessibleStudentLookup = array_fill_keys($accessibleStudentIds, true);
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = $_POST['action'] ?? '';
+    $columnManagementActions = [
+        'add_column',
+        'delete_column',
+        'delete_selected_columns',
+        'new_class_record',
+        'restore_default_record',
+        'edit_column',
+        'settings',
+    ];
+
+    if (in_array($action, $columnManagementActions, true) && !$canManageColumns) {
+        $errors[] = 'Only coordinators can edit grade columns and grade settings.';
+    }
 
     if ($action === 'add_column' && $canManageColumns) {
         $label = trim($_POST['label'] ?? '');
