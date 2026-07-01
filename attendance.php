@@ -155,6 +155,64 @@ if ($admin_role === 'super_admin') {
             flex-wrap: wrap;
             margin-top: 12px;
         }
+
+        .scanner-action-bar {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        .scanner-action-btn {
+            border: 0;
+            border-radius: 8px;
+            min-height: 44px;
+            padding: 8px 10px;
+            font-weight: 700;
+            font-size: 0.86rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            box-shadow: 0 8px 18px rgba(15, 81, 50, 0.14);
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+
+        .scanner-action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(15, 81, 50, 0.2);
+        }
+
+        .scanner-action-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .scanner-action-btn.start {
+            background: #198754;
+            color: #fff;
+        }
+
+        .scanner-action-btn.stop {
+            background: #b4232f;
+            color: #fff;
+        }
+
+        .scanner-action-btn.switch {
+            background: #ffffff;
+            color: #0f5132;
+            border: 1px solid #cfe8d8;
+        }
+
+        .scanner-camera-label {
+            margin-top: 8px;
+            min-height: 18px;
+            color: #5f7168;
+            font-size: 0.78rem;
+            text-align: center;
+        }
         
         /* BUTTONS - CONSISTENT WITH OTHER PAGES */
         .btn {
@@ -782,14 +840,18 @@ if ($admin_role === 'super_admin') {
                             </div>
                             
                             <!-- Camera Controls -->
-                            <div class="camera-controls mt-3">
-                                <button class="btn btn-success" onclick="startScanner()" id="startBtn">
-                                    <i class="fas fa-play mr-2"></i>Start Scanner
+                            <div class="scanner-action-bar">
+                                <button type="button" class="scanner-action-btn start" onclick="startScanner()" id="startBtn">
+                                    <i class="fas fa-play"></i><span>Start</span>
                                 </button>
-                                <button class="btn btn-danger" onclick="stopScanner()" id="stopBtn" style="display: none;">
-                                    <i class="fas fa-stop mr-2"></i>Stop Scanner
+                                <button type="button" class="scanner-action-btn stop" onclick="stopScanner()" id="stopBtn" style="display: none;">
+                                    <i class="fas fa-stop"></i><span>Stop</span>
+                                </button>
+                                <button type="button" class="scanner-action-btn switch" onclick="switchScannerCamera()" id="switchCameraBtn" style="display: none;" disabled>
+                                    <i class="fas fa-camera-rotate"></i><span>Switch</span>
                                 </button>
                             </div>
+                            <div class="scanner-camera-label" id="cameraStatusLabel">Camera not started</div>
                         </div>
                             
                         <!-- QR Detected Section -->
@@ -1145,6 +1207,9 @@ if ($admin_role === 'super_admin') {
     // Global variables
     let html5QrcodeScanner = null;
     let isScanning = false;
+    let scannerCameras = [];
+    let currentCameraIndex = 0;
+    let scannerActionRunning = false;
     const adminId = <?= $admin_id ?>;
     const adminRole = '<?= $admin_role ?>';
     let dataTable = null;
@@ -1195,6 +1260,8 @@ if ($admin_role === 'super_admin') {
         $('#scannerPlaceholder').show();
         $('#startBtn').show();
         $('#stopBtn').hide();
+        $('#switchCameraBtn').hide().prop('disabled', true);
+        $('#cameraStatusLabel').text('Camera not started');
         $('#qrDetectedSection').hide();
         $('#attendanceSuccessSection').hide();
         updateExportPeriodFields();
@@ -1203,8 +1270,8 @@ if ($admin_role === 'super_admin') {
         setInterval(processAbsentNotifications, 60000);
         
         // Check if library is loaded
-        if (typeof Html5QrcodeScanner === 'undefined') {
-            console.error('Html5QrcodeScanner is not defined! Library failed to load.');
+        if (typeof Html5Qrcode === 'undefined') {
+            console.error('Html5Qrcode is not defined! Library failed to load.');
             showStatus('danger', 'QR Scanner library failed to load. Please refresh the page.');
         } else if (!window.isSecureContext) {
             showStatus('danger', 'Camera access requires HTTPS. Please open this page using your secure https:// domain.');
@@ -1276,11 +1343,53 @@ if ($admin_role === 'super_admin') {
         });
     }
     
-    // Start scanner
-    function startScanner() {
+    function scannerConfig() {
+        const qrBoxSize = Math.min(240, Math.max(180, Math.floor($('#qr-reader').width() * 0.72)));
+        return {
+            fps: 12,
+            qrbox: { width: qrBoxSize, height: qrBoxSize },
+            aspectRatio: 1.0,
+            disableFlip: false
+        };
+    }
+
+    async function loadScannerCameras() {
+        if (scannerCameras.length > 0) {
+            return scannerCameras;
+        }
+
+        scannerCameras = await Html5Qrcode.getCameras();
+        const preferredIndex = scannerCameras.findIndex(camera => {
+            const label = (camera.label || '').toLowerCase();
+            return label.includes('back') || label.includes('rear') || label.includes('environment');
+        });
+        currentCameraIndex = preferredIndex >= 0 ? preferredIndex : 0;
+        return scannerCameras;
+    }
+
+    function updateScannerButtons(running) {
+        $('#startBtn').toggle(!running);
+        $('#stopBtn').toggle(running);
+        $('#switchCameraBtn')
+            .toggle(running)
+            .prop('disabled', scannerActionRunning || scannerCameras.length < 2);
+    }
+
+    function updateCameraStatusLabel() {
+        if (!isScanning) {
+            $('#cameraStatusLabel').text('Camera not started');
+            return;
+        }
+
+        const camera = scannerCameras[currentCameraIndex] || {};
+        const label = camera.label || (scannerCameras.length > 1 ? `Camera ${currentCameraIndex + 1}` : 'Active camera');
+        $('#cameraStatusLabel').text(scannerCameras.length > 1 ? `${label} (${currentCameraIndex + 1}/${scannerCameras.length})` : label);
+    }
+
+    async function startScanner(cameraIndex = currentCameraIndex) {
         console.log('Start scanner clicked');
         
-        if (typeof Html5QrcodeScanner === 'undefined') {
+        if (typeof Html5Qrcode === 'undefined') {
             showStatus('danger', 'QR Scanner library not loaded. Please refresh the page.');
             return;
         }
@@ -1290,79 +1399,95 @@ if ($admin_role === 'super_admin') {
             return;
         }
         
-        if (isScanning) {
-            showStatus('info', 'Scanner is already running');
+        if (scannerActionRunning) {
             return;
         }
-        
+
+        scannerActionRunning = true;
+        updateScannerButtons(isScanning);
         $('#scannerPlaceholder').hide();
         $('#qr-reader').show();
         showStatus('info', 'Initializing camera...');
         
         try {
-            if (html5QrcodeScanner) {
-                try {
-                    html5QrcodeScanner.clear();
-                } catch (e) {
-                    console.log('Error clearing existing scanner:', e);
-                }
-                html5QrcodeScanner = null;
+            const cameras = await loadScannerCameras();
+            if (!cameras.length) {
+                throw new Error('No camera found on this device.');
             }
-            
-            html5QrcodeScanner = new Html5QrcodeScanner(
-                "qr-reader", 
-                { 
-                    fps: 10, 
-                    qrbox: { width: 200, height: 200 },
-                    rememberLastUsedCamera: true,
-                    showTorchButtonIfSupported: true,
-                    aspectRatio: 1.0,
-                    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
-                },
-                false
-            );
-            
-            html5QrcodeScanner.render(onScanSuccess, onScanError);
+
+            currentCameraIndex = ((cameraIndex % cameras.length) + cameras.length) % cameras.length;
+            const cameraId = cameras[currentCameraIndex].id;
+
+            if (!html5QrcodeScanner) {
+                html5QrcodeScanner = new Html5Qrcode('qr-reader');
+            }
+
+            if (isScanning) {
+                await html5QrcodeScanner.stop();
+                isScanning = false;
+            }
+
+            await html5QrcodeScanner.start(cameraId, scannerConfig(), onScanSuccess, onScanError);
             isScanning = true;
-            
-            $('#startBtn').hide();
-            $('#stopBtn').show();
             showStatus('success', 'Scanner active - Position QR code within frame');
             console.log('Scanner started successfully');
-            
         } catch (error) {
             console.error('Scanner start error:', error);
-            showStatus('danger', 'Failed to start scanner: ' + error.message);
-            
+            showStatus('danger', 'Failed to start scanner: ' + (error.message || error));
             $('#qr-reader').hide();
             $('#scannerPlaceholder').show();
-            $('#startBtn').show();
-            $('#stopBtn').hide();
             isScanning = false;
+        } finally {
+            scannerActionRunning = false;
+            updateScannerButtons(isScanning);
+            updateCameraStatusLabel();
         }
     }
     
-    // Stop scanner
-    function stopScanner() {
+    async function stopScanner() {
         console.log('Stop scanner clicked');
-        
-        if (html5QrcodeScanner) {
-            try {
-                html5QrcodeScanner.clear();
-                html5QrcodeScanner = null;
-                console.log('Scanner stopped successfully');
-            } catch (error) {
-                console.error('Error clearing scanner:', error);
-            }
+
+        if (scannerActionRunning) {
+            return;
         }
+
+        scannerActionRunning = true;
+        updateScannerButtons(isScanning);
         
-        isScanning = false;
-        
-        $('#qr-reader').hide();
-        $('#scannerPlaceholder').show();
-        $('#startBtn').show();
-        $('#stopBtn').hide();
-        showStatus('info', 'Scanner stopped');
+        try {
+            if (html5QrcodeScanner && isScanning) {
+                await html5QrcodeScanner.stop();
+            }
+            if (html5QrcodeScanner) {
+                await html5QrcodeScanner.clear();
+            }
+            html5QrcodeScanner = null;
+            console.log('Scanner stopped successfully');
+        } catch (error) {
+            console.error('Error stopping scanner:', error);
+        } finally {
+            isScanning = false;
+            scannerActionRunning = false;
+            $('#qr-reader').hide();
+            $('#scannerPlaceholder').show();
+            updateScannerButtons(false);
+            updateCameraStatusLabel();
+            showStatus('info', 'Scanner stopped');
+        }
+    }
+
+    async function switchScannerCamera() {
+        if (scannerActionRunning || scannerCameras.length < 2) {
+            return;
+        }
+
+        const nextIndex = (currentCameraIndex + 1) % scannerCameras.length;
+        updateScannerButtons(true);
+        showStatus('info', 'Switching camera...');
+
+        await startScanner(nextIndex);
+        updateScannerButtons(isScanning);
+        updateCameraStatusLabel();
     }
     
     // Handle successful scan
@@ -1663,8 +1788,8 @@ if ($admin_role === 'super_admin') {
                 
                 $('#qr-reader').show();
                 $('#scannerPlaceholder').hide();
-                $('#startBtn').hide();
-                $('#stopBtn').show();
+                updateScannerButtons(true);
+                updateCameraStatusLabel();
                 showStatus('success', 'Scanner resumed - Position QR code within frame');
             } catch (error) {
                 console.error('Error resuming scanner:', error);
@@ -1828,7 +1953,9 @@ if ($admin_role === 'super_admin') {
     $(window).on('beforeunload', function() {
         if (html5QrcodeScanner) {
             try {
-                html5QrcodeScanner.clear();
+                if (isScanning) {
+                    html5QrcodeScanner.stop();
+                }
             } catch (error) {
                 console.error('Error during cleanup:', error);
             }
