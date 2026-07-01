@@ -2,6 +2,7 @@
 session_start();
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/profile-picture-utils.php';
 
 // Check if request method is POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -22,7 +23,7 @@ if (empty($username) || empty($password)) {
 try {
     // Find user by username or email
     $stmt = $conn->prepare("
-        SELECT user_id, username, email, password_hash, full_name, role, program
+        SELECT user_id, username, email, password_hash, full_name, role, program, profile_picture
         FROM tbl_users 
         WHERE username = :username OR email = :username
     ");
@@ -48,6 +49,17 @@ try {
     $_SESSION['role'] = $user['role'];
     $_SESSION['program'] = $user['program'] ?? null;
     $_SESSION['last_activity'] = time();
+
+    $profilePicture = trim((string) ($user['profile_picture'] ?? ''));
+    if ($profilePicture === '' || !profilePictureExists($profilePicture, dirname(__DIR__))) {
+        $profilePicture = syncRegistrationProfilePicture($conn, (int) $user['user_id'], dirname(__DIR__));
+    }
+    if ($profilePicture !== '') {
+        $_SESSION['profile_picture'] = $profilePicture;
+    } else {
+        unset($_SESSION['profile_picture']);
+    }
+
     logSystemEvent($conn, 'user_login', $user['username'] . ' logged in as ' . $user['role']);
     
     if ($user['role'] === 'student') {
