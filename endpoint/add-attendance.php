@@ -94,6 +94,7 @@ try {
     ]);
     
     $attendance_id = $conn->lastInsertId();
+    clearAbsentAttendanceNotificationForStudentDate($conn, $student['tbl_student_id'], $time_in);
 
     if (stripos($status, 'Late') === 0) {
         sendLateAttendanceNotification($conn, $student, [

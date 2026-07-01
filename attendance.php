@@ -1266,9 +1266,6 @@ if ($admin_role === 'super_admin') {
         $('#attendanceSuccessSection').hide();
         updateExportPeriodFields();
         $('#exportPeriod').on('change', updateExportPeriodFields);
-        processAbsentNotifications();
-        setInterval(processAbsentNotifications, 60000);
-        
         // Check if library is loaded
         if (typeof Html5Qrcode === 'undefined') {
             console.error('Html5Qrcode is not defined! Library failed to load.');

@@ -232,6 +232,44 @@ function absentNotificationGraceHours(PDO $conn) {
     return getAbsentNotificationGraceHours($conn);
 }
 
+function studentHasAttendanceRecordForDate(PDO $conn, $studentId, $attendanceDate) {
+    $studentId = (int) $studentId;
+    if ($studentId <= 0) {
+        return false;
+    }
+
+    $attendanceDate = date('Y-m-d', strtotime($attendanceDate));
+    $attendanceDateStart = $attendanceDate . ' 00:00:00';
+    $attendanceDateEnd = date('Y-m-d 00:00:00', strtotime($attendanceDate . ' +1 day'));
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_attendance
+        WHERE tbl_student_id = ?
+          AND time_in >= ?
+          AND time_in < ?
+    ");
+    $stmt->execute([$studentId, $attendanceDateStart, $attendanceDateEnd]);
+    if ((int) $stmt->fetchColumn() > 0) {
+        return true;
+    }
+
+    if (!attendanceArchiveTableExists($conn)) {
+        return false;
+    }
+
+    $archiveStmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_attendance_archive
+        WHERE tbl_student_id = ?
+          AND time_in >= ?
+          AND time_in < ?
+    ");
+    $archiveStmt->execute([$studentId, $attendanceDateStart, $attendanceDateEnd]);
+
+    return (int) $archiveStmt->fetchColumn() > 0;
+}
+
 function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendanceDate, $cutoffDateTime, $notifyAfter, $graceHours = 5) {
     ensureNotificationTables($conn);
     ensureAbsentNotificationTable($conn);
@@ -245,6 +283,10 @@ function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendance
     $cutoffDateTime = date('Y-m-d H:i:s', strtotime($cutoffDateTime));
     $notifyAfter = date('Y-m-d H:i:s', strtotime($notifyAfter));
     $userId = !empty($student['user_id']) ? (int) $student['user_id'] : null;
+
+    if (studentHasAttendanceRecordForDate($conn, $studentId, $attendanceDate)) {
+        return ['created' => false, 'reason' => 'attendance_exists'];
+    }
 
     $stmt = $conn->prepare("
         INSERT IGNORE INTO tbl_absent_notifications
@@ -330,6 +372,60 @@ HTML;
     ];
 }
 
+function clearAbsentAttendanceNotificationForStudentDate(PDO $conn, $studentId, $attendanceDate) {
+    ensureAbsentNotificationTable($conn);
+
+    $studentId = (int) $studentId;
+    if ($studentId <= 0) {
+        return 0;
+    }
+
+    $attendanceDate = date('Y-m-d', strtotime($attendanceDate));
+    $stmt = $conn->prepare("
+        SELECT absent_notification_id, notification_id
+        FROM tbl_absent_notifications
+        WHERE tbl_student_id = ?
+          AND attendance_date = ?
+    ");
+    $stmt->execute([$studentId, $attendanceDate]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($rows)) {
+        return 0;
+    }
+
+    $absentIds = array_map('intval', array_column($rows, 'absent_notification_id'));
+    $notificationIds = array_values(array_filter(array_map('intval', array_column($rows, 'notification_id'))));
+
+    $conn->beginTransaction();
+    try {
+        if (!empty($notificationIds)) {
+            $notificationPlaceholders = implode(',', array_fill(0, count($notificationIds), '?'));
+            $notificationStmt = $conn->prepare("
+                DELETE FROM tbl_notifications
+                WHERE notification_id IN ({$notificationPlaceholders})
+            ");
+            $notificationStmt->execute($notificationIds);
+        }
+
+        $absentPlaceholders = implode(',', array_fill(0, count($absentIds), '?'));
+        $deleteStmt = $conn->prepare("
+            DELETE FROM tbl_absent_notifications
+            WHERE absent_notification_id IN ({$absentPlaceholders})
+        ");
+        $deleteStmt->execute($absentIds);
+        $deleted = $deleteStmt->rowCount();
+
+        $conn->commit();
+        return $deleted;
+    } catch (Throwable $error) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $error;
+    }
+}
+
 function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null, $now = null, ?array $actor = null) {
     ensureAbsentNotificationTable($conn);
     ensureAttendancePerformanceIndexes($conn);
@@ -377,6 +473,8 @@ function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null,
         'grace_hours' => $graceHours,
         'checked' => 0,
         'not_due' => 0,
+        'present' => 0,
+        'no_session' => 0,
         'created' => 0,
         'already_notified' => 0,
         'email_sent' => 0,
@@ -385,6 +483,16 @@ function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null,
 
     foreach ($students as $student) {
         $summary['checked']++;
+        if (studentHasAttendanceRecordForDate($conn, $student['tbl_student_id'] ?? 0, $attendanceDate)) {
+            $summary['present']++;
+            continue;
+        }
+
+        if (!hasAttendanceForStudentScopeOnDate($conn, $student, $attendanceDate)) {
+            $summary['no_session']++;
+            continue;
+        }
+
         $component = attendanceComponentForStudent($conn, $student);
         $morningCutoff = $cutoffs[$component]['morning'] ?? '08:00';
         $cutoffDateTime = $attendanceDate . ' ' . $morningCutoff . ':00';
@@ -414,6 +522,8 @@ function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null,
 
         if (($result['reason'] ?? '') === 'already_notified') {
             $summary['already_notified']++;
+        } elseif (($result['reason'] ?? '') === 'attendance_exists') {
+            $summary['present']++;
         } else {
             $summary['skipped']++;
         }

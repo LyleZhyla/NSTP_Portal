@@ -46,7 +46,15 @@ try {
         $attendanceDate = $argv[1];
     }
 
-    $summary = processAbsentAttendanceNotifications($conn, $attendanceDate);
+    $actor = null;
+    $requestToken = PHP_SAPI !== 'cli'
+        ? trim((string) ($_GET['token'] ?? $_POST['token'] ?? ''))
+        : '';
+    if (PHP_SAPI !== 'cli' && empty($requestToken)) {
+        $actor = getCurrentUserRecord($conn);
+    }
+
+    $summary = processAbsentAttendanceNotifications($conn, $attendanceDate, null, $actor);
     $response = ['success' => true, 'summary' => $summary];
 
     if (PHP_SAPI === 'cli') {

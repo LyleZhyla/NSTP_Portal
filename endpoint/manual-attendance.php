@@ -2,6 +2,7 @@
 session_start();
 require_once '../conn/conn.php';
 require_once '../include/attendance-settings.php';
+require_once '../include/notifications.php';
 require_once '../include/student-account-automation.php';
 
 header('Content-Type: application/json');
@@ -80,6 +81,7 @@ try {
     $sql = "INSERT INTO tbl_attendance ($columns) VALUES ($placeholders)";
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
+    clearAbsentAttendanceNotificationForStudentDate($conn, $student_id, $time_in);
 
     $accountAutomation = null;
     if (!empty($student['student_number'])) {
