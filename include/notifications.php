@@ -332,6 +332,7 @@ HTML;
 
 function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null, $now = null, ?array $actor = null) {
     ensureAbsentNotificationTable($conn);
+    ensureAttendancePerformanceIndexes($conn);
 
     $nowTimestamp = $now ? strtotime($now) : time();
     if (!$nowTimestamp) {
@@ -339,6 +340,8 @@ function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null,
     }
 
     $attendanceDate = $attendanceDate ? date('Y-m-d', strtotime($attendanceDate)) : date('Y-m-d', $nowTimestamp);
+    $attendanceDateStart = $attendanceDate . ' 00:00:00';
+    $attendanceDateEnd = date('Y-m-d 00:00:00', strtotime($attendanceDate . ' +1 day'));
     $graceHours = absentNotificationGraceHours($conn);
     $cutoffs = getAttendanceCutoffs($conn);
     $accessJoin = '';
@@ -360,12 +363,13 @@ function processAbsentAttendanceNotifications(PDO $conn, $attendanceDate = null,
             SELECT 1
             FROM tbl_attendance a
             WHERE a.tbl_student_id = s.tbl_student_id
-              AND DATE(a.time_in) = ?
+              AND a.time_in >= ?
+              AND a.time_in < ?
         )
         {$accessWhere}
         ORDER BY s.tbl_student_id ASC
     ");
-    $stmt->execute(array_merge([$attendanceDate], $accessParams));
+    $stmt->execute(array_merge([$attendanceDateStart, $attendanceDateEnd], $accessParams));
     $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $summary = [

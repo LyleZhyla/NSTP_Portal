@@ -15,6 +15,7 @@ $admin_id = $_SESSION['user_id'];
 $admin_role = $_SESSION['role'] ?? 'facilitator';
 $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
+ensureAttendancePerformanceIndexes($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $admin_role === 'super_admin'
     || ($admin_role === 'facilitator' && !$facilitatorScanRestrictionEnabled);
@@ -23,32 +24,35 @@ $attendanceAccessCondition = $attendanceAccess['condition'];
 $attendanceAccessParams = $attendanceAccess['params'];
 
 try {
+    $todayStart = date('Y-m-d 00:00:00');
+    $tomorrowStart = date('Y-m-d 00:00:00', strtotime('+1 day'));
+
     // Get statistics
     if ($canViewAllAttendance) {
         // Total present today
         $totalStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 
-            WHERE DATE(time_in) = CURDATE()
+            WHERE time_in >= ? AND time_in < ?
         ");
-        $totalStmt->execute();
+        $totalStmt->execute([$todayStart, $tomorrowStart]);
         $total = $totalStmt->fetchColumn();
         
         // On time
         $onTimeStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 
-            WHERE DATE(time_in) = CURDATE() 
+            WHERE time_in >= ? AND time_in < ?
             AND status LIKE 'On Time%'
         ");
-        $onTimeStmt->execute();
+        $onTimeStmt->execute([$todayStart, $tomorrowStart]);
         $onTime = $onTimeStmt->fetchColumn();
         
         // Late
         $lateStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 
-            WHERE DATE(time_in) = CURDATE() 
+            WHERE time_in >= ? AND time_in < ?
             AND status LIKE 'Late%'
         ");
-        $lateStmt->execute();
+        $lateStmt->execute([$todayStart, $tomorrowStart]);
         $late = $lateStmt->fetchColumn();
         
         // Get attendance records with student info
@@ -57,10 +61,10 @@ try {
                    s.student_name, s.course_section
             FROM tbl_attendance a
             LEFT JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-            WHERE DATE(a.time_in) = CURDATE()
+            WHERE a.time_in >= ? AND a.time_in < ?
             ORDER BY a.time_in DESC
         ");
-        $recordsStmt->execute();
+        $recordsStmt->execute([$todayStart, $tomorrowStart]);
         
     } else {
         // Regular admin - only see students from their sections
@@ -69,10 +73,10 @@ try {
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
-            WHERE DATE(a.time_in) = CURDATE() 
+            WHERE a.time_in >= ? AND a.time_in < ?
             AND {$attendanceAccessCondition}
         ");
-        $totalStmt->execute($attendanceAccessParams);
+        $totalStmt->execute(array_merge([$todayStart, $tomorrowStart], $attendanceAccessParams));
         $total = $totalStmt->fetchColumn();
         
         // On time
@@ -81,11 +85,11 @@ try {
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
-            WHERE DATE(a.time_in) = CURDATE() 
+            WHERE a.time_in >= ? AND a.time_in < ?
             AND a.status LIKE 'On Time%'
             AND {$attendanceAccessCondition}
         ");
-        $onTimeStmt->execute($attendanceAccessParams);
+        $onTimeStmt->execute(array_merge([$todayStart, $tomorrowStart], $attendanceAccessParams));
         $onTime = $onTimeStmt->fetchColumn();
         
         // Late
@@ -94,11 +98,11 @@ try {
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
-            WHERE DATE(a.time_in) = CURDATE() 
+            WHERE a.time_in >= ? AND a.time_in < ?
             AND a.status LIKE 'Late%'
             AND {$attendanceAccessCondition}
         ");
-        $lateStmt->execute($attendanceAccessParams);
+        $lateStmt->execute(array_merge([$todayStart, $tomorrowStart], $attendanceAccessParams));
         $late = $lateStmt->fetchColumn();
         
         // Get attendance records with student info
@@ -108,11 +112,11 @@ try {
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
             LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
-            WHERE DATE(a.time_in) = CURDATE() 
+            WHERE a.time_in >= ? AND a.time_in < ?
             AND {$attendanceAccessCondition}
             ORDER BY a.time_in DESC
         ");
-        $recordsStmt->execute($attendanceAccessParams);
+        $recordsStmt->execute(array_merge([$todayStart, $tomorrowStart], $attendanceAccessParams));
     }
     
     $records = $recordsStmt->fetchAll(PDO::FETCH_ASSOC);

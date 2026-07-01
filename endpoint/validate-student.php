@@ -21,6 +21,8 @@ if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
     exit;
 }
 
+ensureAttendancePerformanceIndexes($conn);
+
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';
 
 if (empty($qr_code)) {
@@ -80,11 +82,12 @@ try {
 
         // Check if student has already attended today
         $today = date('Y-m-d');
+        $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
         $checkStmt = $conn->prepare("
             SELECT COUNT(*) FROM tbl_attendance 
-            WHERE tbl_student_id = ? AND DATE(time_in) = ?
+            WHERE tbl_student_id = ? AND time_in >= ? AND time_in < ?
         ");
-        $checkStmt->execute([$student['tbl_student_id'], $today]);
+        $checkStmt->execute([$student['tbl_student_id'], $today . ' 00:00:00', $tomorrow . ' 00:00:00']);
         $alreadyAttended = $checkStmt->fetchColumn() > 0;
         
         echo json_encode([

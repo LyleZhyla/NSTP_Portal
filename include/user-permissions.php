@@ -75,6 +75,39 @@ function ensureRotcAttendanceSchema(PDO $conn) {
     }
 }
 
+function ensureAttendancePerformanceIndexes(PDO $conn) {
+    $indexes = [
+        'tbl_attendance' => [
+            'idx_attendance_student_time' => "ALTER TABLE tbl_attendance ADD INDEX idx_attendance_student_time (tbl_student_id, time_in)",
+            'idx_attendance_time_status' => "ALTER TABLE tbl_attendance ADD INDEX idx_attendance_time_status (time_in, status)",
+        ],
+        'tbl_student' => [
+            'idx_student_generated_code' => "ALTER TABLE tbl_student ADD INDEX idx_student_generated_code (generated_code)",
+        ],
+    ];
+
+    foreach ($indexes as $tableName => $tableIndexes) {
+        foreach ($tableIndexes as $indexName => $sql) {
+            try {
+                $stmt = $conn->prepare("
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = ?
+                      AND INDEX_NAME = ?
+                ");
+                $stmt->execute([$tableName, $indexName]);
+
+                if ((int) $stmt->fetchColumn() === 0) {
+                    $conn->exec($sql);
+                }
+            } catch (Throwable $error) {
+                // Keep scanner requests working even if the database user cannot alter schema.
+            }
+        }
+    }
+}
+
 function normalizeRotcMsLevel($value) {
     $text = strtoupper(trim((string) $value));
     $text = str_replace([' ', '_'], '-', $text);
