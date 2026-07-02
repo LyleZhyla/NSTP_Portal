@@ -24,8 +24,10 @@ if (trim($_POST['confirmation_text'] ?? '') !== 'DELETE') {
 $deleteCoordinators = isset($_POST['delete_coordinators']);
 $deleteFacilitators = isset($_POST['delete_facilitators']);
 $deleteStudents = isset($_POST['delete_students']);
+$deleteAnnouncementNotifications = isset($_POST['delete_announcement_notifications']);
+$deleteAbsentNotifications = isset($_POST['delete_absent_notifications']);
 
-if (!$deleteCoordinators && !$deleteFacilitators && !$deleteStudents) {
+if (!$deleteCoordinators && !$deleteFacilitators && !$deleteStudents && !$deleteAnnouncementNotifications && !$deleteAbsentNotifications) {
     echo json_encode(['success' => false, 'message' => 'Choose at least one data group to delete']);
     exit();
 }
@@ -60,9 +62,24 @@ try {
         'attendance' => 0,
         'archived_attendance' => 0,
         'section_assignments' => 0,
+        'announcement_notifications' => 0,
+        'absent_notifications' => 0,
+        'absent_bell_notifications' => 0,
     ];
 
     if ($deleteStudents) {
+        if (maintenanceTableExists($conn, 'tbl_notifications')) {
+            $deleted['absent_bell_notifications'] += maintenanceDelete($conn, "
+                DELETE FROM tbl_notifications
+                WHERE related_table = 'tbl_absent_notifications'
+                   OR type = 'absent_attendance'
+            ");
+        }
+
+        if (maintenanceTableExists($conn, 'tbl_absent_notifications')) {
+            $deleted['absent_notifications'] += maintenanceDelete($conn, "DELETE FROM tbl_absent_notifications");
+        }
+
         if (maintenanceTableExists($conn, 'tbl_attendance')) {
             $deleted['attendance'] = maintenanceDelete($conn, "
                 DELETE FROM tbl_attendance
@@ -115,6 +132,28 @@ try {
 
         if ($deleteFacilitators) {
             $deleted['facilitators'] = maintenanceDelete($conn, "DELETE FROM tbl_users WHERE role = 'facilitator'");
+        }
+    }
+
+    if ($deleteAnnouncementNotifications && maintenanceTableExists($conn, 'tbl_notifications')) {
+        $deleted['announcement_notifications'] = maintenanceDelete($conn, "
+            DELETE FROM tbl_notifications
+            WHERE related_table = 'tbl_announcements'
+               OR type = 'announcement'
+        ");
+    }
+
+    if ($deleteAbsentNotifications) {
+        if (maintenanceTableExists($conn, 'tbl_notifications')) {
+            $deleted['absent_bell_notifications'] += maintenanceDelete($conn, "
+                DELETE FROM tbl_notifications
+                WHERE related_table = 'tbl_absent_notifications'
+                   OR type = 'absent_attendance'
+            ");
+        }
+
+        if (maintenanceTableExists($conn, 'tbl_absent_notifications')) {
+            $deleted['absent_notifications'] += maintenanceDelete($conn, "DELETE FROM tbl_absent_notifications");
         }
     }
 

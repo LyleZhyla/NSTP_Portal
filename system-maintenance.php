@@ -48,6 +48,9 @@ $counts = [
     'registrations' => countTableRows($conn, 'tbl_public_student_registrations'),
     'attendance' => countTableRows($conn, 'tbl_attendance'),
     'archived_attendance' => countTableRows($conn, 'tbl_attendance_archive'),
+    'announcement_notifications' => countTableRows($conn, 'tbl_notifications', "type = 'announcement' OR related_table = 'tbl_announcements'"),
+    'absent_notifications' => countTableRows($conn, 'tbl_absent_notifications'),
+    'absent_bell_notifications' => countTableRows($conn, 'tbl_notifications', "type = 'absent_attendance' OR related_table = 'tbl_absent_notifications'"),
 ];
 
 date_default_timezone_set('Asia/Manila');
@@ -222,6 +225,7 @@ date_default_timezone_set('Asia/Manila');
                                     <li>Super admin accounts are always protected.</li>
                                     <li>Student cleanup removes student records, student accounts, attendance, archived attendance, and public registrations.</li>
                                     <li>Staff cleanup can target coordinators and facilitators separately.</li>
+                                    <li>Notification cleanup removes saved database records only. Emails already sent cannot be recalled.</li>
                                 </ul>
                             </div>
                         </div>
@@ -263,6 +267,26 @@ date_default_timezone_set('Asia/Manila');
                                             <?php echo $counts['students']; ?> student record(s),
                                             <?php echo $counts['student_accounts']; ?> student account(s),
                                             <?php echo $counts['registrations']; ?> public registration(s), and related attendance will be removed.
+                                        </small>
+                                    </div>
+
+                                    <div class="cleanup-option">
+                                        <div class="custom-control custom-checkbox">
+                                            <input type="checkbox" class="custom-control-input cleanup-check" id="deleteAnnouncementNotifications" name="delete_announcement_notifications" value="1">
+                                            <label class="custom-control-label" for="deleteAnnouncementNotifications">Delete saved announcement email/notification records</label>
+                                        </div>
+                                        <small class="text-muted">
+                                            <?php echo $counts['announcement_notifications']; ?> announcement notification record(s) will be removed from the bell notification database. Announcement posts remain unless deleted from Announcements.
+                                        </small>
+                                    </div>
+
+                                    <div class="cleanup-option">
+                                        <div class="custom-control custom-checkbox">
+                                            <input type="checkbox" class="custom-control-input cleanup-check" id="deleteAbsentNotifications" name="delete_absent_notifications" value="1">
+                                            <label class="custom-control-label" for="deleteAbsentNotifications">Delete saved absent email/notification records</label>
+                                        </div>
+                                        <small class="text-muted">
+                                            <?php echo $counts['absent_notifications']; ?> absent email tracking record(s) and <?php echo $counts['absent_bell_notifications']; ?> related bell notification(s) will be removed.
                                         </small>
                                     </div>
 
