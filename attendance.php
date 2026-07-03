@@ -158,9 +158,13 @@ if ($admin_role === 'super_admin') {
 
         .scanner-action-bar {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
             gap: 8px;
             margin-top: 14px;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 430px;
+            justify-content: center;
         }
 
         .scanner-action-btn {
@@ -204,6 +208,18 @@ if ($admin_role === 'super_admin') {
             background: #ffffff;
             color: #0f5132;
             border: 1px solid #cfe8d8;
+        }
+
+        .scanner-action-btn.flash {
+            background: #fff8e1;
+            color: #8a5a00;
+            border: 1px solid #f6d978;
+        }
+
+        .scanner-action-btn.flash.active {
+            background: #ffc107;
+            color: #212529;
+            border-color: #ffc107;
         }
 
         .scanner-camera-label {
@@ -847,6 +863,9 @@ if ($admin_role === 'super_admin') {
                                 <button type="button" class="scanner-action-btn stop" onclick="stopScanner()" id="stopBtn" style="display: none;">
                                     <i class="fas fa-stop"></i><span>Stop</span>
                                 </button>
+                                <button type="button" class="scanner-action-btn flash" onclick="toggleScannerFlash()" id="flashBtn" style="display: none;" disabled>
+                                    <i class="fas fa-bolt"></i><span>Flash</span>
+                                </button>
                                 <button type="button" class="scanner-action-btn switch" onclick="switchScannerCamera()" id="switchCameraBtn" style="display: none;" disabled>
                                     <i class="fas fa-camera-rotate"></i><span>Switch</span>
                                 </button>
@@ -1210,6 +1229,9 @@ if ($admin_role === 'super_admin') {
     let scannerCameras = [];
     let currentCameraIndex = 0;
     let scannerActionRunning = false;
+    let scannerFlashSupported = false;
+    let scannerFlashOn = false;
+    let scannerFlashRunning = false;
     const adminId = <?= $admin_id ?>;
     const adminRole = '<?= $admin_role ?>';
     let dataTable = null;
@@ -1260,6 +1282,7 @@ if ($admin_role === 'super_admin') {
         $('#scannerPlaceholder').show();
         $('#startBtn').show();
         $('#stopBtn').hide();
+        $('#flashBtn').hide().prop('disabled', true).removeClass('active');
         $('#switchCameraBtn').hide().prop('disabled', true);
         $('#cameraStatusLabel').text('Camera not started');
         $('#qrDetectedSection').hide();
@@ -1367,9 +1390,96 @@ if ($admin_role === 'super_admin') {
     function updateScannerButtons(running) {
         $('#startBtn').toggle(!running);
         $('#stopBtn').toggle(running);
+        $('#flashBtn')
+            .toggle(running)
+            .prop('disabled', !running || scannerActionRunning || scannerFlashRunning || !scannerFlashSupported)
+            .toggleClass('active', scannerFlashOn)
+            .find('span')
+            .text(scannerFlashOn ? 'Flash On' : 'Flash');
         $('#switchCameraBtn')
             .toggle(running)
             .prop('disabled', scannerActionRunning || scannerCameras.length < 2);
+    }
+
+    function getScannerVideoTrack() {
+        const video = document.querySelector('#qr-reader video');
+        if (!video || !video.srcObject || typeof video.srcObject.getVideoTracks !== 'function') {
+            return null;
+        }
+
+        return video.srcObject.getVideoTracks()[0] || null;
+    }
+
+    function resetScannerFlashState() {
+        scannerFlashSupported = false;
+        scannerFlashOn = false;
+        scannerFlashRunning = false;
+        $('#flashBtn').removeClass('active').prop('disabled', true).find('span').text('Flash');
+    }
+
+    function refreshScannerFlashSupport() {
+        const track = getScannerVideoTrack();
+        const capabilities = track && typeof track.getCapabilities === 'function'
+            ? track.getCapabilities()
+            : {};
+
+        scannerFlashSupported = !!(capabilities && capabilities.torch);
+        if (!scannerFlashSupported) {
+            scannerFlashOn = false;
+        }
+
+        updateScannerButtons(isScanning);
+        return scannerFlashSupported;
+    }
+
+    async function setScannerFlash(enabled) {
+        const track = getScannerVideoTrack();
+        if (!track || typeof track.applyConstraints !== 'function') {
+            scannerFlashSupported = false;
+            scannerFlashOn = false;
+            updateScannerButtons(isScanning);
+            return false;
+        }
+
+        try {
+            await track.applyConstraints({ advanced: [{ torch: enabled }] });
+            scannerFlashSupported = true;
+            scannerFlashOn = enabled;
+            updateScannerButtons(isScanning);
+            return true;
+        } catch (error) {
+            console.warn('Flash toggle failed:', error);
+            scannerFlashSupported = false;
+            scannerFlashOn = false;
+            updateScannerButtons(isScanning);
+            return false;
+        }
+    }
+
+    async function toggleScannerFlash() {
+        if (!isScanning || scannerFlashRunning) {
+            return;
+        }
+
+        if (!refreshScannerFlashSupport()) {
+            showStatus('warning', 'Flash is not supported by this camera or browser.');
+            return;
+        }
+
+        scannerFlashRunning = true;
+        updateScannerButtons(true);
+
+        const nextState = !scannerFlashOn;
+        const changed = await setScannerFlash(nextState);
+
+        scannerFlashRunning = false;
+        updateScannerButtons(isScanning);
+
+        if (changed) {
+            showStatus('success', nextState ? 'Flash turned on.' : 'Flash turned off.');
+        } else {
+            showStatus('warning', 'Unable to control the camera flash on this device.');
+        }
     }
 
     function updateCameraStatusLabel() {
@@ -1420,12 +1530,15 @@ if ($admin_role === 'super_admin') {
             }
 
             if (isScanning) {
+                await setScannerFlash(false);
                 await html5QrcodeScanner.stop();
                 isScanning = false;
+                resetScannerFlashState();
             }
 
             await html5QrcodeScanner.start(cameraId, scannerConfig(), onScanSuccess, onScanError);
             isScanning = true;
+            setTimeout(refreshScannerFlashSupport, 300);
             showStatus('success', 'Scanner active - Position QR code within frame');
             console.log('Scanner started successfully');
         } catch (error) {
@@ -1434,6 +1547,7 @@ if ($admin_role === 'super_admin') {
             $('#qr-reader').hide();
             $('#scannerPlaceholder').show();
             isScanning = false;
+            resetScannerFlashState();
         } finally {
             scannerActionRunning = false;
             updateScannerButtons(isScanning);
@@ -1453,6 +1567,7 @@ if ($admin_role === 'super_admin') {
         
         try {
             if (html5QrcodeScanner && isScanning) {
+                await setScannerFlash(false);
                 await html5QrcodeScanner.stop();
             }
             if (html5QrcodeScanner) {
@@ -1465,6 +1580,7 @@ if ($admin_role === 'super_admin') {
         } finally {
             isScanning = false;
             scannerActionRunning = false;
+            resetScannerFlashState();
             $('#qr-reader').hide();
             $('#scannerPlaceholder').show();
             updateScannerButtons(false);
