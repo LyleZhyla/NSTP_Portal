@@ -944,6 +944,7 @@ foreach ($publicForms as $formRow) {
                 };
                 let remaining = 0;
                 let lastMessage = '';
+                let stoppedWithoutDelivery = false;
 
                 Swal.fire({
                     title: 'Sending account emails',
@@ -992,6 +993,7 @@ foreach ($publicForms as $formRow) {
                         });
 
                         const deliveredThisBatch = Number(response.sent || 0) + Number(response.resent || 0);
+                        stoppedWithoutDelivery = Boolean(response.has_more) && deliveredThisBatch === 0;
                         keepSending = Boolean(response.has_more) && deliveredThisBatch > 0;
                     }
 
@@ -1010,6 +1012,9 @@ foreach ($publicForms as $formRow) {
                     }
                     if (remaining > 0) {
                         summary += ' Remaining pending: ' + remaining + '.';
+                    }
+                    if (stoppedWithoutDelivery && lastMessage) {
+                        summary += ' Last batch details: ' + lastMessage;
                     }
 
                     Swal.fire('Done', summary, remaining > 0 ? 'warning' : 'success').then(function() {
