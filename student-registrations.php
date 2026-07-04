@@ -840,6 +840,28 @@ foreach ($publicForms as $formRow) {
                 .replace(/'/g, '&#039;');
         }
 
+        function getAjaxErrorMessage(xhr, fallback) {
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                return xhr.responseJSON.message;
+            }
+
+            const responseText = String(xhr.responseText || '').trim();
+            if (!responseText) {
+                return fallback;
+            }
+
+            try {
+                const parsed = JSON.parse(responseText);
+                if (parsed && parsed.message) {
+                    return parsed.message;
+                }
+            } catch (error) {
+                // The server may return a PHP warning/fatal page instead of JSON.
+            }
+
+            return responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 500) || fallback;
+        }
+
         function updateVisibleSubmissionCount() {
             $('#visibleSubmissionCount').text(registrationsTable.rows({ filter: 'applied' }).count());
         }
@@ -927,8 +949,8 @@ foreach ($publicForms as $formRow) {
                             Swal.fire('Unable to Send', response.message || 'Please try again.', 'error');
                         }
                     },
-                    error: function() {
-                        Swal.fire('Request Failed', 'Unable to send account emails. Please try again.', 'error');
+                    error: function(xhr) {
+                        Swal.fire('Request Failed', getAjaxErrorMessage(xhr, 'Unable to send account emails. Please try again.'), 'error');
                     },
                     complete: function() {
                         button.prop('disabled', false).html(originalHtml);
@@ -982,8 +1004,8 @@ foreach ($publicForms as $formRow) {
                             Swal.fire('Unable to Send', response.message || 'Please try again.', 'error');
                         }
                     },
-                    error: function() {
-                        Swal.fire('Request Failed', 'Unable to send credentials. Please try again.', 'error');
+                    error: function(xhr) {
+                        Swal.fire('Request Failed', getAjaxErrorMessage(xhr, 'Unable to send credentials. Please try again.'), 'error');
                     },
                     complete: function() {
                         button.prop('disabled', false).html(originalHtml);
