@@ -20,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     ensureStudentNumberColumn($conn);
 
-    $batchLimit = isset($_POST['limit']) ? (int) $_POST['limit'] : 25;
-    $batchLimit = max(1, min(50, $batchLimit));
+    $batchLimit = isset($_POST['limit']) ? (int) $_POST['limit'] : 5;
+    $batchLimit = max(1, min(5, $batchLimit));
 
     $component = null;
     if (($currentUser['role'] ?? '') === 'coordinator') {

@@ -917,7 +917,8 @@ foreach ($publicForms as $formRow) {
             const button = $(this);
             const selectedComponent = $('#componentFilter').val();
             const scopeLabel = selectedComponent ? selectedComponent : 'all components';
-            const batchLimit = 25;
+            const batchLimit = 5;
+            const batchDelayMs = 5000;
 
             Swal.fire({
                 title: 'Send account emails?',
@@ -995,6 +996,12 @@ foreach ($publicForms as $formRow) {
                         const deliveredThisBatch = Number(response.sent || 0) + Number(response.resent || 0);
                         stoppedWithoutDelivery = Boolean(response.has_more) && deliveredThisBatch === 0;
                         keepSending = Boolean(response.has_more) && deliveredThisBatch > 0;
+
+                        if (keepSending) {
+                            await new Promise(function(resolve) {
+                                setTimeout(resolve, batchDelayMs);
+                            });
+                        }
                     }
 
                     let summary = 'Account email process finished. Sent: ' + totals.sent + '.';
