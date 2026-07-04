@@ -20,6 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     ensureStudentNumberColumn($conn);
 
+    $batchLimit = isset($_POST['limit']) ? (int) $_POST['limit'] : 25;
+    $batchLimit = max(1, min(50, $batchLimit));
+
     $component = null;
     if (($currentUser['role'] ?? '') === 'coordinator') {
         $component = normalizeProgram($currentUser['program'] ?? null);
@@ -47,11 +50,20 @@ try {
         $params[] = $component;
     }
 
+    $countStmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_public_student_registrations r
+        WHERE " . implode(' AND ', $where)
+    );
+    $countStmt->execute($params);
+    $totalPendingBefore = (int) $countStmt->fetchColumn();
+
     $stmt = $conn->prepare("
         SELECT r.student_number, r.email
         FROM tbl_public_student_registrations r
         WHERE " . implode(' AND ', $where) . "
         ORDER BY r.created_at ASC
+        LIMIT {$batchLimit}
     ");
     $stmt->execute($params);
     $registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -102,7 +114,10 @@ try {
         }
     }
 
-    $message = "Account email process finished. Sent: {$sent}.";
+    $countStmt->execute($params);
+    $totalPendingAfter = (int) $countStmt->fetchColumn();
+
+    $message = "Account email batch finished. Sent: {$sent}.";
     if ($resent > 0) {
         $message .= " Existing accounts resent: {$resent}.";
     }
@@ -114,6 +129,9 @@ try {
     }
     if ($failed > 0) {
         $message .= " Failed: {$failed}.";
+    }
+    if ($totalPendingAfter > 0) {
+        $message .= " Remaining pending: {$totalPendingAfter}.";
     }
     if (!empty($failureReasons)) {
         $message .= " Reason: " . implode('; ', array_map(
@@ -133,6 +151,10 @@ try {
         'failed' => $failed,
         'failure_reasons' => $failureReasons,
         'processed' => count($registrations),
+        'batch_limit' => $batchLimit,
+        'pending_before' => $totalPendingBefore,
+        'pending_after' => $totalPendingAfter,
+        'has_more' => $totalPendingAfter > 0,
     ]);
 } catch (Throwable $error) {
     error_log('Bulk student account email error: ' . $error->getMessage());

@@ -917,15 +917,16 @@ foreach ($publicForms as $formRow) {
             const button = $(this);
             const selectedComponent = $('#componentFilter').val();
             const scopeLabel = selectedComponent ? selectedComponent : 'all components';
+            const batchLimit = 25;
 
             Swal.fire({
                 title: 'Send account emails?',
-                text: 'This will create missing student accounts and email credentials for uploaded registrations under ' + scopeLabel + '.',
+                text: 'This will create missing student accounts and email credentials for uploaded registrations under ' + scopeLabel + '. Emails will be sent in batches.',
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonText: 'Send Emails',
                 cancelButtonText: 'Cancel'
-            }).then(function(result) {
+            }).then(async function(result) {
                 if (!result.isConfirmed) {
                     return;
                 }
@@ -933,29 +934,92 @@ foreach ($publicForms as $formRow) {
                 const originalHtml = button.html();
                 button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Sending');
 
-                $.ajax({
-                    url: 'endpoint/send-student-account-emails.php',
-                    method: 'POST',
-                    dataType: 'json',
-                    data: {
-                        component: selectedComponent || ''
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            Swal.fire('Done', response.message, 'success').then(function() {
-                                window.location.reload();
-                            });
-                        } else {
-                            Swal.fire('Unable to Send', response.message || 'Please try again.', 'error');
-                        }
-                    },
-                    error: function(xhr) {
-                        Swal.fire('Request Failed', getAjaxErrorMessage(xhr, 'Unable to send account emails. Please try again.'), 'error');
-                    },
-                    complete: function() {
-                        button.prop('disabled', false).html(originalHtml);
+                const totals = {
+                    sent: 0,
+                    resent: 0,
+                    createdNoEmail: 0,
+                    invalidEmail: 0,
+                    failed: 0,
+                    processed: 0
+                };
+                let remaining = 0;
+                let lastMessage = '';
+
+                Swal.fire({
+                    title: 'Sending account emails',
+                    html: 'Starting batch send...',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: function() {
+                        Swal.showLoading();
                     }
                 });
+
+                try {
+                    let keepSending = true;
+                    while (keepSending) {
+                        const response = await $.ajax({
+                            url: 'endpoint/send-student-account-emails.php',
+                            method: 'POST',
+                            dataType: 'json',
+                            data: {
+                                component: selectedComponent || '',
+                                limit: batchLimit
+                            }
+                        });
+
+                        if (!response.success) {
+                            throw new Error(response.message || 'Unable to send account emails. Please try again.');
+                        }
+
+                        totals.sent += Number(response.sent || 0);
+                        totals.resent += Number(response.resent || 0);
+                        totals.createdNoEmail += Number(response.created_no_email || 0);
+                        totals.invalidEmail += Number(response.invalid_email || 0);
+                        totals.failed += Number(response.failed || 0);
+                        totals.processed += Number(response.processed || 0);
+                        remaining = Number(response.pending_after || 0);
+                        lastMessage = response.message || '';
+
+                        Swal.update({
+                            html: `
+                                <div class="text-left">
+                                    <p class="mb-2"><strong>Sent:</strong> ${totals.sent} &nbsp; <strong>Resent:</strong> ${totals.resent}</p>
+                                    <p class="mb-2"><strong>Processed:</strong> ${totals.processed} &nbsp; <strong>Remaining:</strong> ${remaining}</p>
+                                    <p class="mb-0 text-muted">${escapeHtml(lastMessage)}</p>
+                                </div>
+                            `
+                        });
+
+                        const deliveredThisBatch = Number(response.sent || 0) + Number(response.resent || 0);
+                        keepSending = Boolean(response.has_more) && deliveredThisBatch > 0;
+                    }
+
+                    let summary = 'Account email process finished. Sent: ' + totals.sent + '.';
+                    if (totals.resent > 0) {
+                        summary += ' Existing accounts resent: ' + totals.resent + '.';
+                    }
+                    if (totals.createdNoEmail > 0) {
+                        summary += ' Created but email failed: ' + totals.createdNoEmail + '.';
+                    }
+                    if (totals.invalidEmail > 0) {
+                        summary += ' Invalid emails skipped: ' + totals.invalidEmail + '.';
+                    }
+                    if (totals.failed > 0) {
+                        summary += ' Failed: ' + totals.failed + '.';
+                    }
+                    if (remaining > 0) {
+                        summary += ' Remaining pending: ' + remaining + '.';
+                    }
+
+                    Swal.fire('Done', summary, remaining > 0 ? 'warning' : 'success').then(function() {
+                        window.location.reload();
+                    });
+                } catch (error) {
+                    Swal.fire('Request Failed', error.message || 'Unable to send account emails. Please try again.', 'error');
+                } finally {
+                    button.prop('disabled', false).html(originalHtml);
+                }
             });
         });
 
