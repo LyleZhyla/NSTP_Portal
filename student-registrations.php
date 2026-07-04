@@ -918,7 +918,7 @@ foreach ($publicForms as $formRow) {
             const selectedComponent = $('#componentFilter').val();
             const scopeLabel = selectedComponent ? selectedComponent : 'all components';
             const batchLimit = 5;
-            const batchDelayMs = 5000;
+            const batchDelayMs = 30000;
 
             Swal.fire({
                 title: 'Send account emails?',

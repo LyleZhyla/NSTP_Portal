@@ -112,9 +112,10 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
         return ['sent' => false, 'reason' => 'invalid_email'];
     }
 
-    $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
+    $stmt = $conn->prepare("SELECT user_id, password_hash, email FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
     $stmt->execute([$studentNumber]);
-    $userId = (int) $stmt->fetchColumn();
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    $userId = (int) ($user['user_id'] ?? 0);
     if ($userId <= 0) {
         return ['sent' => false, 'reason' => 'account_not_found'];
     }
@@ -124,6 +125,11 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
     $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $email, $userId]);
 
     $sent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);
+    if (!$sent) {
+        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ? WHERE user_id = ?");
+        $stmt->execute([$user['password_hash'], $user['email'], $userId]);
+    }
+
     return ['sent' => $sent, 'reason' => $sent ? 'resent' : (getAppMailLastError() ?: 'email_failed')];
 }
 
