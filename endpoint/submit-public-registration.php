@@ -494,39 +494,6 @@ function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
     ];
 }
 
-function recordPublicRegistrationAttendance(PDO $conn, array $registration) {
-    $student = ensurePublicRegistrationStudent($conn, $registration);
-    $today = date('Y-m-d');
-
-    $stmt = $conn->prepare("
-        SELECT tbl_attendance_id
-        FROM tbl_attendance
-        WHERE tbl_student_id = ? AND DATE(time_in) = ?
-        LIMIT 1
-    ");
-    $stmt->execute([$student['tbl_student_id'], $today]);
-    $existingAttendanceId = $stmt->fetchColumn();
-    if ($existingAttendanceId) {
-        return ['recorded' => false, 'attendance_id' => (int) $existingAttendanceId, 'student' => $student, 'reason' => 'already_attended'];
-    }
-
-    $timeIn = date('Y-m-d H:i:s');
-    $status = getAttendanceStatusForStudent($conn, $student, $timeIn);
-
-    $stmt = $conn->prepare("
-        INSERT INTO tbl_attendance (tbl_student_id, time_in, status, notes)
-        VALUES (?, ?, ?, ?)
-    ");
-    $stmt->execute([
-        $student['tbl_student_id'],
-        $timeIn,
-        $status,
-        'Public QR: ' . cleanText($registration['form_title'] ?? 'Public Registration'),
-    ]);
-
-    return ['recorded' => true, 'attendance_id' => (int) $conn->lastInsertId(), 'student' => $student, 'status' => $status];
-}
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     failRegistration('Invalid request method.');
 }
@@ -806,19 +773,16 @@ try {
             'attendance_only',
         ]);
 
-        $attendanceResult = recordPublicRegistrationAttendance($conn, $attendanceOnlyRegistration);
         $conn->commit();
         $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
 
         $response['success'] = true;
         if (!empty($accountResult['created'])) {
             $response['message'] = !empty($accountResult['email_sent'])
-                ? 'Attendance recorded successfully. Your student account was created and login credentials were sent to your registered email.'
-                : 'Attendance recorded successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
+                ? 'Registration saved successfully. Your student account was created and login credentials were sent to your registered email.'
+                : 'Registration saved successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
         } else {
-            $response['message'] = !empty($attendanceResult['recorded'])
-                ? 'Attendance recorded successfully using your student number.'
-                : 'You already have an attendance record for today.';
+            $response['message'] = 'Registration saved successfully.';
         }
         echo json_encode($response);
         exit();
@@ -1014,32 +978,15 @@ try {
 
     $conn->commit();
 
-    $registrationForAttendance = [
-        'student_number' => $studentNumber,
-        'last_name' => $lastName,
-        'extension_name' => $extensionName,
-        'first_name' => $firstName,
-        'middle_name' => $middleName,
-        'course' => $course,
-        'year_section' => $yearSection,
-        'component' => $component,
-        'rotc_ms_level' => $rotcMsLevel,
-        'form_title' => $publicForm['form_title'],
-        'formal_picture' => $dbPicturePath,
-        'user_id' => null,
-    ];
-    $attendanceResult = recordPublicRegistrationAttendance($conn, $registrationForAttendance);
     $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
 
     $response['success'] = true;
     if (!empty($accountResult['created'])) {
         $response['message'] = !empty($accountResult['email_sent'])
-            ? 'Registration and attendance saved successfully. Your student account was created and login credentials were sent to your registered email.'
-            : 'Registration and attendance saved successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
+            ? 'Registration saved successfully. Your student account was created and login credentials were sent to your registered email.'
+            : 'Registration saved successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
     } else {
-        $response['message'] = !empty($attendanceResult['recorded'])
-            ? 'Registration and attendance saved successfully.'
-            : 'Registration saved successfully. You already have an attendance record for today.';
+        $response['message'] = 'Registration saved successfully.';
     }
 } catch (Throwable $error) {
     if ($conn->inTransaction()) {

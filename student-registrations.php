@@ -473,14 +473,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                         of <?php echo (int) $totalRegistrations; ?>
                                     </span>
                                 </div>
-                                <div class="col-md-2 mt-3 mt-md-0">
-                                    <label for="publicAttendanceDate" class="mb-1">Attendance Date</label>
-                                    <input type="date" class="form-control" id="publicAttendanceDate" value="<?php echo date('Y-m-d'); ?>">
-                                </div>
                                 <div class="col-md-2 mt-3 mt-md-0 text-md-right">
-                                    <a class="btn btn-success mb-2 public-qr-btn" id="downloadPublicAttendance" href="endpoint/download-public-registration-attendance.php?date=<?php echo date('Y-m-d'); ?>">
-                                        <i class="fas fa-file-excel mr-1"></i> Download Attendance
-                                    </a>
                                     <button type="button" class="btn btn-primary mb-2" id="sendAccountEmailsBtn">
                                         <i class="fas fa-envelope mr-1"></i> Send Account Emails
                                     </button>
@@ -866,29 +859,13 @@ foreach ($publicForms as $formRow) {
             $('#visibleSubmissionCount').text(registrationsTable.rows({ filter: 'applied' }).count());
         }
 
-        function updatePublicAttendanceDownloadLink() {
-            const params = new URLSearchParams();
-            params.set('date', $('#publicAttendanceDate').val() || new Date().toISOString().slice(0, 10));
-            const selectedFormTitle = $('#formTitleFilter').val();
-            if (selectedFormTitle) {
-                params.set('form_title', selectedFormTitle);
-            }
-            const selectedComponent = $('#componentFilter').val();
-            if (selectedComponent) {
-                params.set('component', selectedComponent);
-            }
-            $('#downloadPublicAttendance').attr('href', 'endpoint/download-public-registration-attendance.php?' + params.toString());
-        }
-
         function applyComponentFilter() {
             const selectedComponent = $('#componentFilter').val();
             registrationsTable.column(7).search(selectedComponent || '').draw();
-            updatePublicAttendanceDownloadLink();
         }
 
         $('#formTitleFilter').on('change', function() {
             const selectedFormTitle = $(this).val();
-            updatePublicAttendanceDownloadLink();
             if (selectedFormTitle === '') {
                 registrationsTable.column(1).search('').draw();
                 return;
@@ -905,12 +882,10 @@ foreach ($publicForms as $formRow) {
             <?php if ($role !== 'coordinator'): ?>
             $('#componentFilter').val('');
             <?php endif; ?>
-            updatePublicAttendanceDownloadLink();
             registrationsTable.column(7).search('');
             registrationsTable.column(1).search('').draw();
         });
 
-        $('#publicAttendanceDate').on('change', updatePublicAttendanceDownloadLink);
         $('#componentFilter').on('change', applyComponentFilter);
 
         $('#sendAccountEmailsBtn').on('click', function() {
@@ -1143,7 +1118,6 @@ foreach ($publicForms as $formRow) {
         registrationsTable.on('draw', updateVisibleSubmissionCount);
         updateVisibleSubmissionCount();
         applyComponentFilter();
-        updatePublicAttendanceDownloadLink();
 
         const qrPageSize = 4;
         let qrCurrentPage = 1;

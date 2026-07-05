@@ -1138,50 +1138,6 @@ if ($role === 'super_admin') {
                         </form>
                     </div>
 
-                    <?php if (in_array($role, ['super_admin', 'coordinator'], true)): ?>
-                    <div class="col-12 mb-3">
-                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-public-registration-attendance.php">
-                            <div class="card-header">
-                                <h3 class="card-title"><i class="fas fa-clipboard-list mr-2"></i>Public Registration Attendance</h3>
-                                <div class="card-tools">
-                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
-                                        <i class="fas fa-plus"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="form-group">
-                                    <label for="publicDate">Registration Date</label>
-                                    <input type="date" class="form-control" id="publicDate" name="date" value="<?php echo htmlspecialchars($today); ?>">
-                                </div>
-                                <div class="form-group">
-                                    <label for="publicFormTitle">Form</label>
-                                    <select class="form-control" id="publicFormTitle" name="form_title">
-                                        <option value="">All Forms</option>
-                                        <?php foreach ($publicForms as $formTitle): ?>
-                                        <option value="<?php echo htmlspecialchars($formTitle); ?>"><?php echo htmlspecialchars($formTitle); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <?php if ($role === 'super_admin'): ?>
-                                <div class="form-group">
-                                    <label for="publicComponent">Component</label>
-                                    <select class="form-control" id="publicComponent" name="component">
-                                        <option value="">All Components</option>
-                                        <option value="CWTS">CWTS</option>
-                                        <option value="LTS">LTS</option>
-                                        <option value="ROTC">ROTC</option>
-                                    </select>
-                                </div>
-                                <?php endif; ?>
-                                <button type="submit" class="btn btn-success btn-block">
-                                    <i class="fas fa-download mr-1"></i> Download Public Attendance
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                    <?php endif; ?>
-
                     <?php if (($role === 'coordinator' && in_array($program, ['CWTS', 'LTS'], true)) || $role === 'super_admin'): ?>
                     <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-ched-serial-number.php">
