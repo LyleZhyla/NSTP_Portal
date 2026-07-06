@@ -710,6 +710,14 @@ try {
         failRegistration('Student Number must be exactly 10 digits and numbers only.');
     }
 
+    if (!$isFacilitatorRegistration && !$studentNumberBased && !preg_match('/^\d{11}$/', (string) $contactNumber)) {
+        failRegistration('Contact Number must be exactly 11 digits and numbers only.');
+    }
+
+    if (!$isFacilitatorRegistration && !$studentNumberBased && !preg_match('/^\d{11}$/', (string) $emergencyContactNumber)) {
+        failRegistration('Emergency Contact Number must be exactly 11 digits and numbers only.');
+    }
+
     if ($componentSelectionOpen && !$component) {
         failRegistration('Please select an NSTP component.');
     }

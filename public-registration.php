@@ -161,7 +161,7 @@ $religionOptions = philippinesReligionOptions();
                     </div>
                     <div class="col-md-3 student-only-field">
                         <label class="form-label" for="contact_number">Contact Number <span class="required">*</span></label>
-                        <input type="tel" class="form-control" id="contact_number" name="contact_number" inputmode="tel" maxlength="20" required>
+                        <input type="tel" class="form-control" id="contact_number" name="contact_number" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" placeholder="09XXXXXXXXX" required>
                     </div>
                     <?php endif; ?>
                     <?php if ($isFacilitatorForm || $showEmailField): ?>
@@ -241,7 +241,7 @@ $religionOptions = philippinesReligionOptions();
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" for="emergency_contact_number">Contact Number <span class="required">*</span></label>
-                        <input type="tel" class="form-control" id="emergency_contact_number" name="emergency_contact_number" inputmode="tel" maxlength="20" required>
+                        <input type="tel" class="form-control" id="emergency_contact_number" name="emergency_contact_number" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" placeholder="09XXXXXXXXX" required>
                     </div>
                     <div class="col-md-8">
                         <label class="form-label" for="emergency_address">Address <span class="required">*</span></label>
@@ -286,7 +286,7 @@ $religionOptions = philippinesReligionOptions();
                     <?php if ($fields['student_number']): ?>
                     <div class="col-md-4 student-only-field">
                         <label class="form-label" for="student_number">Student Number <span class="required">*</span></label>
-                        <input type="text" class="form-control" id="student_number" name="student_number" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required>
+                        <input type="text" class="form-control" id="student_number" name="student_number" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10-digit student number" required>
                     </div>
                     <?php endif; ?>
                     <?php if ($fields['course_section']): ?>
@@ -699,6 +699,18 @@ $religionOptions = philippinesReligionOptions();
             if (currentRegistrantRole() !== 'facilitator' && studentNumber && !/^\d{10}$/.test(studentNumber.value.trim())) {
                 showAlert('danger', 'Student Number must be exactly 10 digits.');
                 studentNumber.focus();
+                return;
+            }
+
+            if (currentRegistrantRole() !== 'facilitator' && !studentNumberBased && contactNumber && !/^\d{11}$/.test(contactNumber.value.trim())) {
+                showAlert('danger', 'Contact Number must be exactly 11 digits.');
+                contactNumber.focus();
+                return;
+            }
+
+            if (currentRegistrantRole() !== 'facilitator' && !studentNumberBased && emergencyContactNumber && !/^\d{11}$/.test(emergencyContactNumber.value.trim())) {
+                showAlert('danger', 'Emergency Contact Number must be exactly 11 digits.');
+                emergencyContactNumber.focus();
                 return;
             }
 

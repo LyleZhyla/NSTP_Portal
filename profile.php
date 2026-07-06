@@ -1216,6 +1216,10 @@ if (!empty($user['full_name'])) {
                                                                                 ? ($studentRecord['registration_email'] ?? '')
                                                                                 : ($studentRecord[$fieldKey] ?? ''));
                                                                         $inputType = $fieldKey === 'date_of_birth' ? 'date' : ($fieldKey === 'email' ? 'email' : 'text');
+                                                                        $inputMode = in_array($fieldKey, ['contact_number', 'emergency_contact_number'], true) ? 'numeric' : '';
+                                                                        $inputPattern = in_array($fieldKey, ['contact_number', 'emergency_contact_number'], true) ? '[0-9]{11}' : '';
+                                                                        $inputMaxLength = in_array($fieldKey, ['contact_number', 'emergency_contact_number'], true) ? '11' : '';
+                                                                        $inputPlaceholder = in_array($fieldKey, ['contact_number', 'emergency_contact_number'], true) ? '09XXXXXXXXX' : '';
                                                                     ?>
                                                                     <div class="col-md-6">
                                                                         <div class="form-group">
@@ -1226,6 +1230,10 @@ if (!empty($user['full_name'])) {
                                                                                 id="registration_<?php echo htmlspecialchars($fieldKey); ?>"
                                                                                 name="registration[<?php echo htmlspecialchars($fieldKey); ?>]"
                                                                                 value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>"
+                                                                                <?php echo $inputMode !== '' ? 'inputmode="' . htmlspecialchars($inputMode) . '"' : ''; ?>
+                                                                                <?php echo $inputPattern !== '' ? 'pattern="' . htmlspecialchars($inputPattern) . '"' : ''; ?>
+                                                                                <?php echo $inputMaxLength !== '' ? 'maxlength="' . htmlspecialchars($inputMaxLength) . '"' : ''; ?>
+                                                                                <?php echo $inputPlaceholder !== '' ? 'placeholder="' . htmlspecialchars($inputPlaceholder) . '"' : ''; ?>
                                                                                 <?php echo in_array($fieldKey, ['first_name', 'last_name', 'email'], true) ? 'required' : ''; ?>
                                                                             >
                                                                         </div>

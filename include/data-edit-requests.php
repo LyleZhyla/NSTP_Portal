@@ -203,6 +203,12 @@ function submitRegistrationDataEditRequest(PDO $conn, array $user, array $regist
         throw new InvalidArgumentException('Please enter a valid registration email address.');
     }
 
+    foreach (['contact_number', 'emergency_contact_number'] as $phoneField) {
+        if (!preg_match('/^\d{11}$/', (string) ($newData[$phoneField] ?? ''))) {
+            throw new InvalidArgumentException($fields[$phoneField] . ' must be exactly 11 digits and numbers only.');
+        }
+    }
+
     $changed = false;
     foreach (array_keys($fields) as $field) {
         if (($currentData[$field] ?? '') !== ($newData[$field] ?? '')) {
