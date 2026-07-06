@@ -167,7 +167,6 @@ function registrationEditRequestFields() {
         'course' => 'Course',
         'major' => 'Major',
         'year_section' => 'Year and Section',
-        'component' => 'Component',
     ];
 }
 
@@ -302,6 +301,7 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
         throw new RuntimeException('This request has already been reviewed.');
     }
 
+    $currentData = dataEditRequestDecode($request['current_data'] ?? '');
     $newData = dataEditRequestDecode($request['requested_data'] ?? '');
     $status = $action === 'approve' ? 'approved' : 'rejected';
     $note = dataEditRequestClean($note, 2000);
@@ -318,8 +318,16 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
             $setParts = [];
             $params = [];
             foreach (array_keys($fields) as $field) {
+                if (($currentData[$field] ?? '') === ($newData[$field] ?? '')) {
+                    continue;
+                }
+
                 $setParts[] = "{$field} = ?";
                 $params[] = $newData[$field] ?? '';
+            }
+
+            if (empty($setParts)) {
+                throw new RuntimeException('No editable registration detail changes were requested.');
             }
             $params[] = $registrationId;
 

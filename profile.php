@@ -1137,7 +1137,7 @@ if (!empty($user['full_name'])) {
                                     'Personal Information' => ['last_name', 'extension_name', 'first_name', 'middle_name', 'gender', 'date_of_birth', 'place_of_birth', 'religion', 'blood_type'],
                                     'Contact Information' => ['email', 'contact_number', 'house_no', 'street', 'barangay', 'city_municipality', 'province'],
                                     'Emergency Contact' => ['emergency_name', 'emergency_relationship', 'emergency_contact_number', 'emergency_address'],
-                                    'Academic Information' => ['college', 'course', 'major', 'year_section', 'component'],
+                                    'Academic Information' => ['college', 'course', 'major', 'year_section'],
                                 ];
                                 $registrationEditFields = registrationEditRequestFields();
                             ?>
