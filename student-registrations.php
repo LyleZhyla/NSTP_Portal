@@ -1019,7 +1019,7 @@ foreach ($publicForms as $formRow) {
             });
         });
 
-        $('.resend-student-credentials').on('click', function() {
+        $('#registrationsTable').on('click', '.resend-student-credentials', function() {
             const button = $(this);
             const registrationId = button.data('registration-id');
             const studentName = button.data('name') || 'this student';
@@ -1093,7 +1093,7 @@ foreach ($publicForms as $formRow) {
             });
         });
 
-        $('.delete-student-account').on('click', function() {
+        $('#registrationsTable').on('click', '.delete-student-account', function() {
             const button = $(this);
             const userId = button.data('user-id');
             const studentName = button.data('name') || 'this student';
