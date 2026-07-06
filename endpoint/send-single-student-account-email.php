@@ -50,13 +50,17 @@ try {
 
     $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
     $email = trim((string) ($registration['email'] ?? ''));
+    $canViewCredentials = ($currentUser['role'] ?? '') === 'super_admin';
+    $hasValidRecipientEmail = $email !== ''
+        && !isPlaceholderEmail($email)
+        && filter_var($email, FILTER_VALIDATE_EMAIL);
 
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
         echo json_encode(['success' => false, 'message' => 'This registration has no valid student number.']);
         exit();
     }
 
-    if ($email === '' || isPlaceholderEmail($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    if (!$hasValidRecipientEmail && !$canViewCredentials) {
         echo json_encode(['success' => false, 'message' => 'This registration has no valid recipient email.']);
         exit();
     }
@@ -78,11 +82,17 @@ try {
     }
 
     $password = generateStudentAccountPassword();
-    $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ? WHERE user_id = ?");
-    $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $email, $userId]);
+    if ($hasValidRecipientEmail) {
+        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ? WHERE user_id = ?");
+        $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $email, $userId]);
+    } else {
+        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ? WHERE user_id = ?");
+        $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
+    }
 
-    $sent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);
-    $canViewCredentials = ($currentUser['role'] ?? '') === 'super_admin';
+    $sent = $hasValidRecipientEmail
+        ? sendStudentAccountEmail($conn, $registration, $studentNumber, $password)
+        : false;
     $credentials = $canViewCredentials
         ? [
             'username' => $studentNumber,
@@ -92,10 +102,14 @@ try {
 
     if (!$sent) {
         if ($canViewCredentials) {
+            $message = $hasValidRecipientEmail
+                ? (getAppMailLastError() ?: 'Email failed to send. The generated credentials are shown below.')
+                : 'No valid recipient email. The generated credentials are shown below.';
+
             echo json_encode([
                 'success' => true,
                 'email_sent' => false,
-                'message' => getAppMailLastError() ?: 'Email failed to send. The generated credentials are shown below.',
+                'message' => $message,
                 'credentials' => $credentials,
             ]);
             exit();

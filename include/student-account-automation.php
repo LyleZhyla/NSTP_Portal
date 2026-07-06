@@ -98,7 +98,7 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
         SELECT *
         FROM tbl_public_student_registrations
         WHERE student_number = ?
-        ORDER BY created_at DESC
+        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
         LIMIT 1
     ");
     $stmt->execute([$studentNumber]);
@@ -166,7 +166,7 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
         SELECT *
         FROM tbl_public_student_registrations
         WHERE student_number = ?
-        ORDER BY created_at DESC
+        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
         LIMIT 1
     ");
     $stmt->execute([$studentNumber]);
@@ -248,7 +248,7 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
         SELECT *
         FROM tbl_public_student_registrations
         WHERE student_number = ?
-        ORDER BY created_at DESC
+        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
         LIMIT 1
     ");
     $stmt->execute([$studentNumber]);

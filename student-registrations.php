@@ -518,11 +518,17 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             }
                                             $displayEmail = (strpos((string) $row['email'], '@no-email.tau-nstp.local') !== false) ? 'N/A' : $row['email'];
                                             $studentNumberForEmail = preg_replace('/\D/', '', (string) ($row['student_number'] ?? ''));
-                                            $canSendStudentCredentials = in_array($role, ['super_admin', 'coordinator'], true)
+                                            $hasValidCredentialEmail = $displayEmail !== 'N/A'
+                                                && filter_var($row['email'] ?? '', FILTER_VALIDATE_EMAIL);
+                                            $canSendStudentCredentials = $role === 'super_admin'
+                                                && $registrantRole === 'student'
+                                                && preg_match('/^\d{10}$/', $studentNumberForEmail);
+                                            $canSendStudentCredentials = $canSendStudentCredentials || (
+                                                $role === 'coordinator'
                                                 && $registrantRole === 'student'
                                                 && preg_match('/^\d{10}$/', $studentNumberForEmail)
-                                                && $displayEmail !== 'N/A'
-                                                && filter_var($row['email'] ?? '', FILTER_VALIDATE_EMAIL);
+                                                && $hasValidCredentialEmail
+                                            );
                                             $address = $row['house_no'] . ' ' . $row['street'] . ', ' . $row['barangay'] . ', ' . $row['city_municipality'] . ', ' . $row['province'];
                                             if (trim(str_replace(['N/A', ',', ' '], '', $address)) === '') {
                                                 $address = 'N/A';
@@ -1026,13 +1032,18 @@ foreach ($publicForms as $formRow) {
             const studentEmail = button.data('email') || 'their registered email';
             const safeStudentName = escapeHtml(studentName);
             const safeStudentEmail = escapeHtml(studentEmail);
+            const hasDisplayEmail = studentEmail && studentEmail !== 'N/A';
 
             Swal.fire({
                 title: 'Resend credentials?',
                 html: `
                     <div class="text-left">
                         <p>This will generate a new temporary password for <strong>${safeStudentName}</strong>.</p>
-                        <p class="mb-0 text-muted">The credentials will be sent to <strong>${safeStudentEmail}</strong>.</p>
+                        <p class="mb-0 text-muted">${
+                            hasDisplayEmail
+                                ? `The credentials will be sent to <strong>${safeStudentEmail}</strong>.`
+                                : 'No valid email is available, so the generated credentials will be shown for manual release.'
+                        }</p>
                     </div>
                 `,
                 icon: 'question',

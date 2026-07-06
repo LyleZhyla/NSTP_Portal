@@ -37,10 +37,19 @@ try {
         "r.email <> ''",
         "r.email NOT LIKE '%@no-email.tau-nstp.local'",
         "(r.email_sent IS NULL OR r.email_sent = 0)",
+        "COALESCE(r.status, 'submitted') <> 'attendance_only'",
         "r.registration_id = (
-            SELECT MAX(latest.registration_id)
-            FROM tbl_public_student_registrations latest
-            WHERE latest.student_number = r.student_number
+            SELECT MIN(earliest.registration_id)
+            FROM tbl_public_student_registrations earliest
+            WHERE earliest.student_number = r.student_number
+              AND (earliest.component <=> r.component)
+              AND earliest.registrant_role = 'student'
+              AND earliest.student_number REGEXP '^[0-9]{10}$'
+              AND earliest.email IS NOT NULL
+              AND earliest.email <> ''
+              AND earliest.email NOT LIKE '%@no-email.tau-nstp.local'
+              AND (earliest.email_sent IS NULL OR earliest.email_sent = 0)
+              AND COALESCE(earliest.status, 'submitted') <> 'attendance_only'
         )",
     ];
     $params = [];
@@ -62,7 +71,7 @@ try {
         SELECT r.student_number, r.email
         FROM tbl_public_student_registrations r
         WHERE " . implode(' AND ', $where) . "
-        ORDER BY r.created_at ASC
+        ORDER BY r.created_at ASC, r.registration_id ASC
         LIMIT {$batchLimit}
     ");
     $stmt->execute($params);
