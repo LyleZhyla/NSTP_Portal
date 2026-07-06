@@ -517,6 +517,12 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 $fullName = 'Student #' . $row['student_number'];
                                             }
                                             $displayEmail = (strpos((string) $row['email'], '@no-email.tau-nstp.local') !== false) ? 'N/A' : $row['email'];
+                                            $studentNumberForEmail = preg_replace('/\D/', '', (string) ($row['student_number'] ?? ''));
+                                            $canSendStudentCredentials = in_array($role, ['super_admin', 'coordinator'], true)
+                                                && $registrantRole === 'student'
+                                                && preg_match('/^\d{10}$/', $studentNumberForEmail)
+                                                && $displayEmail !== 'N/A'
+                                                && filter_var($row['email'] ?? '', FILTER_VALIDATE_EMAIL);
                                             $address = $row['house_no'] . ' ' . $row['street'] . ', ' . $row['barangay'] . ', ' . $row['city_municipality'] . ', ' . $row['province'];
                                             if (trim(str_replace(['N/A', ',', ' '], '', $address)) === '') {
                                                 $address = 'N/A';
@@ -568,7 +574,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailsModal<?php echo $registrationId; ?>">
                                                     <i class="fas fa-eye"></i>
                                                 </button>
-                                                <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
+                                                <?php if ($canSendStudentCredentials): ?>
                                                     <button
                                                         type="button"
                                                         class="btn btn-sm btn-success resend-student-credentials"
@@ -577,6 +583,8 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                         data-email="<?php echo htmlspecialchars($displayEmail); ?>">
                                                         <i class="fas fa-envelope"></i>
                                                     </button>
+                                                <?php endif; ?>
+                                                <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
                                                     <button
                                                         type="button"
                                                         class="btn btn-sm btn-danger delete-student-account"
