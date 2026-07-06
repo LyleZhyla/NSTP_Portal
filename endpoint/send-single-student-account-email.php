@@ -65,9 +65,10 @@ try {
         exit();
     }
 
-    $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
+    $stmt = $conn->prepare("SELECT user_id, last_password_change FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
     $stmt->execute([$studentNumber]);
-    $userId = (int) $stmt->fetchColumn();
+    $studentUser = $stmt->fetch(PDO::FETCH_ASSOC);
+    $userId = (int) ($studentUser['user_id'] ?? 0);
 
     if ($userId <= 0) {
         $createResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
@@ -78,15 +79,36 @@ try {
             ]);
             exit();
         }
-        $userId = (int) $createResult['user_id'];
+
+        echo json_encode([
+            'success' => true,
+            'email_sent' => !empty($createResult['email_sent']),
+            'message' => !empty($createResult['email_sent'])
+                ? 'Credentials were sent to ' . $email . '.'
+                : (getAppMailLastError() ?: 'Student account was created, but the credentials email was not sent.'),
+            'credentials' => $canViewCredentials
+                ? [
+                    'username' => $studentNumber,
+                    'temporary_password' => $createResult['password'] ?? '',
+                ]
+                : null,
+        ]);
+        exit();
+    } elseif (empty($studentUser['last_password_change'])) {
+        echo json_encode([
+            'success' => false,
+            'email_sent' => false,
+            'message' => 'This student account still has an active temporary password. It will remain valid until the student changes it.',
+        ]);
+        exit();
     }
 
     $password = generateStudentAccountPassword();
     if ($hasValidRecipientEmail) {
-        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ? WHERE user_id = ?");
+        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ?, last_password_change = NULL WHERE user_id = ?");
         $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $email, $userId]);
     } else {
-        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ? WHERE user_id = ?");
+        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, last_password_change = NULL WHERE user_id = ?");
         $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
     }
 

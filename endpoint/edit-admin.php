@@ -119,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Update with password and profile picture
             $sql = "UPDATE tbl_users 
-                    SET full_name = ?, username = ?, email = ?, role = ?, program = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP 
+                    SET full_name = ?, username = ?, email = ?, role = ?, program = ?, password_hash = ?, last_password_change = NULL, updated_at = CURRENT_TIMESTAMP 
                     $profile_picture_update
                     WHERE user_id = ?";
             
@@ -163,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $stmt = $conn->prepare("
             UPDATE tbl_users 
-            SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+            SET password_hash = ?, last_password_change = NULL, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
         ");
         

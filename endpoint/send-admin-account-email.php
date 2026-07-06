@@ -34,7 +34,7 @@ if ($userId <= 0) {
 
 try {
     $stmt = $conn->prepare("
-        SELECT user_id, full_name, username, email, role, program
+        SELECT user_id, full_name, username, email, role, program, last_password_change
         FROM tbl_users
         WHERE user_id = ?
         LIMIT 1
@@ -58,6 +58,14 @@ try {
         exit();
     }
 
+    if (empty($targetUser['last_password_change'])) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'This account still has an active temporary password. It will remain valid until the user changes it.',
+        ]);
+        exit();
+    }
+
     $temporaryPassword = generateAccountEmailTemporaryPassword();
     $passwordHash = password_hash($temporaryPassword, PASSWORD_DEFAULT);
 
@@ -65,7 +73,7 @@ try {
 
     $updateStmt = $conn->prepare("
         UPDATE tbl_users
-        SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+        SET password_hash = ?, last_password_change = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE user_id = ?
     ");
     $updateStmt->execute([$passwordHash, $userId]);

@@ -38,7 +38,7 @@ try {
     }
 
     $stmt = $conn->prepare("
-        SELECT user_id, full_name, username, email, role, program
+        SELECT user_id, full_name, username, email, role, program, last_password_change
         FROM tbl_users
         WHERE " . implode(' AND ', $where) . "
         ORDER BY FIELD(program, 'CWTS', 'LTS', 'ROTC'), full_name, username
@@ -48,6 +48,7 @@ try {
 
     $sent = 0;
     $invalidEmail = 0;
+    $activeTemporary = 0;
     $failed = 0;
     $failureReasons = [];
 
@@ -55,6 +56,11 @@ try {
         $email = trim((string) ($facilitator['email'] ?? ''));
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || isPlaceholderEmail($email)) {
             $invalidEmail++;
+            continue;
+        }
+
+        if (empty($facilitator['last_password_change'])) {
+            $activeTemporary++;
             continue;
         }
 
@@ -66,7 +72,7 @@ try {
 
             $updateStmt = $conn->prepare("
                 UPDATE tbl_users
-                SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+                SET password_hash = ?, last_password_change = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = ? AND role = 'facilitator'
             ");
             $updateStmt->execute([$passwordHash, (int) $facilitator['user_id']]);
@@ -111,6 +117,9 @@ try {
     if ($invalidEmail > 0) {
         $message .= " Invalid emails skipped: {$invalidEmail}.";
     }
+    if ($activeTemporary > 0) {
+        $message .= " Active temporary passwords kept: {$activeTemporary}.";
+    }
     if ($failed > 0) {
         $message .= " Failed: {$failed}.";
     }
@@ -128,6 +137,7 @@ try {
         'processed' => count($facilitators),
         'sent' => $sent,
         'invalid_email' => $invalidEmail,
+        'active_temporary' => $activeTemporary,
         'failed' => $failed,
         'failure_reasons' => $failureReasons,
     ]);

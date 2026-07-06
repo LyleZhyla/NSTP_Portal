@@ -80,6 +80,7 @@ try {
     $sent = 0;
     $createdNoEmail = 0;
     $resent = 0;
+    $activeTemporary = 0;
     $invalidEmail = 0;
     $failed = 0;
     $failureReasons = [];
@@ -106,6 +107,8 @@ try {
                 $resendResult = resetStudentAccountPasswordAndEmail($conn, $studentNumber);
                 if (!empty($resendResult['sent'])) {
                     $resent++;
+                } elseif (($resendResult['reason'] ?? '') === 'temporary_password_still_active') {
+                    $activeTemporary++;
                 } else {
                     $failed++;
                     $reason = $resendResult['reason'] ?? 'resend_failed';
@@ -129,6 +132,9 @@ try {
     $message = "Account email batch finished. Sent: {$sent}.";
     if ($resent > 0) {
         $message .= " Existing accounts resent: {$resent}.";
+    }
+    if ($activeTemporary > 0) {
+        $message .= " Active temporary passwords kept: {$activeTemporary}.";
     }
     if ($createdNoEmail > 0) {
         $message .= " Created but email failed: {$createdNoEmail}.";
@@ -155,6 +161,7 @@ try {
         'message' => $message,
         'sent' => $sent,
         'resent' => $resent,
+        'active_temporary' => $activeTemporary,
         'created_no_email' => $createdNoEmail,
         'invalid_email' => $invalidEmail,
         'failed' => $failed,
