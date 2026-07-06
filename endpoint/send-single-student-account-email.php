@@ -82,12 +82,39 @@ try {
     $stmt->execute([password_hash($password, PASSWORD_DEFAULT), $email, $userId]);
 
     $sent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);
+    $canViewCredentials = ($currentUser['role'] ?? '') === 'super_admin';
+    $credentials = $canViewCredentials
+        ? [
+            'username' => $studentNumber,
+            'temporary_password' => $password,
+        ]
+        : null;
+
     if (!$sent) {
-        echo json_encode(['success' => false, 'message' => getAppMailLastError() ?: 'Email failed to send.']);
+        if ($canViewCredentials) {
+            echo json_encode([
+                'success' => true,
+                'email_sent' => false,
+                'message' => getAppMailLastError() ?: 'Email failed to send. The generated credentials are shown below.',
+                'credentials' => $credentials,
+            ]);
+            exit();
+        }
+
+        echo json_encode([
+            'success' => false,
+            'email_sent' => false,
+            'message' => getAppMailLastError() ?: 'Email failed to send.',
+        ]);
         exit();
     }
 
-    echo json_encode(['success' => true, 'message' => 'Credentials were sent to ' . $email . '.']);
+    echo json_encode([
+        'success' => true,
+        'email_sent' => true,
+        'message' => 'Credentials were sent to ' . $email . '.',
+        'credentials' => $credentials,
+    ]);
 } catch (Throwable $error) {
     error_log('Single student account email error: ' . $error->getMessage());
     echo json_encode(['success' => false, 'message' => 'Unable to send credentials: ' . $error->getMessage()]);

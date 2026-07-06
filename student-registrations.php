@@ -1057,7 +1057,26 @@ foreach ($publicForms as $formRow) {
                     },
                     success: function(response) {
                         if (response.success) {
-                            Swal.fire('Sent', response.message, 'success').then(function() {
+                            let resultHtml = '<div class="text-left"><p>' + escapeHtml(response.message || 'Credentials generated.') + '</p>';
+                            if (response.credentials && response.credentials.username && response.credentials.temporary_password) {
+                                resultHtml += `
+                                    <div class="border rounded p-3 mt-3 bg-light">
+                                        <div class="small text-muted text-uppercase font-weight-bold">Username</div>
+                                        <div class="h5 mb-3"><code>${escapeHtml(response.credentials.username)}</code></div>
+                                        <div class="small text-muted text-uppercase font-weight-bold">Temporary Password</div>
+                                        <div class="h5 mb-0"><code>${escapeHtml(response.credentials.temporary_password)}</code></div>
+                                    </div>
+                                    <p class="small text-danger mt-3 mb-0">Only share these credentials with the correct student.</p>
+                                `;
+                            }
+                            resultHtml += '</div>';
+
+                            Swal.fire({
+                                title: response.email_sent === false ? 'Email Not Sent' : 'Credentials Ready',
+                                html: resultHtml,
+                                icon: response.email_sent === false ? 'warning' : 'success',
+                                confirmButtonText: 'OK'
+                            }).then(function() {
                                 window.location.reload();
                             });
                         } else {
