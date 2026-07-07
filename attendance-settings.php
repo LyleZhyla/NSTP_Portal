@@ -20,6 +20,27 @@ $absentNotificationGraceHours = getAbsentNotificationGraceHours($conn);
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
 $autoSectionEnabledForCurrentUser = $autoSectionComponent !== 'ROTC';
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
+$selectedComponentCount = 0;
+if (($currentUser['role'] ?? '') === 'super_admin') {
+    try {
+        $selectedComponentStmt = $conn->prepare("
+            SELECT COUNT(DISTINCT u.user_id)
+            FROM tbl_users u
+            LEFT JOIN tbl_public_student_registrations r
+              ON r.user_id = u.user_id
+              OR (u.username REGEXP '^[0-9]{10}$' AND r.student_number = u.username)
+            WHERE u.role = 'student'
+              AND (
+                u.program IS NOT NULL
+                OR (r.component IS NOT NULL AND r.component <> '')
+              )
+        ");
+        $selectedComponentStmt->execute();
+        $selectedComponentCount = (int) $selectedComponentStmt->fetchColumn();
+    } catch (Throwable $countError) {
+        $selectedComponentCount = 0;
+    }
+}
 
 date_default_timezone_set('Asia/Manila');
 ?>
@@ -145,6 +166,22 @@ date_default_timezone_set('Asia/Manila');
                                             <?php echo $componentSelectionEnabled ? 'Open' : 'Closed'; ?>
                                         </label>
                                     </div>
+                                </div>
+                                <div class="mt-3 p-3 border rounded">
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap">
+                                        <div class="mb-2 mb-sm-0">
+                                            <strong>Reset selected components</strong>
+                                            <span class="text-muted small d-block">
+                                                <?php echo (int) $selectedComponentCount; ?> student account(s) currently have a selected component.
+                                            </span>
+                                        </div>
+                                        <button type="button" class="btn btn-outline-danger" id="resetStudentComponentsBtn">
+                                            <i class="fas fa-rotate-left mr-1"></i> Reset Components
+                                        </button>
+                                    </div>
+                                    <p class="text-muted small mb-0 mt-2">
+                                        This clears student component choices and closes selection. Students can choose again only after you reopen it.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -353,6 +390,56 @@ $(function() {
                 Swal.fire('Error', 'Failed to update facilitator scan restriction.', 'error');
                 $('#scanRestrictionToggle').prop('checked', !enabled);
             }
+        });
+    });
+
+    $('#resetStudentComponentsBtn').on('click', function() {
+        const button = $(this);
+        const originalHtml = button.html();
+
+        Swal.fire({
+            icon: 'warning',
+            title: 'Reset all selected components?',
+            html: `
+                <div class="text-left">
+                    <p>This will remove saved NSTP component choices from student accounts and registrations.</p>
+                    <p class="mb-0 text-muted">Component selection will also be closed. Students can choose again only after you reopen the toggle.</p>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Reset Components',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Resetting');
+
+            $.ajax({
+                url: 'endpoint/reset-student-components.php',
+                method: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        $('#componentSelectionToggle').prop('checked', false);
+                        $('#componentSelectionToggle').next('label').text('Closed');
+                        $('#componentSelectionStatus').text('Student component choosing is closed.');
+                        Swal.fire('Reset Complete', response.message, 'success').then(function() {
+                            window.location.reload();
+                        });
+                    } else {
+                        Swal.fire('Unable to reset', response.message || 'Please try again.', 'error');
+                    }
+                },
+                error: function() {
+                    Swal.fire('Request failed', 'The server did not return a valid response.', 'error');
+                },
+                complete: function() {
+                    button.prop('disabled', false).html(originalHtml);
+                }
+            });
         });
     });
 
