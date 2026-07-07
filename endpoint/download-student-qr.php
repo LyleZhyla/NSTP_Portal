@@ -4,7 +4,21 @@ session_start();
 require_once '../conn/conn.php';
 require_once '../include/student-account-automation.php';
 
-if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'student') {
+$sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
+$sessionRole = strtolower(trim((string) ($_SESSION['role'] ?? '')));
+
+if ($sessionUserId > 0 && $sessionRole !== 'student') {
+    $roleStmt = $conn->prepare("SELECT role FROM tbl_users WHERE user_id = ? LIMIT 1");
+    $roleStmt->execute([$sessionUserId]);
+    $databaseRole = strtolower(trim((string) $roleStmt->fetchColumn()));
+
+    if ($databaseRole !== '') {
+        $_SESSION['role'] = $databaseRole;
+        $sessionRole = $databaseRole;
+    }
+}
+
+if ($sessionUserId <= 0 || $sessionRole !== 'student') {
     http_response_code(401);
     exit('Unauthorized');
 }
