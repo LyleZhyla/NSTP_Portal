@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/automatic-sectioning.php';
 
 if (!function_exists('normalizeProgram')) {
     function normalizeProgram($program) {
@@ -65,6 +66,136 @@ function generateStudentAccountPassword($length = 10) {
     return $password;
 }
 
+function studentAutomationLatestRegistration(PDO $conn, $studentNumber) {
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM tbl_public_student_registrations
+        WHERE student_number = ?
+        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$studentNumber]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function studentAutomationFullName(array $registration, $studentNumber) {
+    $fullNameParts = [
+        $registration['first_name'] ?? '',
+        ($registration['middle_name'] ?? 'N/A') === 'N/A' ? '' : ($registration['middle_name'] ?? ''),
+        $registration['last_name'] ?? '',
+        ($registration['extension_name'] ?? 'N/A') === 'N/A' ? '' : ($registration['extension_name'] ?? ''),
+    ];
+    $fullName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($fullNameParts))));
+
+    if ($fullName === '' || $fullName === 'Student ' . $studentNumber || $fullName === 'Student') {
+        return 'Student #' . $studentNumber;
+    }
+
+    return $fullName;
+}
+
+function studentAutomationOriginalSection(array $registration) {
+    return autoSectionOriginalSection(
+        $registration['course'] ?? '',
+        $registration['year_section'] ?? '',
+        $registration['component'] ?? 'Public Registration'
+    );
+}
+
+function studentAutomationCourseSection(PDO $conn, array $registration) {
+    $component = normalizeProgram($registration['component'] ?? null) ?: 'PUBLIC';
+    $originalSection = studentAutomationOriginalSection($registration);
+
+    if (autoSectionUsesAutomaticFolders($component)) {
+        return autoSectionFolderForStudent(
+            $conn,
+            $component,
+            $registration['course'] ?? '',
+            $registration['year_section'] ?? '',
+            $originalSection
+        );
+    }
+
+    return $component;
+}
+
+function ensureStudentQrRecordForAccount(PDO $conn, $studentNumber, $userId = null, ?array $registration = null) {
+    ensureStudentNumberColumn($conn);
+
+    $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
+    if (!preg_match('/^\d{10}$/', $studentNumber)) {
+        return null;
+    }
+
+    if ($registration === null) {
+        $registration = studentAutomationLatestRegistration($conn, $studentNumber);
+    }
+
+    if (!$registration) {
+        if ($userId) {
+            $stmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ? AND (user_id IS NULL OR user_id = 0)");
+            $stmt->execute([(int) $userId, $studentNumber]);
+        }
+        return null;
+    }
+
+    $studentName = studentAutomationFullName($registration, $studentNumber);
+    $originalSection = studentAutomationOriginalSection($registration);
+    $courseSection = studentAutomationCourseSection($conn, $registration);
+    if ($originalSection === '' || strtoupper($originalSection) === 'N/A') {
+        $originalSection = $courseSection;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT s.tbl_student_id, s.user_id, s.generated_code, s.created_by, creator.role AS creator_role
+        FROM tbl_student s
+        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
+        WHERE s.student_number = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$studentNumber]);
+    $student = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $generatedCode = 'PUB_' . $studentNumber;
+    $accountUserId = $userId ? (int) $userId : ($registration['user_id'] ?? null);
+
+    if ($student) {
+        $isAssignedToFacilitator = !empty($student['created_by']) && ($student['creator_role'] ?? '') === 'facilitator';
+        $setFields = ['user_id = COALESCE(NULLIF(user_id, 0), ?)', 'student_name = ?', 'original_section = ?'];
+        $params = [$accountUserId, $studentName, $originalSection];
+
+        if (!$isAssignedToFacilitator) {
+            $setFields[] = 'course_section = ?';
+            $params[] = $courseSection;
+        }
+
+        if (trim((string) ($student['generated_code'] ?? '')) === '') {
+            $setFields[] = 'generated_code = ?';
+            $params[] = $generatedCode;
+        }
+
+        $params[] = (int) $student['tbl_student_id'];
+        $stmt = $conn->prepare("UPDATE tbl_student SET " . implode(', ', $setFields) . " WHERE tbl_student_id = ?");
+        $stmt->execute($params);
+        return (int) $student['tbl_student_id'];
+    }
+
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_student (user_id, student_number, student_name, original_section, course_section, generated_code, qr_code, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+    ");
+    $stmt->execute([
+        $accountUserId,
+        $studentNumber,
+        $studentName,
+        $originalSection,
+        $courseSection,
+        $generatedCode,
+    ]);
+
+    return (int) $conn->lastInsertId();
+}
+
 function sendStudentAccountEmail(PDO $conn, array $registration, $studentNumber, $password) {
     $email = trim((string) ($registration['email'] ?? ''));
     if ($email === '' || isPlaceholderEmail($email)) {
@@ -94,15 +225,7 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
         return ['sent' => false, 'reason' => 'missing_student_number'];
     }
 
-    $stmt = $conn->prepare("
-        SELECT *
-        FROM tbl_public_student_registrations
-        WHERE student_number = ?
-        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
-        LIMIT 1
-    ");
-    $stmt->execute([$studentNumber]);
-    $registration = $stmt->fetch(PDO::FETCH_ASSOC);
+    $registration = studentAutomationLatestRegistration($conn, $studentNumber);
     if (!$registration) {
         return ['sent' => false, 'reason' => 'registration_not_found'];
     }
@@ -119,6 +242,8 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
     if ($userId <= 0) {
         return ['sent' => false, 'reason' => 'account_not_found'];
     }
+
+    ensureStudentQrRecordForAccount($conn, $studentNumber, $userId, $registration);
 
     if (empty($user['last_password_change'])) {
         return ['sent' => false, 'reason' => 'temporary_password_still_active'];
@@ -149,8 +274,7 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
     $stmt->execute([$studentNumber]);
     $existingUserId = $stmt->fetchColumn();
     if ($existingUserId) {
-        $linkStmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ? AND (user_id IS NULL OR user_id = 0)");
-        $linkStmt->execute([$existingUserId, $studentNumber]);
+        ensureStudentQrRecordForAccount($conn, $studentNumber, (int) $existingUserId);
         return ['created' => false, 'user_id' => (int) $existingUserId, 'reason' => 'already_exists'];
     }
 
@@ -166,29 +290,12 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
         return ['created' => false, 'reason' => 'attendance_below_threshold', 'attendance_count' => $attendanceCount];
     }
 
-    $stmt = $conn->prepare("
-        SELECT *
-        FROM tbl_public_student_registrations
-        WHERE student_number = ?
-        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
-        LIMIT 1
-    ");
-    $stmt->execute([$studentNumber]);
-    $registration = $stmt->fetch(PDO::FETCH_ASSOC);
+    $registration = studentAutomationLatestRegistration($conn, $studentNumber);
     if (!$registration) {
         return ['created' => false, 'reason' => 'registration_not_found', 'attendance_count' => $attendanceCount];
     }
 
-    $fullNameParts = [
-        $registration['first_name'] ?? '',
-        ($registration['middle_name'] ?? 'N/A') === 'N/A' ? '' : ($registration['middle_name'] ?? ''),
-        $registration['last_name'] ?? '',
-        ($registration['extension_name'] ?? 'N/A') === 'N/A' ? '' : ($registration['extension_name'] ?? ''),
-    ];
-    $fullName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($fullNameParts))));
-    if ($fullName === '' || $fullName === 'Student ' . $studentNumber || $fullName === 'Student') {
-        $fullName = 'Student #' . $studentNumber;
-    }
+    $fullName = studentAutomationFullName($registration, $studentNumber);
 
     $email = trim((string) ($registration['email'] ?? ''));
     if ($email === '') {
@@ -217,8 +324,7 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
         $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ? WHERE student_number = ?");
         $stmt->execute([$userId, $studentNumber]);
 
-        $stmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ?");
-        $stmt->execute([$userId, $studentNumber]);
+        ensureStudentQrRecordForAccount($conn, $studentNumber, $userId, $registration);
 
         $conn->commit();
         $emailSent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);
@@ -245,32 +351,16 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
     if ($existingUserId) {
         $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ? WHERE student_number = ? AND (user_id IS NULL OR user_id = 0)");
         $stmt->execute([$existingUserId, $studentNumber]);
+        ensureStudentQrRecordForAccount($conn, $studentNumber, (int) $existingUserId);
         return ['created' => false, 'user_id' => (int) $existingUserId, 'reason' => 'already_exists'];
     }
 
-    $stmt = $conn->prepare("
-        SELECT *
-        FROM tbl_public_student_registrations
-        WHERE student_number = ?
-        ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
-        LIMIT 1
-    ");
-    $stmt->execute([$studentNumber]);
-    $registration = $stmt->fetch(PDO::FETCH_ASSOC);
+    $registration = studentAutomationLatestRegistration($conn, $studentNumber);
     if (!$registration) {
         return ['created' => false, 'reason' => 'registration_not_found'];
     }
 
-    $fullNameParts = [
-        $registration['first_name'] ?? '',
-        ($registration['middle_name'] ?? 'N/A') === 'N/A' ? '' : ($registration['middle_name'] ?? ''),
-        $registration['last_name'] ?? '',
-        ($registration['extension_name'] ?? 'N/A') === 'N/A' ? '' : ($registration['extension_name'] ?? ''),
-    ];
-    $fullName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($fullNameParts))));
-    if ($fullName === '' || $fullName === 'Student ' . $studentNumber || $fullName === 'Student') {
-        $fullName = 'Student #' . $studentNumber;
-    }
+    $fullName = studentAutomationFullName($registration, $studentNumber);
 
     $email = trim((string) ($registration['email'] ?? ''));
     if ($email === '') {
@@ -299,8 +389,7 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
         $stmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = ? WHERE student_number = ?");
         $stmt->execute([$userId, $studentNumber]);
 
-        $stmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ?");
-        $stmt->execute([$userId, $studentNumber]);
+        ensureStudentQrRecordForAccount($conn, $studentNumber, $userId, $registration);
 
         $conn->commit();
         $emailSent = sendStudentAccountEmail($conn, $registration, $studentNumber, $password);

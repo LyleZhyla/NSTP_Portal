@@ -2,6 +2,7 @@
 session_start();
 
 require_once '../conn/conn.php';
+require_once '../include/student-account-automation.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'student') {
     http_response_code(401);
@@ -264,8 +265,20 @@ $stmt->execute([$_SESSION['user_id']]);
 $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$student) {
-    http_response_code(404);
-    exit('Student QR record not found.');
+    $userStmt = $conn->prepare("SELECT username FROM tbl_users WHERE user_id = ? AND role = 'student' LIMIT 1");
+    $userStmt->execute([$_SESSION['user_id']]);
+    $studentNumber = preg_replace('/\D/', '', (string) $userStmt->fetchColumn());
+
+    if (preg_match('/^\d{10}$/', $studentNumber)) {
+        ensureStudentQrRecordForAccount($conn, $studentNumber, (int) $_SESSION['user_id']);
+        $stmt->execute([$_SESSION['user_id']]);
+        $student = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if (!$student) {
+        http_response_code(404);
+        exit('Student QR record not found.');
+    }
 }
 
 $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=' . urlencode($student['generated_code']);
