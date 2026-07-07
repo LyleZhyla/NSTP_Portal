@@ -5,6 +5,7 @@ require_once 'conn/conn.php';
 require_once 'include/attendance-settings.php';
 require_once 'include/profile-picture-utils.php';
 require_once 'include/data-edit-requests.php';
+require_once 'include/student-account-automation.php';
 
 
 // Check if user is logged in
@@ -221,6 +222,13 @@ if ($isStudent) {
     ");
     $stmt->execute([$user_id]);
     $studentRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    $studentNumberForRepair = preg_replace('/\D/', '', (string) ($user['username'] ?? ''));
+    if ((!$studentRecord || trim((string) ($studentRecord['generated_code'] ?? '')) === '') && preg_match('/^\d{10}$/', $studentNumberForRepair)) {
+        ensureStudentQrRecordForAccount($conn, $studentNumberForRepair, (int) $user_id);
+        $stmt->execute([$user_id]);
+        $studentRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
 
     if ($studentRecord) {
         if (isset($_POST['submit_registration_edit_request'])) {

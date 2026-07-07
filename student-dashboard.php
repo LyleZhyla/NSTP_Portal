@@ -5,6 +5,7 @@ require_once 'conn/conn.php';
 require_once 'include/user-permissions.php';
 require_once 'include/attendance-settings.php';
 require_once 'include/profile-picture-utils.php';
+require_once 'include/student-account-automation.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
@@ -45,6 +46,13 @@ $stmt = $conn->prepare("
 ");
 $stmt->execute([$userId]);
 $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+$studentNumberForRepair = preg_replace('/\D/', '', (string) ($user['username'] ?? ''));
+if ((!$student || trim((string) ($student['generated_code'] ?? '')) === '') && preg_match('/^\d{10}$/', $studentNumberForRepair)) {
+    ensureStudentQrRecordForAccount($conn, $studentNumberForRepair, (int) $userId);
+    $stmt->execute([$userId]);
+    $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
 
 $latestAttendance = null;
 $todayAttendance = null;
