@@ -94,7 +94,7 @@ try {
                 : null,
         ]);
         exit();
-    } elseif (empty($studentUser['last_password_change']) && studentRegistrationCredentialsWereSent($registration)) {
+    } elseif (!$canViewCredentials && empty($studentUser['last_password_change']) && studentRegistrationCredentialsWereSent($registration)) {
         echo json_encode([
             'success' => false,
             'email_sent' => false,

@@ -529,6 +529,9 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 && preg_match('/^\d{10}$/', $studentNumberForEmail)
                                                 && $hasValidCredentialEmail
                                             );
+                                            $credentialButtonTitle = $role === 'super_admin'
+                                                ? 'Generate/View temporary password'
+                                                : 'Send login credentials';
                                             $address = $row['house_no'] . ' ' . $row['street'] . ', ' . $row['barangay'] . ', ' . $row['city_municipality'] . ', ' . $row['province'];
                                             if (trim(str_replace(['N/A', ',', ' '], '', $address)) === '') {
                                                 $address = 'N/A';
@@ -583,11 +586,13 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                 <?php if ($canSendStudentCredentials): ?>
                                                     <button
                                                         type="button"
-                                                        class="btn btn-sm btn-success resend-student-credentials"
+                                                        class="btn btn-sm <?php echo $role === 'super_admin' ? 'btn-primary' : 'btn-success'; ?> resend-student-credentials"
                                                         data-registration-id="<?php echo (int) $registrationId; ?>"
                                                         data-name="<?php echo htmlspecialchars($fullName); ?>"
-                                                        data-email="<?php echo htmlspecialchars($displayEmail); ?>">
-                                                        <i class="fas fa-envelope"></i>
+                                                        data-email="<?php echo htmlspecialchars($displayEmail); ?>"
+                                                        data-can-view="<?php echo $role === 'super_admin' ? '1' : '0'; ?>"
+                                                        title="<?php echo htmlspecialchars($credentialButtonTitle); ?>">
+                                                        <i class="fas <?php echo $role === 'super_admin' ? 'fa-key' : 'fa-envelope'; ?>"></i>
                                                     </button>
                                                 <?php endif; ?>
                                                 <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
@@ -1030,17 +1035,20 @@ foreach ($publicForms as $formRow) {
             const registrationId = button.data('registration-id');
             const studentName = button.data('name') || 'this student';
             const studentEmail = button.data('email') || 'their registered email';
+            const canViewCredentials = String(button.data('can-view')) === '1';
             const safeStudentName = escapeHtml(studentName);
             const safeStudentEmail = escapeHtml(studentEmail);
             const hasDisplayEmail = studentEmail && studentEmail !== 'N/A';
 
             Swal.fire({
-                title: 'Resend credentials?',
+                title: canViewCredentials ? 'Generate temporary password?' : 'Resend credentials?',
                 html: `
                     <div class="text-left">
                         <p>This will generate a new temporary password for <strong>${safeStudentName}</strong>.</p>
                         <p class="mb-0 text-muted">${
-                            hasDisplayEmail
+                            canViewCredentials
+                                ? 'The temporary password will be shown after generation so the super admin can release it manually if needed.'
+                                : hasDisplayEmail
                                 ? `The credentials will be sent to <strong>${safeStudentEmail}</strong>.`
                                 : 'No valid email is available, so the generated credentials will be shown for manual release.'
                         }</p>
@@ -1049,7 +1057,7 @@ foreach ($publicForms as $formRow) {
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#198754',
-                confirmButtonText: 'Send Credentials',
+                confirmButtonText: canViewCredentials ? 'Generate Password' : 'Send Credentials',
                 cancelButtonText: 'Cancel'
             }).then(function(result) {
                 if (!result.isConfirmed) {
@@ -1075,9 +1083,12 @@ foreach ($publicForms as $formRow) {
                                         <div class="small text-muted text-uppercase font-weight-bold">Username</div>
                                         <div class="h5 mb-3"><code>${escapeHtml(response.credentials.username)}</code></div>
                                         <div class="small text-muted text-uppercase font-weight-bold">Temporary Password</div>
-                                        <div class="h5 mb-0"><code>${escapeHtml(response.credentials.temporary_password)}</code></div>
+                                        <div class="h5 mb-2"><code id="generatedStudentTempPassword">${escapeHtml(response.credentials.temporary_password)}</code></div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary copy-generated-student-password" data-password="${escapeHtml(response.credentials.temporary_password)}">
+                                            <i class="fas fa-copy mr-1"></i> Copy Password
+                                        </button>
                                     </div>
-                                    <p class="small text-danger mt-3 mb-0">Only share these credentials with the correct student.</p>
+                                    <p class="small text-danger mt-3 mb-0">This replaces any previous temporary password. Only share it with the correct student.</p>
                                 `;
                             }
                             resultHtml += '</div>';
@@ -1101,6 +1112,17 @@ foreach ($publicForms as $formRow) {
                         button.prop('disabled', false).html(originalHtml);
                     }
                 });
+            });
+        });
+
+        $(document).on('click', '.copy-generated-student-password', function() {
+            const password = $(this).data('password') || '';
+            if (!password || !navigator.clipboard) {
+                return;
+            }
+
+            navigator.clipboard.writeText(password).then(() => {
+                $(this).html('<i class="fas fa-check mr-1"></i> Copied');
             });
         });
 
