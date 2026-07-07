@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    $targetStmt = $conn->prepare("SELECT user_id, role, program FROM tbl_users WHERE user_id = ?");
+    $targetStmt = $conn->prepare("SELECT user_id, username, role, program FROM tbl_users WHERE user_id = ?");
     $targetStmt->execute([$user_id]);
     $targetUser = $targetStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -46,6 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $confirm_password = $_POST['confirm_password'] ?? '';
         $remove_picture = isset($_POST['remove_profile_picture']) && $_POST['remove_profile_picture'] == '1';
         
+        if (($targetUser['role'] ?? '') === 'student' || $role === 'student') {
+            $username = $targetUser['username'] ?? $username;
+        }
+
         // Validate inputs for normal update
         if (empty($full_name) || empty($username) || empty($email)) {
             echo json_encode(['success' => false, 'message' => 'All required fields must be filled']);

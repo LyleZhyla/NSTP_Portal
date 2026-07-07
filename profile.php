@@ -120,6 +120,10 @@ if (isset($_POST['update_profile'])) {
     if (!$currentUserForUpdate) {
         $error = "User account not found.";
     } elseif (($currentUserForUpdate['role'] ?? '') !== 'super_admin') {
+        if (($currentUserForUpdate['role'] ?? '') === 'student') {
+            $username = $currentUserForUpdate['username'] ?? $username;
+        }
+
         try {
             submitDataEditRequest($conn, $currentUserForUpdate, [
                 'full_name' => $full_name,
@@ -131,6 +135,10 @@ if (isset($_POST['update_profile'])) {
             $error = $requestError->getMessage();
         }
     } else {
+        if (($currentUserForUpdate['role'] ?? '') === 'student') {
+            $username = $currentUserForUpdate['username'] ?? $username;
+        }
+
         $check_sql = "SELECT user_id FROM tbl_users WHERE (username = ? OR email = ?) AND user_id != ?";
         $check_stmt = $conn->prepare($check_sql);
         $check_stmt->execute([$username, $email, $user_id]);
@@ -1337,10 +1345,12 @@ if (!empty($user['full_name'])) {
                                                                 <i class="fas fa-at"></i>
                                                             </span>
                                                         </div>
-                                                        <input type="text" class="form-control" id="username" name="username" 
-                                                               value="<?php echo htmlspecialchars($user['username'] ?? ''); ?>" required>
+                                                        <input type="text" class="form-control" id="username" name="username"
+                                                               value="<?php echo htmlspecialchars($user['username'] ?? ''); ?>" <?php echo ($user['role'] ?? '') === 'student' ? 'readonly' : ''; ?> required>
                                                     </div>
-                                                    <small class="text-muted">Username must be unique</small>
+                                                    <small class="text-muted">
+                                                        <?php echo ($user['role'] ?? '') === 'student' ? 'Student username is fixed to the student number.' : 'Username must be unique'; ?>
+                                                    </small>
                                                 </div>
                                                 
                                                 <div class="form-group">

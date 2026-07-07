@@ -94,6 +94,10 @@ function submitDataEditRequest(PDO $conn, array $user, array $requestedData, $re
         'email' => dataEditRequestClean($requestedData['email'] ?? ''),
     ];
 
+    if (($user['role'] ?? '') === 'student') {
+        $newData['username'] = $currentData['username'];
+    }
+
     if ($newData['full_name'] === '' || $newData['username'] === '' || $newData['email'] === '') {
         throw new InvalidArgumentException('Full name, username, and email are required.');
     }
@@ -360,6 +364,10 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
                 $syncStmt->execute([$fullName, $newData['year_section'] ?? '', (int) $request['user_id']]);
             }
         } elseif ($action === 'approve') {
+            if (($request['user_role'] ?? '') === 'student') {
+                $newData['username'] = $currentData['username'] ?? '';
+            }
+
             $checkStmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE (username = ? OR email = ?) AND user_id != ? LIMIT 1");
             $checkStmt->execute([$newData['username'] ?? '', $newData['email'] ?? '', (int) $request['user_id']]);
             if ($checkStmt->fetchColumn()) {
