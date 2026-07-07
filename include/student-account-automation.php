@@ -219,6 +219,10 @@ function sendStudentAccountEmail(PDO $conn, array $registration, $studentNumber,
     return $sent;
 }
 
+function studentRegistrationCredentialsWereSent(array $registration) {
+    return (int) ($registration['email_sent'] ?? 0) === 1;
+}
+
 function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
@@ -245,7 +249,7 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
 
     ensureStudentQrRecordForAccount($conn, $studentNumber, $userId, $registration);
 
-    if (empty($user['last_password_change'])) {
+    if (empty($user['last_password_change']) && studentRegistrationCredentialsWereSent($registration)) {
         return ['sent' => false, 'reason' => 'temporary_password_still_active'];
     }
 

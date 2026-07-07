@@ -65,7 +65,7 @@ try {
         exit();
     }
 
-    $stmt = $conn->prepare("SELECT user_id, last_password_change FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
+    $stmt = $conn->prepare("SELECT user_id, password_hash, email, last_password_change FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
     $stmt->execute([$studentNumber]);
     $studentUser = $stmt->fetch(PDO::FETCH_ASSOC);
     $userId = (int) ($studentUser['user_id'] ?? 0);
@@ -94,7 +94,7 @@ try {
                 : null,
         ]);
         exit();
-    } elseif (empty($studentUser['last_password_change'])) {
+    } elseif (empty($studentUser['last_password_change']) && studentRegistrationCredentialsWereSent($registration)) {
         echo json_encode([
             'success' => false,
             'email_sent' => false,
@@ -136,6 +136,14 @@ try {
             ]);
             exit();
         }
+
+        $stmt = $conn->prepare("UPDATE tbl_users SET password_hash = ?, email = ?, last_password_change = ? WHERE user_id = ?");
+        $stmt->execute([
+            $studentUser['password_hash'],
+            $studentUser['email'],
+            $studentUser['last_password_change'],
+            $userId,
+        ]);
 
         echo json_encode([
             'success' => false,
