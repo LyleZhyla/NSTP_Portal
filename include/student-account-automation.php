@@ -132,11 +132,58 @@ function ensureStudentQrRecordForAccount(PDO $conn, $studentNumber, $userId = nu
     }
 
     if (!$registration) {
-        if ($userId) {
-            $stmt = $conn->prepare("UPDATE tbl_student SET user_id = ? WHERE student_number = ? AND (user_id IS NULL OR user_id = 0)");
-            $stmt->execute([(int) $userId, $studentNumber]);
+        if (!$userId) {
+            return null;
         }
-        return null;
+
+        $stmt = $conn->prepare("SELECT user_id, full_name, program FROM tbl_users WHERE user_id = ? AND role = 'student' LIMIT 1");
+        $stmt->execute([(int) $userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$user) {
+            return null;
+        }
+
+        $fallbackSection = normalizeProgram($user['program'] ?? null) ?: 'PUBLIC';
+        $fallbackName = trim((string) ($user['full_name'] ?? '')) ?: 'Student #' . $studentNumber;
+        $generatedCode = 'PUB_' . $studentNumber;
+
+        $stmt = $conn->prepare("
+            SELECT tbl_student_id, generated_code
+            FROM tbl_student
+            WHERE student_number = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$studentNumber]);
+        $student = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($student) {
+            $setFields = ['user_id = COALESCE(NULLIF(user_id, 0), ?)', 'student_name = ?'];
+            $params = [(int) $userId, $fallbackName];
+            if (trim((string) ($student['generated_code'] ?? '')) === '') {
+                $setFields[] = 'generated_code = ?';
+                $params[] = $generatedCode;
+            }
+            $params[] = (int) $student['tbl_student_id'];
+
+            $stmt = $conn->prepare("UPDATE tbl_student SET " . implode(', ', $setFields) . " WHERE tbl_student_id = ?");
+            $stmt->execute($params);
+            return (int) $student['tbl_student_id'];
+        }
+
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_student (user_id, student_number, student_name, original_section, course_section, generated_code, qr_code, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+        ");
+        $stmt->execute([
+            (int) $userId,
+            $studentNumber,
+            $fallbackName,
+            $fallbackSection,
+            $fallbackSection,
+            $generatedCode,
+        ]);
+
+        return (int) $conn->lastInsertId();
     }
 
     $studentName = studentAutomationFullName($registration, $studentNumber);
