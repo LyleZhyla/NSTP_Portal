@@ -1438,7 +1438,7 @@ $(document).ready(function() {
     });
     
     // Handle edit button click
-    $('.edit-admin').on('click', function() {
+    $(document).on('click', '.edit-admin', function() {
         const userId = $(this).data('id');
         const userName = $(this).data('name');
         const username = $(this).data('username');
@@ -1546,7 +1546,7 @@ $(document).ready(function() {
     });
     
     // Handle change password button click
-    $('.change-password').on('click', function() {
+    $(document).on('click', '.change-password', function() {
         const userId = $(this).data('id');
         const userName = $(this).data('name');
         
@@ -1678,7 +1678,7 @@ $('#changePasswordForm').on('submit', function(e) {
 });     
 
     // Send new login credentials to an existing facilitator
-    $('.send-credentials').on('click', function() {
+    $(document).on('click', '.send-credentials', function() {
         const button = $(this);
         const userId = button.data('id');
         const userName = button.data('name');
@@ -1780,7 +1780,7 @@ $('#changePasswordForm').on('submit', function(e) {
     });
     
     // Handle delete button click
-    $('.delete-admin').on('click', function() {
+    $(document).on('click', '.delete-admin', function() {
         const userId = $(this).data('id');
         const userName = $(this).data('name');
         const userRole = String($(this).data('role') || 'user').replace('_', ' ');
