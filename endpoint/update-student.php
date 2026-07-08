@@ -2,10 +2,12 @@
 session_start();
 header('Content-Type: application/json'); // Always return JSON
 include("../conn/conn.php");
+require_once "../include/user-permissions.php";
 
 $response = ['success' => false, 'message' => ''];
 
-if (!isset($_SESSION['user_id'])) {
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser) {
     $response['message'] = 'Unauthorized access!';
     echo json_encode($response);
     exit();
@@ -20,16 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $studentCourse = trim($_POST['course_section']); // Admin folder section
         // Get original section, use empty string as fallback if not provided
         $originalSection = isset($_POST['original_section']) ? trim($_POST['original_section']) : '';
-        $userId = $_SESSION['user_id'];
-        $userRole = $_SESSION['role'] ?? 'facilitator';
+        $userId = (int) $currentUser['user_id'];
+        $userRole = $currentUser['role'] ?? 'facilitator';
         
         try {
             if ($userRole === 'facilitator') {
                 throw new Exception('Facilitators can only export student data.');
-            }
-
-            if ($userRole === 'super_admin') {
-                throw new Exception('Super Admin has read-only access to student folders.');
             }
 
             // Validate inputs
@@ -41,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Check if student exists and get creator info
-            $checkStmt = $conn->prepare("SELECT created_by FROM tbl_student WHERE tbl_student_id = :student_id");
+            $checkStmt = $conn->prepare("SELECT created_by, user_id FROM tbl_student WHERE tbl_student_id = :student_id");
             $checkStmt->bindParam(":student_id", $studentId, PDO::PARAM_INT);
             $checkStmt->execute();
             
@@ -52,20 +50,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student = $checkStmt->fetch(PDO::FETCH_ASSOC);
             
             // Check permission
-            if ($student['created_by'] != $userId) {
+            if ($userRole !== 'super_admin' && $student['created_by'] != $userId) {
                 throw new Exception('You do not have permission to edit this student!');
             }
             
             // For regular admins, verify they are assigned to the new admin folder section
-            $checkSectionStmt = $conn->prepare("
-                SELECT COUNT(*) 
-                FROM tbl_admin_sections 
-                WHERE user_id = ? AND course_section = ?
-            ");
-            $checkSectionStmt->execute([$userId, $studentCourse]);
-            
-            if ($checkSectionStmt->fetchColumn() == 0) {
-                throw new Exception("You are not assigned to the admin folder: $studentCourse");
+            if ($userRole !== 'super_admin') {
+                $checkSectionStmt = $conn->prepare("
+                    SELECT COUNT(*) 
+                    FROM tbl_admin_sections 
+                    WHERE user_id = ? AND course_section = ?
+                ");
+                $checkSectionStmt->execute([$userId, $studentCourse]);
+                
+                if ($checkSectionStmt->fetchColumn() == 0) {
+                    throw new Exception("You are not assigned to the admin folder: $studentCourse");
+                }
             }
             
             // First, check if original_section column exists
@@ -119,6 +119,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $stmt->execute();
+
+            $studentUserId = (int) ($student['user_id'] ?? 0);
+            if ($studentUserId > 0) {
+                $userUpdateStmt = $conn->prepare("UPDATE tbl_users SET full_name = ? WHERE user_id = ? AND role = 'student'");
+                $userUpdateStmt->execute([$studentName, $studentUserId]);
+            }
             
             // Success response
             $response['success'] = true;
