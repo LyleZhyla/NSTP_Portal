@@ -3,6 +3,7 @@ session_start();
 require_once '../conn/conn.php'; // Fixed path
 require_once '../include/user-permissions.php';
 require_once '../include/profile-picture-utils.php';
+require_once '../include/student-account-automation.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
@@ -45,8 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
         $remove_picture = isset($_POST['remove_profile_picture']) && $_POST['remove_profile_picture'] == '1';
+        $isTargetStudent = ($targetUser['role'] ?? '') === 'student';
+        $isStudentAfterUpdate = $role === 'student';
+        $canEditStudentUsername = ($currentUser['role'] ?? '') === 'super_admin' && $isTargetStudent;
+        $oldStudentUsername = $targetUser['username'] ?? '';
         
-        if (($targetUser['role'] ?? '') === 'student' || $role === 'student') {
+        if (($isTargetStudent || $isStudentAfterUpdate) && !$canEditStudentUsername) {
             $username = $targetUser['username'] ?? $username;
         }
 
@@ -54,6 +59,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($full_name) || empty($username) || empty($email)) {
             echo json_encode(['success' => false, 'message' => 'All required fields must be filled']);
             exit();
+        }
+
+        if ($canEditStudentUsername) {
+            ensureStudentNumberColumn($conn);
+            $username = preg_replace('/\D/', '', $username);
+
+            if (!preg_match('/^\d{10}$/', $username)) {
+                echo json_encode(['success' => false, 'message' => 'Student number/username must be exactly 10 digits']);
+                exit();
+            }
         }
         
         // Check if username already exists (excluding current user)
@@ -63,6 +78,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($checkStmt->rowCount() > 0) {
             echo json_encode(['success' => false, 'message' => 'Username already exists']);
             exit();
+        }
+
+        if ($canEditStudentUsername) {
+            $checkStmt = $conn->prepare("
+                SELECT tbl_student_id
+                FROM tbl_student
+                WHERE student_number = ?
+                  AND (user_id IS NULL OR user_id = 0 OR user_id != ?)
+                LIMIT 1
+            ");
+            $checkStmt->execute([$username, $user_id]);
+
+            if ($checkStmt->fetchColumn()) {
+                echo json_encode(['success' => false, 'message' => 'Student number already exists in the student masterlist']);
+                exit();
+            }
+
+            try {
+                $checkStmt = $conn->prepare("
+                    SELECT registration_id
+                    FROM tbl_public_student_registrations
+                    WHERE student_number = ?
+                      AND (user_id IS NULL OR user_id = 0 OR user_id != ?)
+                    LIMIT 1
+                ");
+                $checkStmt->execute([$username, $user_id]);
+
+                if ($username !== $oldStudentUsername && $checkStmt->fetchColumn()) {
+                    echo json_encode(['success' => false, 'message' => 'Student number already exists in public registrations']);
+                    exit();
+                }
+            } catch (PDOException $error) {
+                if ($error->getCode() !== '42S02') {
+                    throw $error;
+                }
+            }
         }
         
         // Check if email already exists (excluding current user)
@@ -142,6 +193,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($shouldDeleteCurrentPicture && $current_picture) {
             deleteProfilePictureFile($current_picture, dirname(__DIR__));
+        }
+
+        if ($canEditStudentUsername && $username !== $oldStudentUsername) {
+            $studentStmt = $conn->prepare("
+                UPDATE tbl_student
+                SET student_number = ?, student_name = ?
+                WHERE user_id = ? OR student_number = ?
+            ");
+            $studentStmt->execute([$username, $full_name, $user_id, $oldStudentUsername]);
+
+            try {
+                $registrationStmt = $conn->prepare("
+                    UPDATE tbl_public_student_registrations
+                    SET student_number = ?
+                    WHERE user_id = ? OR student_number = ?
+                ");
+                $registrationStmt->execute([$username, $user_id, $oldStudentUsername]);
+            } catch (PDOException $error) {
+                if ($error->getCode() !== '42S02') {
+                    throw $error;
+                }
+            }
         }
     } else {
         // Password-only update
