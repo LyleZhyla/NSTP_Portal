@@ -3,6 +3,7 @@ session_start();
 header('Content-Type: application/json'); // Always return JSON
 include("../conn/conn.php");
 require_once "../include/user-permissions.php";
+require_once "../include/student-account-automation.php";
 
 $response = ['success' => false, 'message' => ''];
 
@@ -17,9 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Check for all required fields
     if (isset($_POST['tbl_student_id']) && isset($_POST['student_name']) && isset($_POST['course_section'])) {
         
+        ensureStudentNumberColumn($conn);
+
         $studentId = $_POST['tbl_student_id'];
         $studentName = trim($_POST['student_name']);
         $studentCourse = trim($_POST['course_section']); // Admin folder section
+        $studentNumber = isset($_POST['student_number']) ? preg_replace('/\D/', '', (string) $_POST['student_number']) : null;
         // Get original section, use empty string as fallback if not provided
         $originalSection = isset($_POST['original_section']) ? trim($_POST['original_section']) : '';
         $userId = (int) $currentUser['user_id'];
@@ -37,9 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($studentCourse)) {
                 throw new Exception('Admin folder section is required');
             }
+            if ($userRole === 'super_admin') {
+                if (!preg_match('/^\d{10}$/', (string) $studentNumber)) {
+                    throw new Exception('Student number must be exactly 10 digits');
+                }
+            } else {
+                $studentNumber = null;
+            }
             
             // Check if student exists and get creator info
-            $checkStmt = $conn->prepare("SELECT created_by, user_id FROM tbl_student WHERE tbl_student_id = :student_id");
+            $checkStmt = $conn->prepare("SELECT created_by, user_id, student_number FROM tbl_student WHERE tbl_student_id = :student_id");
             $checkStmt->bindParam(":student_id", $studentId, PDO::PARAM_INT);
             $checkStmt->execute();
             
@@ -48,10 +59,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             $student = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            $studentUserId = (int) ($student['user_id'] ?? 0);
+            $currentStudentNumber = preg_replace('/\D/', '', (string) ($student['student_number'] ?? ''));
             
             // Check permission
             if ($userRole !== 'super_admin' && $student['created_by'] != $userId) {
                 throw new Exception('You do not have permission to edit this student!');
+            }
+
+            if ($userRole === 'super_admin') {
+                $duplicateStudentStmt = $conn->prepare("
+                    SELECT tbl_student_id
+                    FROM tbl_student
+                    WHERE student_number = ? AND tbl_student_id != ?
+                    LIMIT 1
+                ");
+                $duplicateStudentStmt->execute([$studentNumber, $studentId]);
+                if ($duplicateStudentStmt->fetchColumn()) {
+                    throw new Exception('Student number already exists in the student masterlist');
+                }
+
+                $duplicateUserSql = "
+                    SELECT user_id
+                    FROM tbl_users
+                    WHERE username = ? AND role = 'student'
+                ";
+                $duplicateUserParams = [$studentNumber];
+                if ($studentUserId > 0) {
+                    $duplicateUserSql .= " AND user_id != ?";
+                    $duplicateUserParams[] = $studentUserId;
+                }
+                $duplicateUserSql .= " LIMIT 1";
+                $duplicateUserStmt = $conn->prepare($duplicateUserSql);
+                $duplicateUserStmt->execute($duplicateUserParams);
+                if ($duplicateUserStmt->fetchColumn()) {
+                    throw new Exception('Student number already exists as another student username');
+                }
+
+                try {
+                    $duplicateRegistrationStmt = $conn->prepare("
+                        SELECT registration_id, user_id
+                        FROM tbl_public_student_registrations
+                        WHERE student_number = ?
+                          AND (user_id IS NULL OR user_id = 0 OR user_id != ?)
+                        LIMIT 1
+                    ");
+                    $duplicateRegistrationStmt->execute([$studentNumber, $studentUserId]);
+                    if ($studentNumber !== $currentStudentNumber && $duplicateRegistrationStmt->fetchColumn()) {
+                        throw new Exception('Student number already exists in public registrations');
+                    }
+                } catch (PDOException $error) {
+                    if ($error->getCode() !== '42S02') {
+                        throw $error;
+                    }
+                }
             }
             
             // For regular admins, verify they are assigned to the new admin folder section
@@ -92,11 +153,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Now perform the update based on whether column exists
             if ($columnExists) {
                 // Update with original_section
+                $studentNumberSql = $userRole === 'super_admin' ? ", student_number = :student_number" : "";
                 $stmt = $conn->prepare("
                     UPDATE tbl_student 
                     SET student_name = :student_name, 
                         course_section = :course_section, 
-                        original_section = :original_section 
+                        original_section = :original_section
+                        {$studentNumberSql}
                     WHERE tbl_student_id = :tbl_student_id
                 ");
                 
@@ -104,26 +167,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bindParam(":student_name", $studentName, PDO::PARAM_STR); 
                 $stmt->bindParam(":course_section", $studentCourse, PDO::PARAM_STR);
                 $stmt->bindParam(":original_section", $originalSection, PDO::PARAM_STR);
+                if ($userRole === 'super_admin') {
+                    $stmt->bindParam(":student_number", $studentNumber, PDO::PARAM_STR);
+                }
             } else {
                 // Update without original_section
+                $studentNumberSql = $userRole === 'super_admin' ? ", student_number = :student_number" : "";
                 $stmt = $conn->prepare("
                     UPDATE tbl_student 
                     SET student_name = :student_name, 
-                        course_section = :course_section 
+                        course_section = :course_section
+                        {$studentNumberSql}
                     WHERE tbl_student_id = :tbl_student_id
                 ");
                 
                 $stmt->bindParam(":tbl_student_id", $studentId, PDO::PARAM_INT); 
                 $stmt->bindParam(":student_name", $studentName, PDO::PARAM_STR); 
                 $stmt->bindParam(":course_section", $studentCourse, PDO::PARAM_STR);
+                if ($userRole === 'super_admin') {
+                    $stmt->bindParam(":student_number", $studentNumber, PDO::PARAM_STR);
+                }
             }
 
             $stmt->execute();
 
-            $studentUserId = (int) ($student['user_id'] ?? 0);
             if ($studentUserId > 0) {
-                $userUpdateStmt = $conn->prepare("UPDATE tbl_users SET full_name = ? WHERE user_id = ? AND role = 'student'");
-                $userUpdateStmt->execute([$studentName, $studentUserId]);
+                if ($userRole === 'super_admin') {
+                    $userUpdateStmt = $conn->prepare("UPDATE tbl_users SET full_name = ?, username = ? WHERE user_id = ? AND role = 'student'");
+                    $userUpdateStmt->execute([$studentName, $studentNumber, $studentUserId]);
+                } else {
+                    $userUpdateStmt = $conn->prepare("UPDATE tbl_users SET full_name = ? WHERE user_id = ? AND role = 'student'");
+                    $userUpdateStmt->execute([$studentName, $studentUserId]);
+                }
             }
             
             // Success response
@@ -132,6 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $response['data'] = [
                 'student_id' => $studentId,
                 'student_name' => $studentName,
+                'student_number' => $studentNumber ?? ($student['student_number'] ?? ''),
                 'original_section' => $originalSection,
                 'folder_section' => $studentCourse
             ];

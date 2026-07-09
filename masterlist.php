@@ -2108,12 +2108,14 @@ if ($user_role === 'super_admin') {
                                                 <?php
                                                 $studentID = $row["tbl_student_id"];
                                                 $studentName = $row["student_name"];
+                                                $studentNumber = $row["student_number"] ?? '';
                                                 $originalSection = $row["original_section"] ?? $row["course_section"];
                                                 $folderSection = $row["course_section"];
                                                 $qrCode = $row["generated_code"];
                                                 ?>
                                                 <tr class="student-row"
                                                     data-student-name="<?= htmlspecialchars(strtolower($studentName), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-student-number="<?= htmlspecialchars($studentNumber, ENT_QUOTES, 'UTF-8') ?>"
                                                     data-original-section="<?= htmlspecialchars(strtolower($originalSection), ENT_QUOTES, 'UTF-8') ?>"
                                                     data-folder-section="<?= htmlspecialchars(strtolower($folderSection), ENT_QUOTES, 'UTF-8') ?>">
                                                     <td><?= $my_counter++ ?></td>
@@ -2238,12 +2240,14 @@ if ($user_role === 'super_admin') {
                                                 <?php
                                                 $studentID = $row["tbl_student_id"];
                                                 $studentName = $row["student_name"];
+                                                $studentNumber = $row["student_number"] ?? '';
                                                 $originalSection = $row["original_section"] ?? $row["course_section"];
                                                 $folderSection = $row["course_section"];
                                                 $qrCode = $row["generated_code"];
                                                 ?>
                                                 <tr class="student-row"
                                                     data-student-name="<?= htmlspecialchars(strtolower($studentName), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-student-number="<?= htmlspecialchars($studentNumber, ENT_QUOTES, 'UTF-8') ?>"
                                                     data-original-section="<?= htmlspecialchars(strtolower($originalSection), ENT_QUOTES, 'UTF-8') ?>"
                                                     data-folder-section="<?= htmlspecialchars(strtolower($folderSection), ENT_QUOTES, 'UTF-8') ?>">
                                                     <td><?= $admin_counter++ ?></td>
@@ -2355,12 +2359,14 @@ if ($user_role === 'super_admin') {
                                                 <?php
                                                 $studentID = $row["tbl_student_id"];
                                                 $studentName = $row["student_name"];
+                                                $studentNumber = $row["student_number"] ?? '';
                                                 $originalSection = $row["original_section"] ?? $row["course_section"];
                                                 $folderSection = $row["course_section"];
                                                 $qrCode = $row["generated_code"];
                                                 ?>
                                                 <tr class="student-row"
                                                     data-student-name="<?= htmlspecialchars(strtolower($studentName), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-student-number="<?= htmlspecialchars($studentNumber, ENT_QUOTES, 'UTF-8') ?>"
                                                     data-original-section="<?= htmlspecialchars(strtolower($originalSection), ENT_QUOTES, 'UTF-8') ?>"
                                                     data-folder-section="<?= htmlspecialchars(strtolower($folderSection), ENT_QUOTES, 'UTF-8') ?>">
                                                     <td><?= $system_counter++ ?></td>
@@ -2593,6 +2599,14 @@ if ($user_role === 'super_admin') {
                         <label for="updateStudentName">Student Full Name:</label>
                         <input type="text" class="form-control" id="updateStudentName" name="student_name" required>
                     </div>
+
+                    <?php if ($user_role === 'super_admin'): ?>
+                    <div class="form-group">
+                        <label for="updateStudentNumber">Student Number / Username:</label>
+                        <input type="text" class="form-control" id="updateStudentNumber" name="student_number" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required>
+                        <small class="text-muted">This also updates the student's login username.</small>
+                    </div>
+                    <?php endif; ?>
                     
                     <div class="form-group">
                         <label for="updateOriginalSection">Original College Section:</label>
@@ -3991,6 +4005,7 @@ function updateStudent(id) {
     
     // Extract student name (cell 1)
     const studentName = cells[1].textContent.trim();
+    const studentNumber = row.dataset.studentNumber || '';
     
     // Extract original section (cell 2) - remove any HTML tags and trim
     const originalSectionCell = cells[2];
@@ -4005,6 +4020,7 @@ function updateStudent(id) {
     console.log('Updating student:', {
         id: id,
         name: studentName,
+        student_number: studentNumber,
         original: originalSection,
         folder: folderSection
     });
@@ -4012,6 +4028,7 @@ function updateStudent(id) {
     // Set values in the form
     $("#updateStudentId").val(id);
     $("#updateStudentName").val(studentName);
+    $("#updateStudentNumber").val(studentNumber);
     $("#updateOriginalSection").val(originalSection);
     $("#updateStudentCourse").val(folderSection);
     
@@ -4665,6 +4682,7 @@ $('#updateStudentForm').on('submit', function(e) {
     
     // Validate form
     const studentName = $('#updateStudentName').val().trim();
+    const studentNumber = $('#updateStudentNumber').val()?.replace(/\D/g, '') || '';
     const originalSection = $('#updateOriginalSection').val().trim();
     const studentCourse = $('#updateStudentCourse').val().trim();
     
@@ -4672,6 +4690,14 @@ $('#updateStudentForm').on('submit', function(e) {
         Swal.fire('Error', 'Student name is required!', 'error');
         return;
     }
+
+    <?php if ($user_role === 'super_admin'): ?>
+    if (!/^\d{10}$/.test(studentNumber)) {
+        Swal.fire('Error', 'Student number must be exactly 10 digits!', 'error');
+        return;
+    }
+    $('#updateStudentNumber').val(studentNumber);
+    <?php endif; ?>
     
     <?php if ($user_role === 'facilitator' || $user_role === 'super_admin'): ?>
     if (!originalSection) {
@@ -4693,6 +4719,7 @@ $('#updateStudentForm').on('submit', function(e) {
     console.log('Sending update data:', {
         tbl_student_id: $('#updateStudentId').val(),
         student_name: studentName,
+        student_number: studentNumber,
         original_section: originalSection,
         course_section: studentCourse
     });
