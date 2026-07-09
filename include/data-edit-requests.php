@@ -258,6 +258,33 @@ function dataEditRequestDecode($json) {
     return is_array($data) ? $data : [];
 }
 
+function dataEditRequestSyncStudentName(PDO $conn, $userId, $studentNumber, $fullName, $originalSection = null) {
+    $userId = (int) $userId;
+    $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
+    $fullName = dataEditRequestClean($fullName, 255);
+
+    if ($userId <= 0 || $fullName === '') {
+        return;
+    }
+
+    $where = ['user_id = ?'];
+    $params = [$fullName, $userId];
+    if (preg_match('/^\d{10}$/', $studentNumber)) {
+        $where[] = 'student_number = ?';
+        $params[] = $studentNumber;
+    }
+
+    if ($originalSection !== null) {
+        $sql = "UPDATE tbl_student SET student_name = ?, original_section = ? WHERE " . implode(' OR ', $where);
+        array_splice($params, 1, 0, [dataEditRequestClean($originalSection, 255)]);
+    } else {
+        $sql = "UPDATE tbl_student SET student_name = ? WHERE " . implode(' OR ', $where);
+    }
+
+    $syncStmt = $conn->prepare($sql);
+    $syncStmt->execute($params);
+}
+
 function dataEditRequestList(PDO $conn, $status = 'pending') {
     ensureDataEditRequestsTable($conn);
     $status = strtolower(trim((string) $status));
@@ -295,7 +322,7 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
     }
 
     $stmt = $conn->prepare("
-        SELECT r.*, u.role AS user_role
+        SELECT r.*, u.role AS user_role, u.username AS user_username
         FROM tbl_data_edit_requests r
         INNER JOIN tbl_users u ON u.user_id = r.user_id
         WHERE r.request_id = ?
@@ -360,8 +387,11 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
             ]))));
 
             if ($fullName !== '') {
-                $syncStmt = $conn->prepare("UPDATE tbl_student SET student_name = ?, original_section = ? WHERE user_id = ?");
-                $syncStmt->execute([$fullName, $newData['year_section'] ?? '', (int) $request['user_id']]);
+                $studentNumber = $request['user_username'] ?? '';
+                dataEditRequestSyncStudentName($conn, (int) $request['user_id'], $studentNumber, $fullName, $newData['year_section'] ?? '');
+
+                $userUpdateStmt = $conn->prepare("UPDATE tbl_users SET full_name = ? WHERE user_id = ? AND role = 'student'");
+                $userUpdateStmt->execute([$fullName, (int) $request['user_id']]);
             }
         } elseif ($action === 'approve') {
             if (($request['user_role'] ?? '') === 'student') {
@@ -382,8 +412,12 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
                 (int) $request['user_id'],
             ]);
 
-            $syncStmt = $conn->prepare("UPDATE tbl_student SET student_name = ? WHERE user_id = ?");
-            $syncStmt->execute([$newData['full_name'] ?? '', (int) $request['user_id']]);
+            dataEditRequestSyncStudentName(
+                $conn,
+                (int) $request['user_id'],
+                $newData['username'] ?? ($request['user_username'] ?? ''),
+                $newData['full_name'] ?? ''
+            );
         }
 
         $reviewStmt = $conn->prepare("

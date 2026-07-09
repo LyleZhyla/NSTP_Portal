@@ -227,6 +227,25 @@ function qrCardCourseMajorSection(array $student) {
     return qrCardCleanValue($student['original_section'] ?? '') ?: 'N/A';
 }
 
+function qrCardStudentDisplayName(array $student) {
+    $nameParts = [
+        qrCardCleanValue($student['first_name'] ?? ''),
+        qrCardCleanValue($student['middle_name'] ?? ''),
+        qrCardCleanValue($student['last_name'] ?? ''),
+        qrCardCleanValue($student['extension_name'] ?? ''),
+    ];
+
+    if (strtoupper((string) ($student['middle_name'] ?? '')) === 'N/A') {
+        $nameParts[1] = '';
+    }
+    if (strtoupper((string) ($student['extension_name'] ?? '')) === 'N/A') {
+        $nameParts[3] = '';
+    }
+
+    $registrationName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($nameParts))));
+    return $registrationName !== '' ? $registrationName : (qrCardCleanValue($student['student_name'] ?? '') ?: 'Student');
+}
+
 function studentPicturePaths(array $student) {
     $formalPicture = trim((string) ($student['formal_picture'] ?? ''));
     $profilePicture = trim((string) ($student['profile_picture'] ?? ''));
@@ -252,7 +271,8 @@ function studentPicturePaths(array $student) {
 }
 
 $stmt = $conn->prepare("
-    SELECT s.*, u.profile_picture, r.course, r.major, r.year_section, r.formal_picture, r.contact_number,
+    SELECT s.*, u.profile_picture, r.last_name, r.extension_name, r.first_name, r.middle_name,
+           r.course, r.major, r.year_section, r.formal_picture, r.contact_number,
            r.emergency_name, r.emergency_relationship, r.emergency_contact_number
     FROM tbl_student s
     LEFT JOIN tbl_users u ON u.user_id = s.user_id
@@ -294,6 +314,8 @@ if (!$student) {
         exit('Student QR record not found.');
     }
 }
+
+$displayStudentName = qrCardStudentDisplayName($student);
 
 $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=' . urlencode($student['generated_code']);
 $qrBytes = @file_get_contents($qrUrl);
@@ -349,7 +371,7 @@ if ($picture) {
 } else {
     imagefilledrectangle($canvas, 70, 156, 212, 298, $white);
     imagerectangle($canvas, 70, 156, 212, 298, $line);
-    drawText($canvas, 46, 112, 244, $green, $boldFont, strtoupper(substr($student['student_name'], 0, 1)));
+    drawText($canvas, 46, 112, 244, $green, $boldFont, strtoupper(substr($displayStudentName, 0, 1)));
 }
 
 $x = 236;
@@ -357,7 +379,7 @@ $labelSize = 13;
 $valueSize = 15;
 $maxTextWidth = 300;
 $fields = [
-    ['label' => 'Full Name:', 'value' => $student['student_name'] ?: 'N/A', 'inline' => false],
+    ['label' => 'Full Name:', 'value' => $displayStudentName, 'inline' => false],
     ['label' => 'Course/Major/Section:', 'value' => qrCardCourseMajorSection($student), 'inline' => false],
     ['label' => 'Contact No.:', 'value' => $student['contact_number'] ?: 'N/A', 'inline' => true],
 ];
@@ -393,7 +415,7 @@ foreach ($emergencyFields as $label => $value) {
     $y = max($y + 30, $valueY + 18);
 }
 
-$safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $student['student_name']);
+$safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $displayStudentName);
 if ($format === 'jpg' || $format === 'jpeg') {
     header('Content-Type: image/jpeg');
     header('Content-Disposition: attachment; filename="' . $safeName . '_NSTP_ID.jpg"');
