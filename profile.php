@@ -223,7 +223,14 @@ if ($isStudent) {
                r.student_number AS registration_student_number, r.college, r.course, r.major, r.year_section,
                r.component, r.formal_picture, r.created_at AS registration_date
         FROM tbl_student s
-        LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
+        LEFT JOIN tbl_public_student_registrations r ON r.registration_id = (
+            SELECT r2.registration_id
+            FROM tbl_public_student_registrations r2
+            WHERE r2.user_id = s.user_id
+               OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r2.student_number = s.student_number)
+            ORDER BY r2.created_at DESC
+            LIMIT 1
+        )
         WHERE s.user_id = ?
         ORDER BY r.created_at DESC
         LIMIT 1

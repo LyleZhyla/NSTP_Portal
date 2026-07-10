@@ -281,15 +281,7 @@ $stmt = $conn->prepare("
         FROM tbl_public_student_registrations r2
         WHERE r2.user_id = s.user_id
            OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r2.student_number = s.student_number)
-        ORDER BY
-            CASE
-                WHEN r2.formal_picture IS NOT NULL
-                 AND r2.formal_picture <> ''
-                 AND r2.formal_picture <> 'include/logo.png'
-                THEN 0
-                ELSE 1
-            END,
-            r2.created_at DESC
+        ORDER BY r2.created_at DESC
         LIMIT 1
     )
     WHERE s.user_id = ?

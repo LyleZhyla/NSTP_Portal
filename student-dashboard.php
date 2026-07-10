@@ -39,7 +39,14 @@ $stmt = $conn->prepare("
            r.component, r.formal_picture, r.created_at AS registration_date
     FROM tbl_student s
     LEFT JOIN tbl_users u ON u.user_id = s.user_id
-    LEFT JOIN tbl_public_student_registrations r ON r.student_number = s.student_number
+    LEFT JOIN tbl_public_student_registrations r ON r.registration_id = (
+        SELECT r2.registration_id
+        FROM tbl_public_student_registrations r2
+        WHERE r2.user_id = s.user_id
+           OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r2.student_number = s.student_number)
+        ORDER BY r2.created_at DESC
+        LIMIT 1
+    )
     WHERE s.user_id = ?
     ORDER BY r.created_at DESC
     LIMIT 1
@@ -118,6 +125,30 @@ function dashboardCourseSection(array $student) {
     return !empty($parts)
         ? implode(' - ', $parts)
         : (trim((string) ($student['course_section'] ?? '')) ?: 'N/A');
+}
+
+function dashboardCleanValue($value) {
+    $value = trim((string) $value);
+    return $value === '' || strtoupper($value) === 'N/A' ? '' : $value;
+}
+
+function dashboardStudentDisplayName(array $student) {
+    $nameParts = [
+        dashboardCleanValue($student['first_name'] ?? ''),
+        dashboardCleanValue($student['middle_name'] ?? ''),
+        dashboardCleanValue($student['last_name'] ?? ''),
+        dashboardCleanValue($student['extension_name'] ?? ''),
+    ];
+
+    if (strtoupper((string) ($student['middle_name'] ?? '')) === 'N/A') {
+        $nameParts[1] = '';
+    }
+    if (strtoupper((string) ($student['extension_name'] ?? '')) === 'N/A') {
+        $nameParts[3] = '';
+    }
+
+    $registrationName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($nameParts))));
+    return $registrationName !== '' ? $registrationName : (dashboardCleanValue($student['student_name'] ?? '') ?: 'Student');
 }
 
 if ($student) {
@@ -403,7 +434,8 @@ if ($student) {
                 <?php
                     $studentImageUrl = dashboardStudentImageUrl($student);
                     $studentQrImage = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' . urlencode($student['generated_code']);
-                    $studentNumber = $student['student_number'] ?? ($student['registration_student_number'] ?? 'N/A');
+                    $studentDisplayName = dashboardStudentDisplayName($student);
+                    $studentNumber = $student['registration_student_number'] ?? ($student['student_number'] ?? 'N/A');
                     $studentComponent = normalizeProgram($student['component'] ?? '') ?: inferProgramFromText($student['course_section'] ?? '') ?: ($student['component'] ?? 'N/A');
                 ?>
                 <div class="nstp-id-panel mb-4">
@@ -415,12 +447,12 @@ if ($student) {
                             <?php if ($studentImageUrl): ?>
                                 <img src="<?php echo htmlspecialchars($studentImageUrl); ?>" alt="Student Picture" class="nstp-id-photo">
                             <?php else: ?>
-                                <div class="nstp-id-initial"><?php echo htmlspecialchars(strtoupper(substr($student['student_name'] ?? 'S', 0, 1))); ?></div>
+                                <div class="nstp-id-initial"><?php echo htmlspecialchars(strtoupper(substr($studentDisplayName, 0, 1))); ?></div>
                             <?php endif; ?>
                         </div>
 
                         <div>
-                            <div class="nstp-id-name"><?php echo htmlspecialchars($student['student_name'] ?? 'Student'); ?></div>
+                            <div class="nstp-id-name"><?php echo htmlspecialchars($studentDisplayName); ?></div>
                             <div class="nstp-id-fields">
                                 <div class="nstp-id-field">
                                     <span>Student Number</span>
