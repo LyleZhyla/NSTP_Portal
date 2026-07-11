@@ -13,6 +13,7 @@ if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coor
 }
 
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
+$openStudentComponents = getOpenStudentComponents($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
 $cutoffComponents = attendanceCutoffComponentsForUser($currentUser);
@@ -23,6 +24,18 @@ $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent
 $selectedComponentCount = 0;
 if (($currentUser['role'] ?? '') === 'super_admin') {
     try {
+        $rotcMsLevelColumnStmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'tbl_public_student_registrations'
+              AND COLUMN_NAME = 'rotc_ms_level'
+        ");
+        $rotcMsLevelColumnStmt->execute();
+        $excludeAdvancedRotcSql = (int) $rotcMsLevelColumnStmt->fetchColumn() > 0
+            ? "AND UPPER(REPLACE(COALESCE(r.rotc_ms_level, ''), ' ', '-')) NOT IN ('MS-31', 'MS31', 'MS-41', 'MS41')"
+            : "";
+
         $selectedComponentStmt = $conn->prepare("
             SELECT COUNT(DISTINCT u.user_id)
             FROM tbl_users u
@@ -34,6 +47,7 @@ if (($currentUser['role'] ?? '') === 'super_admin') {
                 u.program IS NOT NULL
                 OR (r.component IS NOT NULL AND r.component <> '')
               )
+              {$excludeAdvancedRotcSql}
         ");
         $selectedComponentStmt->execute();
         $selectedComponentCount = (int) $selectedComponentStmt->fetchColumn();
@@ -157,15 +171,26 @@ date_default_timezone_set('Asia/Manila');
                                 <div class="setting-summary">
                                     <i class="fas fa-toggle-on"></i>
                                     <div class="flex-fill">
-                                        <strong id="componentSelectionStatus">Student component choosing is <?php echo $componentSelectionEnabled ? 'open' : 'closed'; ?>.</strong>
-                                        <span class="text-muted small">Open or close the component selection option for student accounts.</span>
+                                        <strong id="componentSelectionStatus"><?php echo count($openStudentComponents); ?> component(s) open for student registration.</strong>
+                                        <span class="text-muted small">Open components individually. Closed components will not appear on the public form.</span>
                                     </div>
-                                    <div class="custom-control custom-switch">
-                                        <input type="checkbox" class="custom-control-input" id="componentSelectionToggle" <?php echo $componentSelectionEnabled ? 'checked' : ''; ?>>
-                                        <label class="custom-control-label font-weight-bold" for="componentSelectionToggle">
-                                            <?php echo $componentSelectionEnabled ? 'Open' : 'Closed'; ?>
-                                        </label>
+                                </div>
+                                <div class="mt-3">
+                                    <?php foreach (['CWTS', 'LTS', 'ROTC'] as $selectionComponent): ?>
+                                    <?php $componentOpen = in_array($selectionComponent, $openStudentComponents, true); ?>
+                                    <div class="d-flex align-items-center justify-content-between border rounded p-3 mb-2">
+                                        <strong><?php echo htmlspecialchars($selectionComponent); ?></strong>
+                                        <div class="custom-control custom-switch">
+                                            <input type="checkbox" class="custom-control-input component-selection-toggle"
+                                                   id="componentSelection<?php echo htmlspecialchars($selectionComponent); ?>"
+                                                   data-component="<?php echo htmlspecialchars($selectionComponent); ?>"
+                                                   <?php echo $componentOpen ? 'checked' : ''; ?>>
+                                            <label class="custom-control-label font-weight-bold" for="componentSelection<?php echo htmlspecialchars($selectionComponent); ?>">
+                                                <?php echo $componentOpen ? 'Open' : 'Closed'; ?>
+                                            </label>
+                                        </div>
                                     </div>
+                                    <?php endforeach; ?>
                                 </div>
                                 <div class="mt-3 p-3 border rounded">
                                     <div class="d-flex align-items-center justify-content-between flex-wrap">
@@ -331,18 +356,20 @@ date_default_timezone_set('Asia/Manila');
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(function() {
-    $('#componentSelectionToggle').on('change', function() {
-        const enabled = $(this).is(':checked') ? 1 : 0;
+    $('.component-selection-toggle').on('change', function() {
+        const toggle = $(this);
+        const enabled = toggle.is(':checked') ? 1 : 0;
+        const component = toggle.data('component');
 
         $.ajax({
             url: 'endpoint/toggle-component-selection.php',
             method: 'POST',
-            data: { enabled: enabled },
+            data: { enabled: enabled, component: component },
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
-                    $('#componentSelectionToggle').next('label').text(response.enabled ? 'Open' : 'Closed');
-                    $('#componentSelectionStatus').text('Student component choosing is ' + (response.enabled ? 'open' : 'closed') + '.');
+                    toggle.next('label').text(response.enabled ? 'Open' : 'Closed');
+                    $('#componentSelectionStatus').text((response.open_components || []).length + ' component(s) open for student registration.');
                     Swal.fire({
                         icon: 'success',
                         title: response.enabled ? 'Selection Open' : 'Selection Closed',
@@ -352,12 +379,12 @@ $(function() {
                     });
                 } else {
                     Swal.fire('Error', response.message, 'error');
-                    $('#componentSelectionToggle').prop('checked', !enabled);
+                    toggle.prop('checked', !enabled);
                 }
             },
             error: function() {
                 Swal.fire('Error', 'Failed to update component selection setting.', 'error');
-                $('#componentSelectionToggle').prop('checked', !enabled);
+                toggle.prop('checked', !enabled);
             }
         });
     });
@@ -423,9 +450,9 @@ $(function() {
                 dataType: 'json',
                 success: function(response) {
                     if (response.success) {
-                        $('#componentSelectionToggle').prop('checked', false);
-                        $('#componentSelectionToggle').next('label').text('Closed');
-                        $('#componentSelectionStatus').text('Student component choosing is closed.');
+                        $('.component-selection-toggle').prop('checked', false);
+                        $('.component-selection-toggle').next('label').text('Closed');
+                        $('#componentSelectionStatus').text('0 component(s) open for student registration.');
                         Swal.fire('Reset Complete', response.message, 'success').then(function() {
                             window.location.reload();
                         });

@@ -479,6 +479,26 @@ function isComponentSelectionEnabled(PDO $conn) {
     return getSystemSetting($conn, 'component_selection_enabled', '1') === '1';
 }
 
+function getOpenStudentComponents(PDO $conn) {
+    if (!isComponentSelectionEnabled($conn)) {
+        return [];
+    }
+
+    $components = ['CWTS', 'LTS', 'ROTC'];
+    if (getSystemSetting($conn, 'component_selection_components_configured', '0') !== '1') {
+        return $components;
+    }
+
+    return array_values(array_filter($components, static function ($component) use ($conn) {
+        return getSystemSetting($conn, 'component_selection_' . strtolower($component) . '_enabled', '0') === '1';
+    }));
+}
+
+function isStudentComponentOpen(PDO $conn, $component) {
+    $component = normalizeProgram($component);
+    return $component && in_array($component, getOpenStudentComponents($conn), true);
+}
+
 function ensureSystemLogsTable(PDO $conn) {
     $conn->exec("
         CREATE TABLE IF NOT EXISTS tbl_system_logs (

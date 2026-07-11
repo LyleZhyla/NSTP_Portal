@@ -31,6 +31,31 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     $conn->beginTransaction();
 
+    $hasRotcMsLevel = resetComponentColumnExists($conn, 'tbl_public_student_registrations', 'rotc_ms_level');
+    $excludedStudentNumbers = [];
+    $excludedUserIds = [];
+    if ($hasRotcMsLevel) {
+        $excludedStmt = $conn->prepare("
+            SELECT user_id, student_number
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+              AND UPPER(REPLACE(COALESCE(rotc_ms_level, ''), ' ', '-')) IN ('MS-31', 'MS31', 'MS-41', 'MS41')
+        ");
+        $excludedStmt->execute();
+        foreach ($excludedStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            $studentNumber = preg_replace('/\D/', '', (string) ($row['student_number'] ?? ''));
+            if ($userId > 0) {
+                $excludedUserIds[] = $userId;
+            }
+            if (preg_match('/^\d{10}$/', $studentNumber)) {
+                $excludedStudentNumbers[] = $studentNumber;
+            }
+        }
+        $excludedUserIds = array_values(array_unique($excludedUserIds));
+        $excludedStudentNumbers = array_values(array_unique($excludedStudentNumbers));
+    }
+
     $studentUsersStmt = $conn->prepare("
         SELECT user_id, username
         FROM tbl_users
@@ -39,15 +64,30 @@ try {
     ");
     $studentUsersStmt->execute();
     $studentUsers = $studentUsersStmt->fetchAll(PDO::FETCH_ASSOC);
+    $studentUsers = array_values(array_filter($studentUsers, static function ($row) use ($excludedUserIds, $excludedStudentNumbers) {
+        $userId = (int) ($row['user_id'] ?? 0);
+        $studentNumber = preg_replace('/\D/', '', (string) ($row['username'] ?? ''));
+        return !in_array($userId, $excludedUserIds, true)
+            && !in_array($studentNumber, $excludedStudentNumbers, true);
+    }));
     $studentUserIds = array_map(static fn($row) => (int) $row['user_id'], $studentUsers);
     $studentNumbers = array_values(array_filter(array_map(
         static fn($row) => preg_match('/^\d{10}$/', (string) ($row['username'] ?? '')) ? (string) $row['username'] : null,
         $studentUsers
     )));
 
-    $usersStmt = $conn->prepare("UPDATE tbl_users SET program = NULL WHERE role = 'student' AND program IS NOT NULL");
-    $usersStmt->execute();
-    $updatedUsers = $usersStmt->rowCount();
+    $updatedUsers = 0;
+    if (!empty($studentUserIds)) {
+        $usersStmt = $conn->prepare("
+            UPDATE tbl_users
+            SET program = NULL
+            WHERE role = 'student'
+              AND program IS NOT NULL
+              AND user_id IN (" . implode(',', array_fill(0, count($studentUserIds), '?')) . ")
+        ");
+        $usersStmt->execute($studentUserIds);
+        $updatedUsers = $usersStmt->rowCount();
+    }
 
     $registrationSetParts = ['component = NULL'];
     $registrationWhereParts = ['component IS NOT NULL'];
@@ -63,6 +103,7 @@ try {
         SET " . implode(', ', $registrationSetParts) . "
         WHERE registrant_role = 'student'
           AND (" . implode(' OR ', $registrationWhereParts) . ")
+          " . ($hasRotcMsLevel ? "AND UPPER(REPLACE(COALESCE(rotc_ms_level, ''), ' ', '-')) NOT IN ('MS-31', 'MS31', 'MS-41', 'MS41')" : "") . "
     ");
     $registrationStmt->execute();
     $updatedRegistrations = $registrationStmt->rowCount();
@@ -94,6 +135,10 @@ try {
     }
 
     setSystemSetting($conn, 'component_selection_enabled', '0');
+    setSystemSetting($conn, 'component_selection_components_configured', '1');
+    foreach (['CWTS', 'LTS', 'ROTC'] as $selectionComponent) {
+        setSystemSetting($conn, 'component_selection_' . strtolower($selectionComponent) . '_enabled', '0');
+    }
     logSystemEvent(
         $conn,
         'student_components_reset',

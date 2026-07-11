@@ -25,6 +25,8 @@ $studentNumberBased = !$isFacilitatorForm && !empty($fields['student_number']) &
 $showNameFields = !empty($fields['name']);
 $showEmailField = !empty($fields['email']);
 $componentSelectionEnabled = !$isFacilitatorForm && !$studentNumberBased && isComponentSelectionEnabled($conn);
+$openStudentComponents = $componentSelectionEnabled ? getOpenStudentComponents($conn) : [];
+$componentSelectionEnabled = $componentSelectionEnabled && !empty($openStudentComponents);
 $religionOptions = philippinesReligionOptions();
 ?>
 <!DOCTYPE html>
@@ -268,9 +270,9 @@ $religionOptions = philippinesReligionOptions();
                         <label class="form-label" for="component">NSTP Component <span class="required">*</span></label>
                         <select class="form-select" id="component" name="component" required>
                             <option value="">Select Component</option>
-                            <option value="CWTS">CWTS</option>
-                            <option value="LTS">LTS</option>
-                            <option value="ROTC">ROTC</option>
+                            <?php foreach ($openStudentComponents as $openComponent): ?>
+                            <option value="<?php echo htmlspecialchars($openComponent); ?>"><?php echo htmlspecialchars($openComponent); ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="col-md-4 student-only-field" id="rotcMsLevelWrap" style="display:none;">

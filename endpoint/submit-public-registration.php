@@ -377,6 +377,59 @@ function findLatestPublicRegistrationByStudentNumber(PDO $conn, $studentNumber) 
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
+function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email) {
+    $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
+    $email = strtolower(cleanText($email));
+
+    if ($studentNumber !== '') {
+        $stmt = $conn->prepare("
+            SELECT registration_id
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+              AND student_number = ?
+              AND (status IS NULL OR status <> 'attendance_only')
+            LIMIT 1
+        ");
+        $stmt->execute([$studentNumber]);
+        if ($stmt->fetchColumn()) {
+            failRegistration('This student number already has a registration submission.');
+        }
+
+        $stmt = $conn->prepare("SELECT tbl_student_id FROM tbl_student WHERE student_number = ? LIMIT 1");
+        $stmt->execute([$studentNumber]);
+        if ($stmt->fetchColumn()) {
+            failRegistration('This student number is already registered.');
+        }
+
+        $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
+        $stmt->execute([$studentNumber]);
+        if ($stmt->fetchColumn()) {
+            failRegistration('This student number already has a student account.');
+        }
+    }
+
+    if ($email !== '' && strpos($email, '@no-email.tau-nstp.local') === false) {
+        $stmt = $conn->prepare("
+            SELECT registration_id
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+              AND email = ?
+              AND (status IS NULL OR status <> 'attendance_only')
+            LIMIT 1
+        ");
+        $stmt->execute([$email]);
+        if ($stmt->fetchColumn()) {
+            failRegistration('This email address already has a public registration submission.');
+        }
+
+        $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE email = ? LIMIT 1");
+        $stmt->execute([$email]);
+        if ($stmt->fetchColumn()) {
+            failRegistration('This email address already has an account.');
+        }
+    }
+}
+
 function publicRegistrationFullName(array $registration) {
     $lastName = cleanText($registration['last_name'] ?? '');
     $firstName = cleanText($registration['first_name'] ?? '');
@@ -576,6 +629,9 @@ try {
     $component = ($isFacilitatorRegistration || $componentSelectionOpen)
         ? normalizeProgram($_POST['component'] ?? null)
         : null;
+    if (!$isFacilitatorRegistration && $component && !isStudentComponentOpen($conn, $component)) {
+        failRegistration('The selected NSTP component is currently closed for registration.');
+    }
     $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
     if ($component !== 'ROTC') {
         $rotcMsLevel = null;
@@ -818,6 +874,10 @@ try {
         failRegistration('Please enter a valid email address.');
     }
     $hasProvidedEmail = !$studentNumberBased || strpos($email, '@no-email.tau-nstp.local') === false;
+
+    if (!$isFacilitatorRegistration && !$studentNumberBased) {
+        assertStudentFullRegistrationIsUnique($conn, $studentNumber, $email);
+    }
 
     $dateOfBirth = DateTime::createFromFormat('m/d/Y', $dateOfBirthInput);
     $dateErrors = DateTime::getLastErrors();
