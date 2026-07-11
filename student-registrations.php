@@ -474,9 +474,14 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                         of <?php echo (int) $totalRegistrations; ?>
                                     </span>
                                 </div>
-                                <div class="col-md-2 mt-3 mt-md-0 text-md-right">
+                                <div class="col-md-4 mt-3 mt-md-0 text-md-right">
+                                    <?php if ($role === 'super_admin'): ?>
+                                    <button type="button" class="btn btn-outline-primary mb-2" id="sendFacilitatorAccountEmailsBtn">
+                                        <i class="fas fa-user-tie mr-1"></i> Send Facilitator Emails
+                                    </button>
+                                    <?php endif; ?>
                                     <button type="button" class="btn btn-primary mb-2" id="sendAccountEmailsBtn">
-                                        <i class="fas fa-envelope mr-1"></i> Send Account Emails
+                                        <i class="fas fa-user-graduate mr-1"></i> Send Student Emails
                                     </button>
                                     <button type="button" class="btn btn-outline-secondary" id="clearFormTitleFilter">
                                         <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
@@ -908,6 +913,51 @@ foreach ($publicForms as $formRow) {
 
         $('#componentFilter').on('change', applyComponentFilter);
 
+        $('#sendFacilitatorAccountEmailsBtn').on('click', function() {
+            const button = $(this);
+
+            Swal.fire({
+                title: 'Send Facilitator Emails?',
+                html: `
+                    <div class="text-left">
+                        <p>This action is only for facilitator login credentials.</p>
+                        <label class="mb-1" for="facilitatorEmailComponent">Component</label>
+                        <select id="facilitatorEmailComponent" class="form-control">
+                            <option value="">All Components</option>
+                            <option value="CWTS">CWTS</option>
+                            <option value="LTS">LTS</option>
+                            <option value="ROTC">ROTC</option>
+                        </select>
+                    </div>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Send Facilitator Emails',
+                preConfirm: () => $('#facilitatorEmailComponent').val()
+            }).then(function(result) {
+                if (!result.isConfirmed) return;
+
+                const originalHtml = button.html();
+                button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Sending Facilitator Emails');
+
+                $.ajax({
+                    url: 'endpoint/send-facilitator-account-emails.php',
+                    method: 'POST',
+                    dataType: 'json',
+                    data: { program: result.value || '' },
+                    success: function(response) {
+                        Swal.fire(response.success ? 'Facilitator Emails Finished' : 'Unable to Send', response.message || 'Please try again.', response.success ? 'success' : 'error');
+                    },
+                    error: function() {
+                        Swal.fire('Request Failed', 'Unable to send facilitator emails. Please try again.', 'error');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false).html(originalHtml);
+                    }
+                });
+            });
+        });
+
         $('#sendAccountEmailsBtn').on('click', function() {
             const button = $(this);
             const selectedComponent = $('#componentFilter').val();
@@ -916,11 +966,11 @@ foreach ($publicForms as $formRow) {
             const batchDelayMs = 30000;
 
             Swal.fire({
-                title: 'Send account emails?',
+                title: 'Send Student Emails?',
                 text: 'This will create missing student accounts and email credentials for uploaded registrations under ' + scopeLabel + '. Emails will be sent in batches.',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: 'Send Emails',
+                confirmButtonText: 'Send Student Emails',
                 cancelButtonText: 'Cancel'
             }).then(async function(result) {
                 if (!result.isConfirmed) {
@@ -943,7 +993,7 @@ foreach ($publicForms as $formRow) {
                 let stoppedWithoutDelivery = false;
 
                 Swal.fire({
-                    title: 'Sending account emails',
+                    title: 'Sending student emails',
                     html: 'Starting batch send...',
                     allowOutsideClick: false,
                     allowEscapeKey: false,
@@ -999,7 +1049,7 @@ foreach ($publicForms as $formRow) {
                         }
                     }
 
-                    let summary = 'Account email process finished. Sent: ' + totals.sent + '.';
+                    let summary = 'Student email process finished. Sent: ' + totals.sent + '.';
                     if (totals.resent > 0) {
                         summary += ' Existing accounts resent: ' + totals.resent + '.';
                     }
