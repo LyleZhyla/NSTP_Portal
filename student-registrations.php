@@ -1186,14 +1186,14 @@ foreach ($publicForms as $formRow) {
                 title: 'Delete student account?',
                 html: `
                     <div class="text-left">
-                        <p>This will delete the login account for <strong>${safeStudentName}</strong>.</p>
-                        <p class="mb-0 text-muted">The registration and student record will stay, but the student will no longer be able to log in until a new account is created.</p>
+                        <p>This will permanently delete <strong>${safeStudentName}</strong>.</p>
+                        <p class="mb-0 text-danger"><strong>All linked data will be removed:</strong> account, registration, student record, attendance history, grades, notifications, and requests.</p>
                     </div>
                 `,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#dc3545',
-                confirmButtonText: 'Delete Account',
+                confirmButtonText: 'Delete All Data',
                 cancelButtonText: 'Cancel'
             }).then(function(result) {
                 if (!result.isConfirmed) {

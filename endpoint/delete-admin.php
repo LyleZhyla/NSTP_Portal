@@ -27,6 +27,17 @@ function deleteAdminColumnExists(PDO $conn, $tableName, $columnName) {
     return (int) $stmt->fetchColumn() > 0;
 }
 
+function deleteAdminRowsByIds(PDO $conn, $tableName, $columnName, array $ids) {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+    if (empty($ids) || !deleteAdminTableExists($conn, $tableName) || !deleteAdminColumnExists($conn, $tableName, $columnName)) {
+        return 0;
+    }
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $conn->prepare("DELETE FROM {$tableName} WHERE {$columnName} IN ({$placeholders})");
+    $stmt->execute($ids);
+    return $stmt->rowCount();
+}
+
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !canAccessAdminManagement($currentUser['role'])) {
     header('Content-Type: application/json');
@@ -54,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     try {
         // Check if user exists and get their role and profile picture
-        $checkStmt = $conn->prepare("SELECT user_id, role, program, profile_picture FROM tbl_users WHERE user_id = ?");
+        $checkStmt = $conn->prepare("SELECT user_id, username, email, role, program, profile_picture FROM tbl_users WHERE user_id = ?");
         $checkStmt->execute([$user_id]);
         
         if ($checkStmt->rowCount() === 0) {
@@ -80,17 +91,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Start transaction
         $conn->beginTransaction();
 
+        $studentIds = [];
+        if ($user['role'] === 'student' && deleteAdminTableExists($conn, 'tbl_student')) {
+            $studentStmt = $conn->prepare("
+                SELECT tbl_student_id
+                FROM tbl_student
+                WHERE user_id = ? OR student_number = ?
+            ");
+            $studentStmt->execute([$user_id, $user['username']]);
+            $studentIds = array_map('intval', $studentStmt->fetchAll(PDO::FETCH_COLUMN));
+
+            // Delete all student-owned dependent rows before the student row.
+            deleteAdminRowsByIds($conn, 'tbl_grade_scores', 'tbl_student_id', $studentIds);
+            deleteAdminRowsByIds($conn, 'tbl_absent_notifications', 'tbl_student_id', $studentIds);
+            deleteAdminRowsByIds($conn, 'tbl_attendance', 'tbl_student_id', $studentIds);
+            deleteAdminRowsByIds($conn, 'tbl_attendance_archive', 'tbl_student_id', $studentIds);
+        }
+
+        // Remove account-owned data from optional feature tables.
+        foreach ([
+            ['tbl_data_edit_requests', 'user_id'],
+            ['tbl_grade_column_visibility', 'user_id'],
+            ['tbl_notifications', 'user_id'],
+        ] as [$tableName, $columnName]) {
+            deleteAdminRowsByIds($conn, $tableName, $columnName, [(int) $user_id]);
+        }
+
+        if (deleteAdminTableExists($conn, 'tbl_public_student_registrations')) {
+            $deleteRegistrationStmt = $conn->prepare("
+                DELETE FROM tbl_public_student_registrations
+                WHERE user_id = ?
+                   OR (? = 'student' AND student_number = ?)
+                   OR email = ?
+            ");
+            $deleteRegistrationStmt->execute([$user_id, $user['role'], $user['username'], $user['email']]);
+        }
+
         if (deleteAdminTableExists($conn, 'tbl_student')) {
             $unlinkCreatedStudentsStmt = $conn->prepare("UPDATE tbl_student SET created_by = NULL WHERE created_by = ?");
             $unlinkCreatedStudentsStmt->execute([$user_id]);
 
-            $unlinkStudentAccountStmt = $conn->prepare("UPDATE tbl_student SET user_id = NULL WHERE user_id = ?");
-            $unlinkStudentAccountStmt->execute([$user_id]);
-        }
-
-        if (deleteAdminTableExists($conn, 'tbl_public_student_registrations')) {
-            $unlinkRegistrationStmt = $conn->prepare("UPDATE tbl_public_student_registrations SET user_id = NULL WHERE user_id = ?");
-            $unlinkRegistrationStmt->execute([$user_id]);
+            if ($user['role'] === 'student') {
+                deleteAdminRowsByIds($conn, 'tbl_student', 'tbl_student_id', $studentIds);
+            } else {
+                $unlinkStudentAccountStmt = $conn->prepare("UPDATE tbl_student SET user_id = NULL WHERE user_id = ?");
+                $unlinkStudentAccountStmt->execute([$user_id]);
+            }
         }
 
         if (deleteAdminTableExists($conn, 'tbl_admin_sections')) {
@@ -103,18 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $unlinkCreatedUsersStmt->execute([$user_id]);
         }
 
-        if (deleteAdminTableExists($conn, 'tbl_notifications')) {
-            $deleteNotificationsStmt = $conn->prepare("DELETE FROM tbl_notifications WHERE user_id = ?");
-            $deleteNotificationsStmt->execute([$user_id]);
-        }
-
         if (deleteAdminTableExists($conn, 'tbl_system_logs') && deleteAdminColumnExists($conn, 'tbl_system_logs', 'user_id')) {
-            $unlinkLogsStmt = $conn->prepare("UPDATE tbl_system_logs SET user_id = NULL WHERE user_id = ?");
-            $unlinkLogsStmt->execute([$user_id]);
-        }
-        
-        if ($user['role'] === 'student') {
-            // Student rows are unlinked above so their attendance history can stay intact.
+            $deleteLogsStmt = $conn->prepare("DELETE FROM tbl_system_logs WHERE user_id = ?");
+            $deleteLogsStmt->execute([$user_id]);
         }
 
         // First, delete related records in tbl_admin_sections
@@ -136,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         echo json_encode([
             'success' => true, 
-            'message' => ucfirst(str_replace('_', ' ', $user['role'])) . ' account deleted successfully'
+            'message' => ucfirst(str_replace('_', ' ', $user['role'])) . ' account and all linked database data deleted successfully'
         ]);
         
     } catch (PDOException $e) {

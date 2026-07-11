@@ -1794,7 +1794,7 @@ $('#changePasswordForm').on('submit', function(e) {
                     <p>This will permanently delete <strong>${userName}</strong>.</p>
                     <div class="alert alert-danger small">
                         <i class="fas fa-exclamation-circle"></i>
-                        This action cannot be undone!
+                        This account and all linked database data will be removed. This action cannot be undone!
                     </div>
                 </div>
             `,
