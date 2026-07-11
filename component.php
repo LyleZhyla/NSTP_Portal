@@ -20,6 +20,7 @@ if ($role !== 'student') {
 
 $componentOptions = getOpenStudentComponents($conn);
 $rotcMsOptions = ['MS-1', 'MS-31', 'MS-41'];
+$shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 $componentSelectionEnabled = !empty($componentOptions);
 $message = '';
 $error = '';
@@ -47,6 +48,13 @@ function ensureRotcRegistrationColumns(PDO $conn) {
         if (!componentColumnExists($conn, 'tbl_public_student_registrations', $columnName)) {
             $conn->exec($alterSql);
         }
+    }
+
+    if (!componentColumnExists($conn, 'tbl_public_student_registrations', 'shirt_size')) {
+        $conn->exec("ALTER TABLE tbl_public_student_registrations ADD COLUMN shirt_size VARCHAR(10) NULL AFTER component");
+    }
+    if (!componentColumnExists($conn, 'tbl_users', 'shirt_size')) {
+        $conn->exec("ALTER TABLE tbl_users ADD COLUMN shirt_size VARCHAR(10) NULL AFTER program");
     }
 }
 
@@ -101,6 +109,7 @@ if (isset($_POST['update_component'])) {
         $error = 'Component selection is currently closed.';
     } else {
     $selectedComponent = strtoupper(trim($_POST['component'] ?? ''));
+    $shirtSize = strtoupper(trim((string) ($_POST['shirt_size'] ?? '')));
     $rotcHeightFeet = preg_replace('/\D/', '', (string) ($_POST['rotc_height_feet'] ?? ''));
     $rotcHeightInches = preg_replace('/\D/', '', (string) ($_POST['rotc_height_inches'] ?? ''));
     $rotcHeight = '';
@@ -111,6 +120,8 @@ if (isset($_POST['update_component'])) {
 
     if (!in_array($selectedComponent, $componentOptions, true) || !isStudentComponentOpen($conn, $selectedComponent)) {
         $error = 'The selected NSTP component is currently closed.';
+    } elseif (!in_array($shirtSize, $shirtSizeOptions, true)) {
+        $error = 'Please select your shirt size before saving your component.';
     } elseif ($selectedComponent === 'ROTC' && ($rotcHeightFeet === '' || $rotcHeightInches === '')) {
         $error = 'Please enter your ROTC height in feet and inches.';
     } elseif ($selectedComponent === 'ROTC' && ((int) $rotcHeightFeet < 3 || (int) $rotcHeightFeet > 8)) {
@@ -189,12 +200,13 @@ if (isset($_POST['update_component'])) {
                 $stmt->execute([$user_id, $studentName, $originalSection, $pendingComponent, $generatedCode]);
             }
 
-            $stmt = $conn->prepare("UPDATE tbl_users SET program = ? WHERE user_id = ?");
-            $stmt->execute([$selectedComponent, $user_id]);
+            $stmt = $conn->prepare("UPDATE tbl_users SET program = ?, shirt_size = ? WHERE user_id = ?");
+            $stmt->execute([$selectedComponent, $shirtSize, $user_id]);
 
             $stmt = $conn->prepare("
                 UPDATE tbl_public_student_registrations
                 SET component = ?,
+                    shirt_size = ?,
                     height = ?,
                     rotc_ms_level = ?,
                     rotc_completion_proof = COALESCE(?, rotc_completion_proof)
@@ -202,6 +214,7 @@ if (isset($_POST['update_component'])) {
             ");
             $stmt->execute([
                 $selectedComponent,
+                $shirtSize,
                 $selectedComponent === 'ROTC' ? $rotcHeight : null,
                 $selectedComponent === 'ROTC' ? $rotcMsLevel : null,
                 $selectedComponent === 'ROTC' ? $rotcProofPath : null,
@@ -237,7 +250,7 @@ $rotcDetails = [];
 try {
     ensureRotcRegistrationColumns($conn);
     $stmt = $conn->prepare("
-        SELECT height, rotc_ms_level, rotc_completion_proof
+        SELECT shirt_size, height, rotc_ms_level, rotc_completion_proof
         FROM tbl_public_student_registrations
         WHERE user_id = ? OR (? <> '' AND student_number = ?)
         ORDER BY registration_id DESC
@@ -323,6 +336,19 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                                 </select>
                                 <small class="form-text text-muted">Your QR code will be created after choosing a component.</small>
                             </div>
+                            <div class="form-group">
+                                <label for="shirt_size">Shirt Size <span class="text-danger">*</span></label>
+                                <select class="form-control" id="shirt_size" name="shirt_size" required <?php echo $componentSelectionEnabled ? '' : 'disabled'; ?>>
+                                    <option value="">-- Select Shirt Size --</option>
+                                    <?php $savedShirtSize = $user['shirt_size'] ?? ($rotcDetails['shirt_size'] ?? ''); ?>
+                                    <?php foreach ($shirtSizeOptions as $shirtSizeOption): ?>
+                                        <option value="<?php echo htmlspecialchars($shirtSizeOption); ?>" <?php echo $savedShirtSize === $shirtSizeOption ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($shirtSizeOption); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <small class="form-text text-muted">Required for all NSTP components.</small>
+                            </div>
                             <div id="rotcDetailsBlock" class="border rounded p-3 mb-3" style="display: none;">
                                 <h5 class="mb-3"><i class="fas fa-id-card mr-2"></i>ROTC Details</h5>
                                 <div class="form-group">
@@ -377,6 +403,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                         <?php if ($studentRecord): ?>
                             <hr>
                             <p class="mb-1"><strong>Current Component:</strong> <?php echo htmlspecialchars($studentRecord['course_section']); ?></p>
+                            <p class="mb-1"><strong>Shirt Size:</strong> <?php echo htmlspecialchars($user['shirt_size'] ?? ($rotcDetails['shirt_size'] ?? 'Not set')); ?></p>
                             <?php if (($user['program'] ?? '') === 'ROTC'): ?>
                                 <p class="mb-1"><strong>Height:</strong> <?php echo htmlspecialchars($rotcDetails['height'] ?? 'Not set'); ?></p>
                                 <p class="mb-1"><strong>Enrollment Level:</strong> <?php echo htmlspecialchars($rotcDetails['rotc_ms_level'] ?? 'Not set'); ?></p>
