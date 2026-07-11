@@ -138,6 +138,55 @@ function saveAbsentNotificationGraceHours(PDO $conn, $hours) {
 }
 
 function attendanceComponentForStudent(PDO $conn, array $student) {
+    $studentId = (int) ($student['tbl_student_id'] ?? 0);
+    if ($studentId > 0) {
+        $stmt = $conn->prepare("
+            SELECT u.program AS account_component,
+                   (
+                       SELECT r.component
+                       FROM tbl_public_student_registrations r
+                       WHERE (s.user_id IS NOT NULL AND r.user_id = s.user_id)
+                          OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r.student_number = s.student_number)
+                       ORDER BY r.registration_id DESC
+                       LIMIT 1
+                   ) AS registration_component,
+                   EXISTS (
+                       SELECT 1
+                       FROM tbl_public_student_registrations r2
+                       WHERE (s.user_id IS NOT NULL AND r2.user_id = s.user_id)
+                          OR (s.student_number IS NOT NULL AND s.student_number <> '' AND r2.student_number = s.student_number)
+                   ) AS has_public_registration
+            FROM tbl_student s
+            LEFT JOIN tbl_users u ON u.user_id = s.user_id
+            WHERE s.tbl_student_id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$studentId]);
+        $source = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $accountComponent = normalizeProgram($source['account_component'] ?? null);
+        $registrationComponent = normalizeProgram($source['registration_component'] ?? null);
+
+        if ($accountComponent) {
+            if ($accountComponent === 'ROTC') {
+                return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
+                    ? 'ROTC_ADVANCED'
+                    : 'ROTC_BASIC';
+            }
+            return $accountComponent;
+        }
+        if ($registrationComponent) {
+            if ($registrationComponent === 'ROTC') {
+                return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
+                    ? 'ROTC_ADVANCED'
+                    : 'ROTC_BASIC';
+            }
+            return $registrationComponent;
+        }
+        if (!empty($source['has_public_registration'])) {
+            return 'PUBLIC';
+        }
+    }
+
     if (isRotcStudentRecord($conn, $student)) {
         return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
             ? 'ROTC_ADVANCED'

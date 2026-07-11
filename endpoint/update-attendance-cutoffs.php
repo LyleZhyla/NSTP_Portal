@@ -40,9 +40,19 @@ try {
         $details .= ' Updated absent notification delay to ' . (int) $_POST['absent_notification_grace_hours'] . ' hour(s).';
     }
 
+    // Saved attendance rows keep the status calculated at scan time. Recompute
+    // today's rows immediately so a corrected cutoff also fixes earlier scans.
+    $recalculation = recalculateAttendanceStatusesForDate($conn, date('Y-m-d'));
+    $details .= ' Recalculated ' . $recalculation['checked'] . ' record(s) for today; corrected ' . $recalculation['updated'] . '.';
+
     logSystemEvent($conn, 'attendance_cutoffs_updated', $details);
 
-    echo json_encode(['success' => true, 'message' => 'Attendance time settings were updated successfully.']);
+    echo json_encode([
+        'success' => true,
+        'message' => 'Attendance time settings were updated successfully. Today\'s records checked: '
+            . $recalculation['checked'] . '; corrected: ' . $recalculation['updated'] . '.',
+        'recalculation' => $recalculation,
+    ]);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => $error->getMessage()]);
 }
