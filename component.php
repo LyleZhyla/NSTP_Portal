@@ -121,8 +121,21 @@ function parseRotcHeight($height) {
     return ['feet' => '', 'inches' => ''];
 }
 
+ensureRotcRegistrationColumns($conn);
+$componentUserStmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ? LIMIT 1");
+$componentUserStmt->execute([$user_id]);
+$componentUser = $componentUserStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$savedComponent = normalizeProgram($componentUser['program'] ?? null);
+$savedAccountShirtSize = trim((string) ($componentUser['shirt_size'] ?? ''));
+$componentChoiceLocked = $savedComponent !== null && $savedAccountShirtSize !== '';
+if ($savedComponent && !in_array($savedComponent, $componentOptions, true)) {
+    $componentOptions[] = $savedComponent;
+}
+
 if (isset($_POST['update_component'])) {
-    if (!$componentSelectionEnabled) {
+    if ($componentChoiceLocked) {
+        $error = 'Your component and shirt size are already saved. Submit a change request to the Super Admin if a correction is needed.';
+    } elseif (!$componentSelectionEnabled && !$savedComponent) {
         $error = 'Component selection is currently closed.';
     } else {
     $selectedComponent = strtoupper(trim($_POST['component'] ?? ''));
@@ -138,7 +151,9 @@ if (isset($_POST['update_component'])) {
     }
     $rotcMsLevel = strtoupper(trim((string) ($_POST['rotc_ms_level'] ?? '')));
 
-    if (!in_array($selectedComponent, $componentOptions, true) || !isStudentComponentOpen($conn, $selectedComponent)) {
+    if ($savedComponent && $selectedComponent !== $savedComponent) {
+        $error = 'Your saved component cannot be changed without Super Admin approval.';
+    } elseif (!$savedComponent && (!in_array($selectedComponent, $componentOptions, true) || !isStudentComponentOpen($conn, $selectedComponent))) {
         $error = 'The selected NSTP component is currently closed.';
     } elseif ($shirtSizeSelection !== 'OTHER' && !in_array($shirtSize, $shirtSizeOptions, true)) {
         $error = 'Please select your shirt size before saving your component.';
@@ -345,6 +360,17 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                             </div>
                         <?php endif; ?>
 
+                        <?php if ($componentChoiceLocked): ?>
+                            <div class="alert alert-info">
+                                <i class="fas fa-lock mr-2"></i>
+                                Your component and shirt size are already saved and can no longer be changed here.
+                            </div>
+                            <p><strong>Component:</strong> <?php echo htmlspecialchars($savedComponent); ?></p>
+                            <p><strong>Shirt Size:</strong> <?php echo htmlspecialchars($savedAccountShirtSize); ?></p>
+                            <a href="profile.php?request_component_change=1#registrationEditRequestForm" class="btn btn-primary">
+                                <i class="fas fa-paper-plane mr-2"></i>Request Change from Super Admin
+                            </a>
+                        <?php else: ?>
                         <form method="POST" enctype="multipart/form-data">
                             <div class="form-group">
                                 <label for="component">NSTP Component</label>
@@ -428,6 +454,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                                 <i class="fas fa-check mr-2"></i>Save Component
                             </button>
                         </form>
+                        <?php endif; ?>
 
                         <?php if ($studentRecord): ?>
                             <hr>
@@ -466,6 +493,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
     const hasExistingRotcProof = <?php echo !empty($rotcDetails['rotc_completion_proof']) ? 'true' : 'false'; ?>;
 
     function syncRotcFields() {
+        if (!componentSelect || !rotcDetailsBlock) return;
         const isRotc = componentSelect && componentSelect.value === 'ROTC';
         const needsProof = rotcMsLevel && ['MS-31', 'MS-41'].includes(rotcMsLevel.value);
         rotcDetailsBlock.style.display = isRotc ? '' : 'none';
@@ -482,6 +510,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
     }
 
     function syncShirtSizeField() {
+        if (!shirtSizeSelect || !shirtSizeOtherBlock || !shirtSizeOther) return;
         const usesOther = shirtSizeSelect && shirtSizeSelect.value === 'OTHER';
         shirtSizeOtherBlock.style.display = usesOther ? '' : 'none';
         shirtSizeOther.required = usesOther;

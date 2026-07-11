@@ -175,7 +175,7 @@ if ($user) {
     }
 }
 $pendingDataEditRequest = $user ? dataEditRequestPendingForUser($conn, $user_id) : null;
-$showRegistrationEditForm = false;
+$showRegistrationEditForm = isset($_GET['request_component_change']);
 
 $isStudent = $user && ($user['role'] ?? '') === 'student';
 $studentRecord = null;
@@ -221,7 +221,7 @@ if ($isStudent) {
                r.province, r.city_municipality, r.barangay, r.street, r.house_no,
                r.emergency_name, r.emergency_relationship, r.emergency_contact_number, r.emergency_address,
                r.student_number AS registration_student_number, r.college, r.course, r.major, r.year_section,
-               r.component, r.formal_picture, r.created_at AS registration_date
+               r.component, r.shirt_size, r.formal_picture, r.created_at AS registration_date
         FROM tbl_student s
         LEFT JOIN tbl_public_student_registrations r ON r.registration_id = (
             SELECT r2.registration_id
@@ -1160,7 +1160,7 @@ if (!empty($user['full_name'])) {
                                     'Personal Information' => ['last_name', 'extension_name', 'first_name', 'middle_name', 'gender', 'date_of_birth', 'place_of_birth', 'religion', 'blood_type'],
                                     'Contact Information' => ['email', 'contact_number', 'house_no', 'street', 'barangay', 'city_municipality', 'province'],
                                     'Emergency Contact' => ['emergency_name', 'emergency_relationship', 'emergency_contact_number', 'emergency_address'],
-                                    'Academic Information' => ['college', 'course', 'major', 'year_section'],
+                                    'Academic Information' => ['college', 'course', 'major', 'year_section', 'component', 'shirt_size'],
                                 ];
                                 $registrationEditFields = registrationEditRequestFields();
                             ?>
@@ -1247,6 +1247,16 @@ if (!empty($user['full_name'])) {
                                                                     <div class="col-md-6">
                                                                         <div class="form-group">
                                                                             <label for="registration_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo htmlspecialchars($registrationEditFields[$fieldKey]); ?></label>
+                                                                            <?php if ($fieldKey === 'component'): ?>
+                                                                            <select class="form-control" id="registration_component" name="registration[component]" required>
+                                                                                <?php foreach (['CWTS', 'LTS', 'ROTC'] as $requestComponent): ?>
+                                                                                <option value="<?php echo $requestComponent; ?>" <?php echo $fieldValue === $requestComponent ? 'selected' : ''; ?>><?php echo $requestComponent; ?></option>
+                                                                                <?php endforeach; ?>
+                                                                            </select>
+                                                                            <?php elseif ($fieldKey === 'shirt_size'): ?>
+                                                                            <input type="text" class="form-control" id="registration_shirt_size" name="registration[shirt_size]"
+                                                                                   value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>" maxlength="30" required>
+                                                                            <?php else: ?>
                                                                             <input
                                                                                 type="<?php echo $inputType; ?>"
                                                                                 class="form-control"
@@ -1259,6 +1269,7 @@ if (!empty($user['full_name'])) {
                                                                                 <?php echo $inputPlaceholder !== '' ? 'placeholder="' . htmlspecialchars($inputPlaceholder) . '"' : ''; ?>
                                                                                 <?php echo in_array($fieldKey, ['first_name', 'last_name', 'email'], true) ? 'required' : ''; ?>
                                                                             >
+                                                                            <?php endif; ?>
                                                                         </div>
                                                                     </div>
                                                                 <?php endforeach; ?>
