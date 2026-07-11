@@ -336,6 +336,11 @@ date_default_timezone_set('Asia/Manila');
                                     <?php endforeach; ?>
                                 </div>
                                 <div class="card-footer text-right">
+                                    <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
+                                    <button type="button" class="btn btn-warning mr-2" id="recalculateTodayAttendanceBtn">
+                                        <i class="fas fa-rotate mr-1"></i> Recalculate Today's Attendance
+                                    </button>
+                                    <?php endif; ?>
                                     <button type="submit" class="btn btn-primary" id="saveCutoffsBtn">
                                         <i class="fas fa-save mr-1"></i> Save Late Times
                                     </button>
@@ -494,6 +499,35 @@ $(function() {
             complete: function() {
                 button.prop('disabled', false).html(originalHtml);
             }
+        });
+    });
+
+    $('#recalculateTodayAttendanceBtn').on('click', function() {
+        const button = $(this);
+        const originalHtml = button.html();
+        Swal.fire({
+            icon: 'warning',
+            title: "Recalculate today's attendance?",
+            text: 'Today\'s Late and On Time statuses will be corrected using the currently saved cutoff times.',
+            showCancelButton: true,
+            confirmButtonText: 'Recalculate Today'
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Recalculating');
+            $.ajax({
+                url: 'endpoint/recalculate-todays-attendance.php',
+                method: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    Swal.fire(response.success ? 'Attendance Corrected' : 'Unable to Recalculate', response.message || 'Please try again.', response.success ? 'success' : 'error');
+                },
+                error: function() {
+                    Swal.fire('Request Failed', 'Unable to recalculate today\'s attendance.', 'error');
+                },
+                complete: function() {
+                    button.prop('disabled', false).html(originalHtml);
+                }
+            });
         });
     });
 

@@ -166,7 +166,7 @@ function getAttendanceStatus(PDO $conn, $courseSection, $timeIn = null) {
     $cutoff = date('Y-m-d', $timestamp) . ' ' . ($cutoffs[$component][$period] ?? '08:00') . ':00';
     $periodLabel = $period === 'morning' ? 'Morning' : 'Afternoon';
 
-    return strtotime(date('Y-m-d H:i:s', $timestamp)) >= strtotime($cutoff)
+    return strtotime(date('Y-m-d H:i:s', $timestamp)) > strtotime($cutoff)
         ? 'Late - ' . $periodLabel
         : 'On Time - ' . $periodLabel;
 }
@@ -185,9 +185,37 @@ function getAttendanceStatusForStudent(PDO $conn, array $student, $timeIn = null
     $cutoff = date('Y-m-d', $timestamp) . ' ' . ($cutoffs[$component][$period] ?? '08:00') . ':00';
     $periodLabel = $period === 'morning' ? 'Morning' : 'Afternoon';
 
-    return strtotime(date('Y-m-d H:i:s', $timestamp)) >= strtotime($cutoff)
+    return strtotime(date('Y-m-d H:i:s', $timestamp)) > strtotime($cutoff)
         ? 'Late - ' . $periodLabel
         : 'On Time - ' . $periodLabel;
+}
+
+function recalculateAttendanceStatusesForDate(PDO $conn, $date) {
+    $date = date('Y-m-d', strtotime((string) $date));
+    $tomorrow = date('Y-m-d', strtotime($date . ' +1 day'));
+    $stmt = $conn->prepare("
+        SELECT a.tbl_attendance_id, a.time_in, a.status, s.*
+        FROM tbl_attendance a
+        INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
+        WHERE a.time_in >= ? AND a.time_in < ?
+        ORDER BY a.tbl_attendance_id
+    ");
+    $stmt->execute([$date . ' 00:00:00', $tomorrow . ' 00:00:00']);
+
+    $checked = 0;
+    $updated = 0;
+    $updateStmt = $conn->prepare("UPDATE tbl_attendance SET status = ? WHERE tbl_attendance_id = ?");
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $attendance) {
+        $checked++;
+        $correctStatus = getAttendanceStatusForStudent($conn, $attendance, $attendance['time_in']);
+        if ((string) $attendance['status'] === $correctStatus) {
+            continue;
+        }
+        $updateStmt->execute([$correctStatus, (int) $attendance['tbl_attendance_id']]);
+        $updated++;
+    }
+
+    return ['date' => $date, 'checked' => $checked, 'updated' => $updated];
 }
 
 function attendanceArchiveTableExists(PDO $conn) {

@@ -367,6 +367,12 @@ function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
         return true;
     }
 
+    // When the restriction is off, every authenticated staff scanner may
+    // record any student. Apply this before coordinator/facilitator scoping.
+    if (in_array($role, ['coordinator', 'facilitator'], true) && !isFacilitatorScanRestrictionEnabled($conn)) {
+        return true;
+    }
+
     if ($role === 'coordinator') {
         $actorProgram = normalizeProgram($actor['program'] ?? null);
         $studentProgram = studentProgramForAttendance($conn, $student);
@@ -376,10 +382,6 @@ function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
 
     if ($role !== 'facilitator') {
         return false;
-    }
-
-    if (!isFacilitatorScanRestrictionEnabled($conn)) {
-        return true;
     }
 
     if (isRotcStudentRecord($conn, $student) && getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41') {
