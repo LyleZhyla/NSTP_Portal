@@ -18,9 +18,9 @@ if ($role !== 'student') {
     exit();
 }
 
-$componentOptions = ['CWTS', 'LTS', 'ROTC'];
+$componentOptions = getOpenStudentComponents($conn);
 $rotcMsOptions = ['MS-1', 'MS-31', 'MS-41'];
-$componentSelectionEnabled = isComponentSelectionEnabled($conn);
+$componentSelectionEnabled = !empty($componentOptions);
 $message = '';
 $error = '';
 
@@ -109,8 +109,8 @@ if (isset($_POST['update_component'])) {
     }
     $rotcMsLevel = strtoupper(trim((string) ($_POST['rotc_ms_level'] ?? '')));
 
-    if (!in_array($selectedComponent, $componentOptions, true)) {
-        $error = 'Please select a valid NSTP component.';
+    if (!in_array($selectedComponent, $componentOptions, true) || !isStudentComponentOpen($conn, $selectedComponent)) {
+        $error = 'The selected NSTP component is currently closed.';
     } elseif ($selectedComponent === 'ROTC' && ($rotcHeightFeet === '' || $rotcHeightInches === '')) {
         $error = 'Please enter your ROTC height in feet and inches.';
     } elseif ($selectedComponent === 'ROTC' && ((int) $rotcHeightFeet < 3 || (int) $rotcHeightFeet > 8)) {
