@@ -37,6 +37,19 @@ function componentColumnExists(PDO $conn, $tableName, $columnName) {
     return (int) $stmt->fetchColumn() > 0;
 }
 
+function componentColumnLength(PDO $conn, $tableName, $columnName) {
+    $stmt = $conn->prepare("
+        SELECT CHARACTER_MAXIMUM_LENGTH
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$tableName, $columnName]);
+    return (int) ($stmt->fetchColumn() ?: 0);
+}
+
 function ensureRotcRegistrationColumns(PDO $conn) {
     $columns = [
         'height' => "ALTER TABLE tbl_public_student_registrations ADD COLUMN height VARCHAR(30) NULL AFTER blood_type",
@@ -51,10 +64,14 @@ function ensureRotcRegistrationColumns(PDO $conn) {
     }
 
     if (!componentColumnExists($conn, 'tbl_public_student_registrations', 'shirt_size')) {
-        $conn->exec("ALTER TABLE tbl_public_student_registrations ADD COLUMN shirt_size VARCHAR(10) NULL AFTER component");
+        $conn->exec("ALTER TABLE tbl_public_student_registrations ADD COLUMN shirt_size VARCHAR(30) NULL AFTER component");
+    } elseif (componentColumnLength($conn, 'tbl_public_student_registrations', 'shirt_size') < 30) {
+        $conn->exec("ALTER TABLE tbl_public_student_registrations MODIFY COLUMN shirt_size VARCHAR(30) NULL");
     }
     if (!componentColumnExists($conn, 'tbl_users', 'shirt_size')) {
-        $conn->exec("ALTER TABLE tbl_users ADD COLUMN shirt_size VARCHAR(10) NULL AFTER program");
+        $conn->exec("ALTER TABLE tbl_users ADD COLUMN shirt_size VARCHAR(30) NULL AFTER program");
+    } elseif (componentColumnLength($conn, 'tbl_users', 'shirt_size') < 30) {
+        $conn->exec("ALTER TABLE tbl_users MODIFY COLUMN shirt_size VARCHAR(30) NULL");
     }
 }
 
@@ -109,7 +126,10 @@ if (isset($_POST['update_component'])) {
         $error = 'Component selection is currently closed.';
     } else {
     $selectedComponent = strtoupper(trim($_POST['component'] ?? ''));
-    $shirtSize = strtoupper(trim((string) ($_POST['shirt_size'] ?? '')));
+    $shirtSizeSelection = strtoupper(trim((string) ($_POST['shirt_size'] ?? '')));
+    $shirtSize = $shirtSizeSelection === 'OTHER'
+        ? strtoupper(trim((string) ($_POST['shirt_size_other'] ?? '')))
+        : $shirtSizeSelection;
     $rotcHeightFeet = preg_replace('/\D/', '', (string) ($_POST['rotc_height_feet'] ?? ''));
     $rotcHeightInches = preg_replace('/\D/', '', (string) ($_POST['rotc_height_inches'] ?? ''));
     $rotcHeight = '';
@@ -120,8 +140,10 @@ if (isset($_POST['update_component'])) {
 
     if (!in_array($selectedComponent, $componentOptions, true) || !isStudentComponentOpen($conn, $selectedComponent)) {
         $error = 'The selected NSTP component is currently closed.';
-    } elseif (!in_array($shirtSize, $shirtSizeOptions, true)) {
+    } elseif ($shirtSizeSelection !== 'OTHER' && !in_array($shirtSize, $shirtSizeOptions, true)) {
         $error = 'Please select your shirt size before saving your component.';
+    } elseif ($shirtSizeSelection === 'OTHER' && ($shirtSize === '' || strlen($shirtSize) > 30)) {
+        $error = 'Please enter a valid custom shirt size up to 30 characters.';
     } elseif ($selectedComponent === 'ROTC' && ($rotcHeightFeet === '' || $rotcHeightInches === '')) {
         $error = 'Please enter your ROTC height in feet and inches.';
     } elseif ($selectedComponent === 'ROTC' && ((int) $rotcHeightFeet < 3 || (int) $rotcHeightFeet > 8)) {
@@ -346,8 +368,15 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                                             <?php echo htmlspecialchars($shirtSizeOption); ?>
                                         </option>
                                     <?php endforeach; ?>
+                                    <option value="OTHER" <?php echo $savedShirtSize !== '' && !in_array($savedShirtSize, $shirtSizeOptions, true) ? 'selected' : ''; ?>>Others</option>
                                 </select>
                                 <small class="form-text text-muted">Required for all NSTP components.</small>
+                            </div>
+                            <div class="form-group" id="shirtSizeOtherBlock" style="display:none;">
+                                <label for="shirt_size_other">Specify Shirt Size <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="shirt_size_other" name="shirt_size_other"
+                                       maxlength="30" value="<?php echo htmlspecialchars(!in_array($savedShirtSize, $shirtSizeOptions, true) ? $savedShirtSize : ''); ?>"
+                                       placeholder="Enter your shirt size">
                             </div>
                             <div id="rotcDetailsBlock" class="border rounded p-3 mb-3" style="display: none;">
                                 <h5 class="mb-3"><i class="fas fa-id-card mr-2"></i>ROTC Details</h5>
@@ -424,6 +453,9 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script>
     const componentSelect = document.getElementById('component');
+    const shirtSizeSelect = document.getElementById('shirt_size');
+    const shirtSizeOtherBlock = document.getElementById('shirtSizeOtherBlock');
+    const shirtSizeOther = document.getElementById('shirt_size_other');
     const rotcDetailsBlock = document.getElementById('rotcDetailsBlock');
     const rotcHeightFeet = document.getElementById('rotc_height_feet');
     const rotcHeightInches = document.getElementById('rotc_height_inches');
@@ -449,7 +481,14 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
         }
     }
 
+    function syncShirtSizeField() {
+        const usesOther = shirtSizeSelect && shirtSizeSelect.value === 'OTHER';
+        shirtSizeOtherBlock.style.display = usesOther ? '' : 'none';
+        shirtSizeOther.required = usesOther;
+    }
+
     if (componentSelect) componentSelect.addEventListener('change', syncRotcFields);
+    if (shirtSizeSelect) shirtSizeSelect.addEventListener('change', syncShirtSizeField);
     if (rotcMsLevel) rotcMsLevel.addEventListener('change', syncRotcFields);
     document.querySelectorAll('.rotc-number-only').forEach(input => {
         input.addEventListener('input', () => {
@@ -457,6 +496,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
         });
     });
     syncRotcFields();
+    syncShirtSizeField();
 </script>
 </body>
 </html>
