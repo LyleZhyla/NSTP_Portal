@@ -30,6 +30,39 @@ try {
         $component = normalizeProgram($_POST['component'] ?? null);
     }
 
+    // Keep SMTP capacity available for newly registered facilitators. Student
+    // batches resume as soon as all valid facilitator credential emails in the
+    // same scope have been delivered.
+    $facilitatorWhere = [
+        "r.registrant_role = 'facilitator'",
+        "(r.email_sent IS NULL OR r.email_sent = 0)",
+        "r.email IS NOT NULL",
+        "r.email <> ''",
+        "r.email NOT LIKE '%@no-email.tau-nstp.local'",
+    ];
+    $facilitatorParams = [];
+    if ($component) {
+        $facilitatorWhere[] = 'r.component = ?';
+        $facilitatorParams[] = $component;
+    }
+
+    $facilitatorPendingStmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_public_student_registrations r
+        WHERE " . implode(' AND ', $facilitatorWhere)
+    );
+    $facilitatorPendingStmt->execute($facilitatorParams);
+    $pendingFacilitators = (int) $facilitatorPendingStmt->fetchColumn();
+    if ($pendingFacilitators > 0) {
+        echo json_encode([
+            'success' => false,
+            'priority_blocked' => true,
+            'pending_facilitators' => $pendingFacilitators,
+            'message' => "Student emails are paused while {$pendingFacilitators} facilitator credential email(s) are pending. Send facilitator emails first.",
+        ]);
+        exit();
+    }
+
     $where = [
         "r.registrant_role = 'student'",
         "r.student_number REGEXP '^[0-9]{10}$'",

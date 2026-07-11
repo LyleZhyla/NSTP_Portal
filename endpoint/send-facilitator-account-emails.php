@@ -38,10 +38,18 @@ try {
     }
 
     $stmt = $conn->prepare("
-        SELECT user_id, full_name, username, email, role, program, last_password_change
-        FROM tbl_users
-        WHERE " . implode(' AND ', $where) . "
-        ORDER BY FIELD(program, 'CWTS', 'LTS', 'ROTC'), full_name, username
+        SELECT u.user_id, u.full_name, u.username, u.email, u.role, u.program, u.last_password_change,
+               COALESCE(registration.credentials_email_sent, 0) AS credentials_email_sent
+        FROM tbl_users u
+        LEFT JOIN (
+            SELECT user_id, MAX(email_sent) AS credentials_email_sent
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'facilitator'
+            GROUP BY user_id
+        ) registration ON registration.user_id = u.user_id
+        WHERE " . implode(' AND ', array_map(static fn($condition) => 'u.' . $condition, $where)) . "
+        ORDER BY COALESCE(registration.credentials_email_sent, 0) ASC,
+                 FIELD(u.program, 'CWTS', 'LTS', 'ROTC'), u.full_name, u.username
     ");
     $stmt->execute($params);
     $facilitators = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -59,7 +67,10 @@ try {
             continue;
         }
 
-        if (empty($facilitator['last_password_change'])) {
+        // A newly registered facilitator can still have an active temporary
+        // password even when the original SMTP attempt failed. Retry those
+        // unsent credentials with a fresh password instead of skipping them.
+        if (empty($facilitator['last_password_change']) && !empty($facilitator['credentials_email_sent'])) {
             $activeTemporary++;
             continue;
         }
@@ -92,6 +103,13 @@ try {
                 $failureReasons[$reason] = ($failureReasons[$reason] ?? 0) + 1;
                 continue;
             }
+
+            $markSentStmt = $conn->prepare("
+                UPDATE tbl_public_student_registrations
+                SET email_sent = 1
+                WHERE user_id = ? AND registrant_role = 'facilitator'
+            ");
+            $markSentStmt->execute([(int) $facilitator['user_id']]);
 
             $conn->commit();
             $sent++;
