@@ -381,13 +381,38 @@ function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     $email = strtolower(cleanText($email));
 
+    // Repair accounts deleted before registrations were explicitly marked as
+    // account_deleted. An unlinked registration plus an unlinked student row,
+    // with no matching user account, is preserved history rather than an
+    // active registration and must not permanently block re-registration.
+    if ($studentNumber !== '') {
+        $repairStmt = $conn->prepare("
+            UPDATE tbl_public_student_registrations r
+            SET r.status = 'account_deleted'
+            WHERE r.registrant_role = 'student'
+              AND r.student_number = ?
+              AND r.user_id IS NULL
+              AND COALESCE(r.status, 'submitted') <> 'attendance_only'
+              AND EXISTS (
+                  SELECT 1 FROM tbl_student s
+                  WHERE s.student_number = r.student_number AND s.user_id IS NULL
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM tbl_users u
+                  WHERE (u.role = 'student' AND u.username = r.student_number)
+                     OR (r.email <> '' AND u.email = r.email)
+              )
+        ");
+        $repairStmt->execute([$studentNumber]);
+    }
+
     if ($studentNumber !== '') {
         $stmt = $conn->prepare("
             SELECT registration_id
             FROM tbl_public_student_registrations
             WHERE registrant_role = 'student'
               AND student_number = ?
-              AND (status IS NULL OR status <> 'attendance_only')
+              AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
             LIMIT 1
         ");
         $stmt->execute([$studentNumber]);
@@ -395,7 +420,7 @@ function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email
             failRegistration('This student number already has a registration submission.');
         }
 
-        $stmt = $conn->prepare("SELECT tbl_student_id FROM tbl_student WHERE student_number = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT tbl_student_id FROM tbl_student WHERE student_number = ? AND user_id IS NOT NULL LIMIT 1");
         $stmt->execute([$studentNumber]);
         if ($stmt->fetchColumn()) {
             failRegistration('This student number is already registered.');
@@ -404,7 +429,7 @@ function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email
         $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE username = ? AND role = 'student' LIMIT 1");
         $stmt->execute([$studentNumber]);
         if ($stmt->fetchColumn()) {
-            failRegistration('This student number already has a student account.');
+            failRegistration('An account already exists for this student number. Please coordinate with the NSTP Office to verify your account.');
         }
     }
 
@@ -414,7 +439,7 @@ function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email
             FROM tbl_public_student_registrations
             WHERE registrant_role = 'student'
               AND email = ?
-              AND (status IS NULL OR status <> 'attendance_only')
+              AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
             LIMIT 1
         ");
         $stmt->execute([$email]);
@@ -425,7 +450,7 @@ function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email
         $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE email = ? LIMIT 1");
         $stmt->execute([$email]);
         if ($stmt->fetchColumn()) {
-            failRegistration('This email address already has an account.');
+            failRegistration('An account already exists for this email address. Please coordinate with the NSTP Office to verify your account.');
         }
     }
 }
@@ -846,7 +871,9 @@ try {
                 ? 'Registration saved successfully. Your student account was created and login credentials were sent to your registered email.'
                 : 'Registration saved successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
         } else {
-            $response['message'] = 'Registration saved successfully.';
+            $response['message'] = ($accountResult['reason'] ?? '') === 'already_exists'
+                ? 'An account already exists. Please coordinate with the NSTP Office to verify your account.'
+                : 'Registration saved successfully.';
         }
         echo json_encode($response);
         exit();
@@ -951,13 +978,14 @@ try {
     $stmt->execute([$email]);
     $existingEmailUsername = $stmt->fetchColumn();
     if ($existingEmailUsername && (string) $existingEmailUsername !== (string) $studentNumber) {
-        failRegistration('This email address already has an account.');
+        failRegistration('An account already exists for this email address. Please coordinate with the NSTP Office to verify your account.');
     }
 
     $stmt = $conn->prepare("
         SELECT student_number
         FROM tbl_public_student_registrations
         WHERE email = ?
+          AND COALESCE(status, 'submitted') <> 'account_deleted'
         LIMIT 1
     ");
     $stmt->execute([$email]);
@@ -1054,13 +1082,28 @@ try {
             ? 'Registration saved successfully. Your student account was created and login credentials were sent to your registered email.'
             : 'Registration saved successfully. Your student account was created, but the credentials email was not sent. Please contact the administrator.';
     } else {
-        $response['message'] = 'Registration saved successfully.';
+        $response['message'] = ($accountResult['reason'] ?? '') === 'already_exists'
+            ? 'An account already exists. Please coordinate with the NSTP Office to verify your account.'
+            : 'Registration saved successfully.';
     }
 } catch (Throwable $error) {
     if ($conn->inTransaction()) {
         $conn->rollBack();
     }
-    $response['message'] = 'Registration failed: ' . $error->getMessage();
+    $existingAccount = false;
+    if (!empty($studentNumber)) {
+        try {
+            $accountCheckStmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE role = 'student' AND username = ? LIMIT 1");
+            $accountCheckStmt->execute([$studentNumber]);
+            $existingAccount = (bool) $accountCheckStmt->fetchColumn();
+        } catch (Throwable $ignored) {
+            $existingAccount = false;
+        }
+    }
+    $response['message'] = $existingAccount
+        ? 'An account already exists. Please coordinate with the NSTP Office to verify your account.'
+        : 'Registration failed. Please try again or coordinate with the NSTP Office.';
+    error_log('Public registration failed: ' . $error->getMessage());
 }
 
 echo json_encode($response);

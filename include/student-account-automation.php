@@ -103,6 +103,10 @@ function studentAutomationOriginalSection(array $registration) {
 }
 
 function studentAutomationCourseSection(PDO $conn, array $registration) {
+    if (!empty($registration['_resolved_course_section'])) {
+        return (string) $registration['_resolved_course_section'];
+    }
+
     $component = normalizeProgram($registration['component'] ?? null) ?: 'PUBLIC';
     $originalSection = studentAutomationOriginalSection($registration);
 
@@ -355,6 +359,9 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
 
     $password = generateStudentAccountPassword();
     $program = normalizeProgram($registration['component'] ?? null);
+    // Automatic folder creation may run DDL and implicitly commit in MySQL.
+    // Resolve it before opening the account transaction.
+    $registration['_resolved_course_section'] = studentAutomationCourseSection($conn, $registration);
 
     $conn->beginTransaction();
     try {
@@ -420,6 +427,9 @@ function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumb
 
     $password = generateStudentAccountPassword();
     $program = normalizeProgram($registration['component'] ?? null);
+    // Automatic folder creation may run DDL and implicitly commit in MySQL.
+    // Resolve it before opening the account transaction.
+    $registration['_resolved_course_section'] = studentAutomationCourseSection($conn, $registration);
 
     $conn->beginTransaction();
     try {
