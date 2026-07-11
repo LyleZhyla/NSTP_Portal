@@ -23,7 +23,7 @@ $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $admin_role === 'super_admin'
-    || ($admin_role === 'facilitator' && !$facilitatorScanRestrictionEnabled);
+    || (in_array($admin_role, ['coordinator', 'facilitator'], true) && !$facilitatorScanRestrictionEnabled);
 $attendanceAccess = studentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
 $attendanceAccessCondition = $attendanceAccess['condition'];
 $attendanceAccessParams = $attendanceAccess['params'];

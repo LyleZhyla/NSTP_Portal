@@ -88,7 +88,7 @@ ensureRotcAttendanceSchema($conn);
 $isRotcFacilitator = $userRole === 'facilitator' && $program === 'ROTC';
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $userRole === 'super_admin'
-    || ($userRole === 'facilitator' && !$facilitatorScanRestrictionEnabled);
+    || (in_array($userRole, ['coordinator', 'facilitator'], true) && !$facilitatorScanRestrictionEnabled);
 
 if ($canViewAllAttendance) {
     $studentWhere = '';

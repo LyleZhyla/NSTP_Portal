@@ -288,15 +288,33 @@ function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendance
         return ['created' => false, 'reason' => 'attendance_exists'];
     }
 
+    // Make the final attendance check part of the INSERT statement so a
+    // recorded scan always wins over an absent marker.
+    $attendanceDateEnd = date('Y-m-d', strtotime($attendanceDate . ' +1 day'));
     $stmt = $conn->prepare("
         INSERT IGNORE INTO tbl_absent_notifications
             (tbl_student_id, user_id, attendance_date, cutoff_time, notify_after)
-        VALUES (?, ?, ?, ?, ?)
+        SELECT ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM tbl_attendance a
+            WHERE a.tbl_student_id = ?
+              AND a.time_in >= ?
+              AND a.time_in < ?
+        )
     ");
-    $stmt->execute([$studentId, $userId, $attendanceDate, $cutoffDateTime, $notifyAfter]);
+    $stmt->execute([
+        $studentId, $userId, $attendanceDate, $cutoffDateTime, $notifyAfter,
+        $studentId, $attendanceDate . ' 00:00:00', $attendanceDateEnd . ' 00:00:00',
+    ]);
 
     if ((int) $conn->lastInsertId() <= 0) {
-        return ['created' => false, 'reason' => 'already_notified'];
+        return [
+            'created' => false,
+            'reason' => studentHasAttendanceRecordForDate($conn, $studentId, $attendanceDate)
+                ? 'attendance_exists'
+                : 'already_notified',
+        ];
     }
 
     $absentNotificationId = (int) $conn->lastInsertId();
