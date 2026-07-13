@@ -12,7 +12,8 @@ if (!empty($token)) {
         $check_token_query = "SELECT pr.*, tu.full_name, tu.email, tu.user_id 
                              FROM password_resets pr
                              JOIN tbl_users tu ON pr.email = tu.email
-                             WHERE pr.token = :token AND pr.expires_at > NOW()";
+                             WHERE pr.token = :token AND pr.expires_at > NOW()
+                             LIMIT 1";
         $stmt = $conn->prepare($check_token_query);
         $stmt->execute([':token' => $token]);
         $token_data = $stmt->fetch();
@@ -43,30 +44,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error) && isset($token_data)
         try {
             // Hash new password
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            
-            // Update password in tbl_users
-            $update_query = "UPDATE tbl_users SET password_hash = :password, last_password_change = NOW() WHERE email = :email";
+
+            // Tie the reset to the exact account resolved from the token. Updating by
+            // email can target the wrong row on databases that contain legacy duplicate
+            // emails, while the user continues logging in to the unchanged account.
+            $conn->beginTransaction();
+            $update_query = "UPDATE tbl_users
+                             SET password_hash = :password, last_password_change = NOW()
+                             WHERE user_id = :user_id";
             $update_stmt = $conn->prepare($update_query);
-            
-            if ($update_stmt->execute([
+            $update_stmt->execute([
                 ':password' => $hashed_password,
-                ':email' => $token_data['email']
-            ])) {
-                // Delete used token
-                $delete_query = "DELETE FROM password_resets WHERE token = :token";
-                $delete_stmt = $conn->prepare($delete_query);
-                $delete_stmt->execute([':token' => $token]);
-                
-                $success = "Password has been successfully reset. You can now login with your new password.";
-                
-                // Redirect to login page after 3 seconds
-                header("refresh:3;url=index.php");
-            } else {
-                $error = "Failed to reset password. Please try again.";
+                ':user_id' => (int) $token_data['user_id']
+            ]);
+
+            if ($update_stmt->rowCount() !== 1) {
+                throw new RuntimeException('The password update did not affect exactly one account.');
             }
-        } catch (PDOException $e) {
+
+            // Confirm the stored hash before consuming the one-time token or reporting
+            // success. This prevents a false success message after a no-op update.
+            $verify_stmt = $conn->prepare("SELECT password_hash FROM tbl_users WHERE user_id = :user_id LIMIT 1");
+            $verify_stmt->execute([':user_id' => (int) $token_data['user_id']]);
+            $stored_hash = $verify_stmt->fetchColumn();
+            if (!$stored_hash || !password_verify($password, $stored_hash)) {
+                throw new RuntimeException('The new password could not be verified after saving.');
+            }
+
+            // Invalidate every outstanding reset link for this account.
+            $delete_query = "DELETE FROM password_resets WHERE email = :email";
+            $delete_stmt = $conn->prepare($delete_query);
+            $delete_stmt->execute([':email' => $token_data['email']]);
+
+            $conn->commit();
+            $success = "Password has been successfully reset. You can now login with your new password.";
+
+            // The login form is login.php; index.php is an authenticated application page.
+            header("refresh:3;url=login.php");
+        } catch (Throwable $e) {
+            if ($conn->inTransaction()) {
+                $conn->rollBack();
+            }
             error_log("Password reset error: " . $e->getMessage());
-            $error = "An error occurred. Please try again later.";
+            $error = "Failed to reset password. Please request a new reset link and try again.";
         }
     }
 }
@@ -219,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error) && isset($token_data)
                                 <?php echo $success; ?>
                             </div>
                             <div class="text-center mt-3">
-                                <a href="index.php" class="btn btn-primary">
+                                <a href="login.php" class="btn btn-primary">
                                     <i class="fas fa-sign-in-alt me-2"></i>Go to Login
                                 </a>
                             </div>
