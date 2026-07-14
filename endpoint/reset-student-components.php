@@ -139,6 +139,10 @@ try {
     foreach (['CWTS', 'LTS', 'ROTC'] as $selectionComponent) {
         setSystemSetting($conn, 'component_selection_' . strtolower($selectionComponent) . '_enabled', '0');
     }
+    setSystemSetting($conn, 'component_selection_rotc_ms_configured', '1');
+    foreach (getRotcMsLevels() as $selectionMsLevel) {
+        setSystemSetting($conn, rotcMsLevelSettingKey($selectionMsLevel), '0');
+    }
     logSystemEvent(
         $conn,
         'student_components_reset',

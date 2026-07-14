@@ -491,14 +491,54 @@ function getOpenStudentComponents(PDO $conn) {
         return $components;
     }
 
-    return array_values(array_filter($components, static function ($component) use ($conn) {
+    $openComponents = array_values(array_filter($components, static function ($component) use ($conn) {
         return getSystemSetting($conn, 'component_selection_' . strtolower($component) . '_enabled', '0') === '1';
+    }));
+
+    return array_values(array_filter($openComponents, static function ($component) use ($conn) {
+        return $component !== 'ROTC' || !empty(getOpenRotcMsLevels($conn));
     }));
 }
 
 function isStudentComponentOpen(PDO $conn, $component) {
     $component = normalizeProgram($component);
     return $component && in_array($component, getOpenStudentComponents($conn), true);
+}
+
+function getRotcMsLevels() {
+    return ['MS-1', 'MS-31', 'MS-41'];
+}
+
+function rotcMsLevelSettingKey($msLevel) {
+    $msLevel = normalizeRotcMsLevel($msLevel);
+    return $msLevel ? 'component_selection_rotc_' . strtolower(str_replace('-', '_', $msLevel)) . '_enabled' : null;
+}
+
+function getOpenRotcMsLevels(PDO $conn) {
+    if (!isComponentSelectionEnabled($conn)) {
+        return [];
+    }
+
+    $componentsConfigured = getSystemSetting($conn, 'component_selection_components_configured', '0') === '1';
+    $rotcOpen = !$componentsConfigured
+        || getSystemSetting($conn, 'component_selection_rotc_enabled', '0') === '1';
+    if (!$rotcOpen) {
+        return [];
+    }
+
+    $levels = getRotcMsLevels();
+    if (getSystemSetting($conn, 'component_selection_rotc_ms_configured', '0') !== '1') {
+        return $levels;
+    }
+
+    return array_values(array_filter($levels, static function ($msLevel) use ($conn) {
+        return getSystemSetting($conn, rotcMsLevelSettingKey($msLevel), '0') === '1';
+    }));
+}
+
+function isStudentRotcMsLevelOpen(PDO $conn, $msLevel) {
+    $msLevel = normalizeRotcMsLevel($msLevel);
+    return $msLevel && in_array($msLevel, getOpenRotcMsLevels($conn), true);
 }
 
 function ensureSystemLogsTable(PDO $conn) {

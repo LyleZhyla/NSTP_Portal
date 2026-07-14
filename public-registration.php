@@ -26,6 +26,7 @@ $showNameFields = !empty($fields['name']);
 $showEmailField = !empty($fields['email']);
 $componentSelectionEnabled = !$isFacilitatorForm && !$studentNumberBased && isComponentSelectionEnabled($conn);
 $openStudentComponents = $componentSelectionEnabled ? getOpenStudentComponents($conn) : [];
+$openRotcMsLevels = $componentSelectionEnabled ? getOpenRotcMsLevels($conn) : [];
 $componentSelectionEnabled = $componentSelectionEnabled && !empty($openStudentComponents);
 $religionOptions = philippinesReligionOptions();
 ?>
@@ -279,9 +280,9 @@ $religionOptions = philippinesReligionOptions();
                         <label class="form-label" for="rotc_ms_level">ROTC MS Level <span class="required">*</span></label>
                         <select class="form-select" id="rotc_ms_level" name="rotc_ms_level">
                             <option value="">Select MS Level</option>
-                            <option value="MS-1">MS-1</option>
-                            <option value="MS-31">MS-31</option>
-                            <option value="MS-41">MS-41</option>
+                            <?php foreach ($openRotcMsLevels as $openMsLevel): ?>
+                            <option value="<?php echo htmlspecialchars($openMsLevel); ?>"><?php echo htmlspecialchars($openMsLevel); ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <?php endif; ?>

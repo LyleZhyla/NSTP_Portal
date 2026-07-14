@@ -660,6 +660,8 @@ try {
     $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
     if ($component !== 'ROTC') {
         $rotcMsLevel = null;
+    } elseif (!$isFacilitatorRegistration && $rotcMsLevel && !isStudentRotcMsLevelOpen($conn, $rotcMsLevel)) {
+        failRegistration('The selected ROTC MS level is currently closed for registration.');
     }
 
     if (!$enabledFields['extension_name']) {

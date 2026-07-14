@@ -14,6 +14,7 @@ if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coor
 
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
 $openStudentComponents = getOpenStudentComponents($conn);
+$openRotcMsLevels = getOpenRotcMsLevels($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
 $cutoffComponents = attendanceCutoffComponentsForUser($currentUser);
@@ -191,6 +192,24 @@ date_default_timezone_set('Asia/Manila');
                                         </div>
                                     </div>
                                     <?php endforeach; ?>
+                                    <div class="ml-3 mt-1 mb-3 pl-3 border-left" id="rotcMsSelectionSettings">
+                                        <span class="text-muted small d-block mb-2">Choose which ROTC MS levels students may select.</span>
+                                        <?php foreach (getRotcMsLevels() as $selectionMsLevel): ?>
+                                        <?php $msLevelOpen = in_array($selectionMsLevel, $openRotcMsLevels, true); ?>
+                                        <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2">
+                                            <strong class="small"><?php echo htmlspecialchars($selectionMsLevel); ?></strong>
+                                            <div class="custom-control custom-switch">
+                                                <input type="checkbox" class="custom-control-input rotc-ms-selection-toggle"
+                                                       id="componentSelection<?php echo htmlspecialchars(str_replace('-', '', $selectionMsLevel)); ?>"
+                                                       data-ms-level="<?php echo htmlspecialchars($selectionMsLevel); ?>"
+                                                       <?php echo $msLevelOpen ? 'checked' : ''; ?>>
+                                                <label class="custom-control-label font-weight-bold small" for="componentSelection<?php echo htmlspecialchars(str_replace('-', '', $selectionMsLevel)); ?>">
+                                                    <?php echo $msLevelOpen ? 'Open' : 'Closed'; ?>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                                 <div class="mt-3 p-3 border rounded">
                                     <div class="d-flex align-items-center justify-content-between flex-wrap">
@@ -361,6 +380,24 @@ date_default_timezone_set('Asia/Manila');
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(function() {
+    function syncComponentSelectionState(response) {
+        const openComponents = response.open_components || [];
+        const openRotcLevels = response.open_rotc_ms_levels || [];
+        $('.component-selection-toggle').each(function() {
+            const toggle = $(this);
+            const isOpen = openComponents.includes(toggle.data('component'));
+            toggle.prop('checked', isOpen);
+            toggle.next('label').text(isOpen ? 'Open' : 'Closed');
+        });
+        $('.rotc-ms-selection-toggle').each(function() {
+            const toggle = $(this);
+            const isOpen = openRotcLevels.includes(toggle.data('ms-level'));
+            toggle.prop('checked', isOpen);
+            toggle.next('label').text(isOpen ? 'Open' : 'Closed');
+        });
+        $('#componentSelectionStatus').text(openComponents.length + ' component(s) open for student registration.');
+    }
+
     $('.component-selection-toggle').on('change', function() {
         const toggle = $(this);
         const enabled = toggle.is(':checked') ? 1 : 0;
@@ -373,8 +410,7 @@ $(function() {
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
-                    toggle.next('label').text(response.enabled ? 'Open' : 'Closed');
-                    $('#componentSelectionStatus').text((response.open_components || []).length + ' component(s) open for student registration.');
+                    syncComponentSelectionState(response);
                     Swal.fire({
                         icon: 'success',
                         title: response.enabled ? 'Selection Open' : 'Selection Closed',
@@ -389,6 +425,37 @@ $(function() {
             },
             error: function() {
                 Swal.fire('Error', 'Failed to update component selection setting.', 'error');
+                toggle.prop('checked', !enabled);
+            }
+        });
+    });
+
+    $('.rotc-ms-selection-toggle').on('change', function() {
+        const toggle = $(this);
+        const enabled = toggle.is(':checked') ? 1 : 0;
+
+        $.ajax({
+            url: 'endpoint/toggle-component-selection.php',
+            method: 'POST',
+            data: { enabled: enabled, component: 'ROTC', rotc_ms_level: toggle.data('ms-level') },
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    syncComponentSelectionState(response);
+                    Swal.fire({
+                        icon: 'success',
+                        title: response.enabled ? 'MS Level Open' : 'MS Level Closed',
+                        text: response.message,
+                        timer: 1800,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire('Error', response.message, 'error');
+                    toggle.prop('checked', !enabled);
+                }
+            },
+            error: function() {
+                Swal.fire('Error', 'Failed to update the ROTC MS level setting.', 'error');
                 toggle.prop('checked', !enabled);
             }
         });
@@ -457,6 +524,8 @@ $(function() {
                     if (response.success) {
                         $('.component-selection-toggle').prop('checked', false);
                         $('.component-selection-toggle').next('label').text('Closed');
+                        $('.rotc-ms-selection-toggle').prop('checked', false);
+                        $('.rotc-ms-selection-toggle').next('label').text('Closed');
                         $('#componentSelectionStatus').text('0 component(s) open for student registration.');
                         Swal.fire('Reset Complete', response.message, 'success').then(function() {
                             window.location.reload();

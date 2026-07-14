@@ -61,6 +61,49 @@ try {
         echo json_encode($response);
         exit();
     }
+
+    $normalizedEmail = strtolower($email);
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_public_student_registrations
+        WHERE registrant_role = 'student'
+          AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+          AND email = :email
+    ");
+    $stmt->execute(['email' => $normalizedEmail]);
+
+    if ($stmt->fetchColumn() > 0) {
+        $response['message'] = 'Email already has a registration submission';
+        echo json_encode($response);
+        exit();
+    }
+
+    $studentNumber = preg_replace('/\D/', '', $username);
+    if (preg_match('/^\d{10}$/', $studentNumber)) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+              AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+              AND student_number = :student_number
+        ");
+        $stmt->execute(['student_number' => $studentNumber]);
+
+        if ($stmt->fetchColumn() > 0) {
+            $response['message'] = 'Student number already has a registration submission';
+            echo json_encode($response);
+            exit();
+        }
+
+        $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_student WHERE student_number = :student_number AND user_id IS NOT NULL");
+        $stmt->execute(['student_number' => $studentNumber]);
+
+        if ($stmt->fetchColumn() > 0) {
+            $response['message'] = 'Student number is already registered';
+            echo json_encode($response);
+            exit();
+        }
+    }
     
     // Hash password
     $password_hash = password_hash($password, PASSWORD_DEFAULT);
