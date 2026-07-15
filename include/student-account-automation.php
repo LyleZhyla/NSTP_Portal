@@ -71,6 +71,7 @@ function studentAutomationLatestRegistration(PDO $conn, $studentNumber) {
         SELECT *
         FROM tbl_public_student_registrations
         WHERE student_number = ?
+          AND COALESCE(status, 'submitted') <> 'account_deleted'
         ORDER BY CASE WHEN status = 'attendance_only' THEN 1 ELSE 0 END, created_at DESC
         LIMIT 1
     ");

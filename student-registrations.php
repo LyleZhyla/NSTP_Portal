@@ -125,7 +125,7 @@ $query = "
     FROM tbl_public_student_registrations r
     LEFT JOIN tbl_users u ON r.user_id = u.user_id
     LEFT JOIN tbl_public_registration_forms f ON r.form_id = f.form_id
-    WHERE COALESCE(r.status, 'submitted') <> 'attendance_only'
+    WHERE COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
 ";
 $params = [];
 

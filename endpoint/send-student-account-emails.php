@@ -37,7 +37,7 @@ try {
         "r.email <> ''",
         "r.email NOT LIKE '%@no-email.tau-nstp.local'",
         "(r.email_sent IS NULL OR r.email_sent = 0)",
-        "COALESCE(r.status, 'submitted') <> 'attendance_only'",
+        "COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')",
         "r.registration_id = (
             SELECT MIN(earliest.registration_id)
             FROM tbl_public_student_registrations earliest
@@ -49,7 +49,7 @@ try {
               AND earliest.email <> ''
               AND earliest.email NOT LIKE '%@no-email.tau-nstp.local'
               AND (earliest.email_sent IS NULL OR earliest.email_sent = 0)
-              AND COALESCE(earliest.status, 'submitted') <> 'attendance_only'
+              AND COALESCE(earliest.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
         )",
     ];
     $params = [];

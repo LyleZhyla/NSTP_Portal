@@ -12,6 +12,7 @@ require_once '../include/religions.php';
 require_once '../include/automatic-sectioning.php';
 
 $response = ['success' => false, 'message' => ''];
+$studentRegistrationLockAcquired = false;
 
 function failRegistration($message) {
     echo json_encode(['success' => false, 'message' => $message]);
@@ -368,6 +369,7 @@ function findLatestPublicRegistrationByStudentNumber(PDO $conn, $studentNumber) 
         SELECT *
         FROM tbl_public_student_registrations
         WHERE student_number = ?
+          AND COALESCE(status, 'submitted') <> 'account_deleted'
         ORDER BY
             CASE WHEN email LIKE '%@no-email.tau-nstp.local' THEN 1 ELSE 0 END,
             created_at DESC
@@ -380,31 +382,6 @@ function findLatestPublicRegistrationByStudentNumber(PDO $conn, $studentNumber) 
 function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email) {
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     $email = strtolower(cleanText($email));
-
-    // Repair accounts deleted before registrations were explicitly marked as
-    // account_deleted. An unlinked registration plus an unlinked student row,
-    // with no matching user account, is preserved history rather than an
-    // active registration and must not permanently block re-registration.
-    if ($studentNumber !== '') {
-        $repairStmt = $conn->prepare("
-            UPDATE tbl_public_student_registrations r
-            SET r.status = 'account_deleted'
-            WHERE r.registrant_role = 'student'
-              AND r.student_number = ?
-              AND r.user_id IS NULL
-              AND COALESCE(r.status, 'submitted') <> 'attendance_only'
-              AND EXISTS (
-                  SELECT 1 FROM tbl_student s
-                  WHERE s.student_number = r.student_number AND s.user_id IS NULL
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM tbl_users u
-                  WHERE (u.role = 'student' AND u.username = r.student_number)
-                     OR (r.email <> '' AND u.email = r.email)
-              )
-        ");
-        $repairStmt->execute([$studentNumber]);
-    }
 
     if ($studentNumber !== '') {
         $stmt = $conn->prepare("
@@ -452,6 +429,21 @@ function assertStudentFullRegistrationIsUnique(PDO $conn, $studentNumber, $email
         if ($stmt->fetchColumn()) {
             failRegistration('An account already exists for this email address. Please coordinate with the NSTP Office to verify your account.');
         }
+    }
+}
+
+function acquireStudentFullRegistrationLock(PDO $conn) {
+    $stmt = $conn->query("SELECT GET_LOCK('tau_nstp_student_full_registration', 10)");
+    if ((int) $stmt->fetchColumn() !== 1) {
+        failRegistration('Another registration is being saved. Please wait a moment and try again.');
+    }
+}
+
+function releaseStudentFullRegistrationLock(PDO $conn) {
+    try {
+        $conn->query("SELECT RELEASE_LOCK('tau_nstp_student_full_registration')");
+    } catch (Throwable $ignored) {
+        // MySQL also releases named locks when this request closes its connection.
     }
 }
 
@@ -999,6 +991,13 @@ try {
         failRegistration('This email address already has a public registration submission.');
     }
 
+    // Recheck while holding a database lock so simultaneous submissions from
+    // double-clicks, multiple tabs, or slow requests cannot both pass the
+    // earlier duplicate validation and insert the same student.
+    acquireStudentFullRegistrationLock($conn);
+    $studentRegistrationLockAcquired = true;
+    assertStudentFullRegistrationIsUnique($conn, $studentNumber, $email);
+
     if (!$studentNumberBased && $enabledFields['formal_picture'] && (empty($_FILES['formal_picture']) || ($_FILES['formal_picture']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK)) {
         failRegistration('Formal picture is required.');
     }
@@ -1075,6 +1074,8 @@ try {
     $registrationId = (int) $conn->lastInsertId();
 
     $conn->commit();
+    releaseStudentFullRegistrationLock($conn);
+    $studentRegistrationLockAcquired = false;
 
     $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
 
@@ -1091,6 +1092,10 @@ try {
 } catch (Throwable $error) {
     if ($conn->inTransaction()) {
         $conn->rollBack();
+    }
+    if ($studentRegistrationLockAcquired) {
+        releaseStudentFullRegistrationLock($conn);
+        $studentRegistrationLockAcquired = false;
     }
     $existingAccount = false;
     if (!empty($studentNumber)) {
