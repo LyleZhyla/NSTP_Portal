@@ -300,6 +300,39 @@ date_default_timezone_set('Asia/Manila');
                     </div>
                     <?php endif; ?>
 
+                    <div class="col-lg-12">
+                        <div class="card settings-card">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-envelope mr-2"></i>Attendance Email Notifications</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="row align-items-end">
+                                    <div class="col-md-4">
+                                        <label for="attendanceEmailDate">Attendance Date</label>
+                                        <input type="date" class="form-control" id="attendanceEmailDate" value="<?php echo date('Y-m-d'); ?>" max="<?php echo date('Y-m-d'); ?>">
+                                    </div>
+                                    <div class="col-md-8 mt-3 mt-md-0">
+                                        <button type="button" class="btn btn-warning attendance-email-btn" data-type="late">
+                                            <i class="fas fa-clock mr-1"></i> Send Late Emails
+                                        </button>
+                                        <button type="button" class="btn btn-danger attendance-email-btn ml-2" data-type="absent">
+                                            <i class="fas fa-user-times mr-1"></i> Send Absent Emails
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="text-muted small mb-0 mt-3">
+                                    Scanning only records and displays the attendance status; it does not send a Late email automatically.
+                                    Absent emails are generated only for students whose grace period has passed and who had a scheduled attendance session.
+                                    <?php if (($currentUser['role'] ?? '') === 'coordinator'): ?>
+                                        Only students under your <?php echo htmlspecialchars(normalizeProgram($currentUser['program'] ?? null) ?? 'assigned'); ?> component are included.
+                                    <?php else: ?>
+                                        As super admin, all eligible students are included.
+                                    <?php endif; ?>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     <?php if (!empty($cutoffComponents)): ?>
                     <div class="col-lg-12">
                         <div class="card settings-card">
@@ -315,7 +348,7 @@ date_default_timezone_set('Asia/Manila');
                                             <div class="flex-fill">
                                                 <strong>Absent notification delay</strong>
                                                 <span class="text-muted small">
-                                                    Students without attendance will be notified this many hours after their morning late start time.
+                                                    Students become eligible for a manual Absent email this many hours after their morning late start time.
                                                 </span>
                                             </div>
                                             <div style="width: 160px;">
@@ -595,6 +628,66 @@ $(function() {
                 },
                 complete: function() {
                     button.prop('disabled', false).html(originalHtml);
+                }
+            });
+        });
+    });
+
+    $('.attendance-email-btn').on('click', function() {
+        const button = $(this);
+        const type = button.data('type');
+        const typeLabel = type === 'late' ? 'Late' : 'Absent';
+        const attendanceDate = $('#attendanceEmailDate').val();
+        const originalHtml = button.html();
+
+        if (!attendanceDate) {
+            Swal.fire('Select a date', 'Choose the attendance date first.', 'warning');
+            return;
+        }
+
+        Swal.fire({
+            icon: 'question',
+            title: `Send pending ${typeLabel} emails?`,
+            text: `Only unsent ${typeLabel.toLowerCase()} attendance emails for ${attendanceDate} will be processed.`,
+            showCancelButton: true,
+            confirmButtonText: `Send ${typeLabel} Emails`
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+
+            $('.attendance-email-btn').prop('disabled', true);
+            button.html('<i class="fas fa-spinner fa-spin mr-1"></i> Sending');
+
+            $.ajax({
+                url: 'endpoint/send-attendance-status-emails.php',
+                method: 'POST',
+                data: { type: type, date: attendanceDate },
+                dataType: 'json',
+                timeout: 120000,
+                success: function(response) {
+                    if (!response.success) {
+                        Swal.fire('Unable to send', response.message || 'Please try again.', 'error');
+                        return;
+                    }
+
+                    const summary = response.summary || {};
+                    Swal.fire({
+                        icon: summary.sent > 0 ? 'success' : 'info',
+                        title: summary.sent > 0 ? 'Emails Sent' : 'No Pending Emails',
+                        html: `
+                            <div class="text-left">
+                                <div><strong>Sent:</strong> ${summary.sent || 0}</div>
+                                <div><strong>No valid email:</strong> ${summary.no_email || 0}</div>
+                                <div><strong>Failed:</strong> ${summary.failed || 0}</div>
+                            </div>
+                        `
+                    });
+                },
+                error: function() {
+                    Swal.fire('Request failed', 'The email batch did not finish. Unsent records remain pending and can be retried.', 'error');
+                },
+                complete: function() {
+                    $('.attendance-email-btn').prop('disabled', false);
+                    button.html(originalHtml);
                 }
             });
         });

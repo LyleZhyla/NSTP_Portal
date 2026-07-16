@@ -172,12 +172,44 @@ function markNotificationEmailed(PDO $conn, $notificationId) {
     return $stmt->execute([(int) $notificationId]);
 }
 
+function ensureAttendanceEmailTrackingSchema(PDO $conn) {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'tbl_attendance'
+          AND COLUMN_NAME = 'late_email_sent'
+    ");
+    $stmt->execute();
+    if ((int) $stmt->fetchColumn() === 0) {
+        $conn->exec("ALTER TABLE tbl_attendance ADD COLUMN late_email_sent TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
+    }
+}
+
 function sendLateAttendanceNotification(PDO $conn, array $student, array $attendance) {
-    if (stripos((string) ($attendance['status'] ?? ''), 'Late') !== 0 || empty($student['user_id'])) {
+    if (stripos((string) ($attendance['status'] ?? ''), 'Late') !== 0) {
         return false;
     }
 
+    $attendanceId = (int) ($attendance['tbl_attendance_id'] ?? 0);
+    if ($attendanceId <= 0) {
+        return false;
+    }
+
+    ensureAttendanceEmailTrackingSchema($conn);
     ensureNotificationTables($conn);
+
+    // Value 2 means another request is currently sending this email. This
+    // prevents duplicate messages from double-clicks or concurrent requests.
+    $claimStmt = $conn->prepare("
+        UPDATE tbl_attendance
+        SET late_email_sent = 2
+        WHERE tbl_attendance_id = ? AND late_email_sent = 0
+    ");
+    $claimStmt->execute([$attendanceId]);
+    if ($claimStmt->rowCount() === 0) {
+        return false;
+    }
 
     $timeIn = $attendance['time_in'] ?? date('Y-m-d H:i:s');
     $dateLabel = date('F d, Y', strtotime($timeIn));
@@ -185,22 +217,23 @@ function sendLateAttendanceNotification(PDO $conn, array $student, array $attend
     $status = (string) ($attendance['status'] ?? 'Late');
     $title = 'Late Attendance Notice';
     $message = "You were marked late on {$dateLabel} at {$timeLabel}. Status: {$status}.";
-    $notificationId = createUserNotification(
-        $conn,
-        (int) $student['user_id'],
-        'late_attendance',
-        $title,
-        $message,
-        'tbl_attendance',
-        (int) ($attendance['tbl_attendance_id'] ?? 0)
-    );
-
-    if ($notificationId <= 0) {
-        return false;
+    $notificationId = 0;
+    if (!empty($student['user_id'])) {
+        $notificationId = createUserNotification(
+            $conn,
+            (int) $student['user_id'],
+            'late_attendance',
+            $title,
+            $message,
+            'tbl_attendance',
+            $attendanceId
+        );
     }
 
     $recipient = notificationStudentEmail($conn, $student);
     if (!$recipient) {
+        $resetStmt = $conn->prepare("UPDATE tbl_attendance SET late_email_sent = 0 WHERE tbl_attendance_id = ?");
+        $resetStmt->execute([$attendanceId]);
         return false;
     }
 
@@ -221,10 +254,16 @@ HTML;
     $textBody = "Hello {$recipient['name']},\n\nYour attendance scan for {$dateLabel} at {$timeLabel} was recorded as {$status}.\n\nTAU NSTP Portal";
 
     if (sendAppMail($recipient['email'], $recipient['name'], $title, $htmlBody, $textBody)) {
-        markNotificationEmailed($conn, $notificationId);
+        $sentStmt = $conn->prepare("UPDATE tbl_attendance SET late_email_sent = 1 WHERE tbl_attendance_id = ?");
+        $sentStmt->execute([$attendanceId]);
+        if ($notificationId > 0) {
+            markNotificationEmailed($conn, $notificationId);
+        }
         return true;
     }
 
+    $resetStmt = $conn->prepare("UPDATE tbl_attendance SET late_email_sent = 0 WHERE tbl_attendance_id = ?");
+    $resetStmt->execute([$attendanceId]);
     return false;
 }
 
@@ -270,7 +309,7 @@ function studentHasAttendanceRecordForDate(PDO $conn, $studentId, $attendanceDat
     return (int) $archiveStmt->fetchColumn() > 0;
 }
 
-function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendanceDate, $cutoffDateTime, $notifyAfter, $graceHours = 5) {
+function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendanceDate, $cutoffDateTime, $notifyAfter, $graceHours = 5, $sendEmail = false) {
     ensureNotificationTables($conn);
     ensureAbsentNotificationTable($conn);
 
@@ -348,6 +387,15 @@ function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendance
     }
 
     $emailSent = false;
+    if (!$sendEmail) {
+        return [
+            'created' => true,
+            'absent_notification_id' => $absentNotificationId,
+            'notification_id' => $notificationId,
+            'email_sent' => false,
+        ];
+    }
+
     $recipient = notificationStudentEmail($conn, $student);
     if ($recipient) {
         $safeName = htmlspecialchars($recipient['name'] ?: $studentName, ENT_QUOTES, 'UTF-8');
@@ -388,6 +436,75 @@ HTML;
         'notification_id' => $notificationId,
         'email_sent' => $emailSent,
     ];
+}
+
+function sendPendingAbsentAttendanceEmail(PDO $conn, array $student, array $absentNotification) {
+    $absentNotificationId = (int) ($absentNotification['absent_notification_id'] ?? 0);
+    if ($absentNotificationId <= 0) {
+        return false;
+    }
+
+    ensureNotificationTables($conn);
+    ensureAbsentNotificationTable($conn);
+
+    // Value 2 reserves the row while SMTP is running and prevents duplicate
+    // sends when the button is clicked more than once.
+    $claimStmt = $conn->prepare("
+        UPDATE tbl_absent_notifications
+        SET email_sent = 2
+        WHERE absent_notification_id = ? AND email_sent = 0
+    ");
+    $claimStmt->execute([$absentNotificationId]);
+    if ($claimStmt->rowCount() === 0) {
+        return false;
+    }
+
+    $recipient = notificationStudentEmail($conn, $student);
+    if (!$recipient) {
+        $resetStmt = $conn->prepare("UPDATE tbl_absent_notifications SET email_sent = 0 WHERE absent_notification_id = ?");
+        $resetStmt->execute([$absentNotificationId]);
+        return false;
+    }
+
+    $attendanceDate = date('Y-m-d', strtotime((string) ($absentNotification['attendance_date'] ?? 'now')));
+    $cutoffDateTime = date('Y-m-d H:i:s', strtotime((string) ($absentNotification['cutoff_time'] ?? 'now')));
+    $notifyAfter = date('Y-m-d H:i:s', strtotime((string) ($absentNotification['notify_after'] ?? 'now')));
+    $graceHours = max(1, (int) round((strtotime($notifyAfter) - strtotime($cutoffDateTime)) / 3600));
+    $dateLabel = date('F d, Y', strtotime($attendanceDate));
+    $cutoffLabel = date('h:i A', strtotime($cutoffDateTime));
+    $notifyAfterLabel = date('h:i A', strtotime($notifyAfter));
+    $studentName = trim((string) ($student['student_name'] ?? 'Student'));
+    $title = 'Absent Attendance Notice';
+
+    $safeName = htmlspecialchars($recipient['name'] ?: $studentName, ENT_QUOTES, 'UTF-8');
+    $safeDate = htmlspecialchars($dateLabel, ENT_QUOTES, 'UTF-8');
+    $safeCutoff = htmlspecialchars($cutoffLabel, ENT_QUOTES, 'UTF-8');
+    $safeNotifyAfter = htmlspecialchars($notifyAfterLabel, ENT_QUOTES, 'UTF-8');
+    $safeGraceHours = htmlspecialchars((string) $graceHours, ENT_QUOTES, 'UTF-8');
+    $bodyHtml = <<<HTML
+<p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#1f2937;">Hello {$safeName},</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#40534a;">No attendance scan was recorded for {$safeDate} within the allowed time.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;background:#fff1f2;border:1px solid #fecdd3;border-left:6px solid #b23a48;border-radius:10px;">
+    <tr><td style="padding:16px 18px;color:#1f2937;"><strong style="color:#0f5132;">Date:</strong> {$safeDate}<br><strong style="color:#0f5132;">Late start time:</strong> {$safeCutoff}<br><strong style="color:#0f5132;">Absent notification time:</strong> {$safeNotifyAfter}<br><strong style="color:#0f5132;">Grace period:</strong> {$safeGraceHours} hour(s)</td></tr>
+</table>
+<p style="margin:0;font-size:15px;line-height:1.7;color:#40534a;">You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.</p>
+HTML;
+
+    $htmlBody = renderAppEmailTemplate($title, 'You are considered absent for today.', $bodyHtml);
+    $textBody = "Hello {$recipient['name']},\n\nNo attendance scan was recorded for {$dateLabel} by {$notifyAfterLabel}. You are considered absent for this day. Please coordinate with your facilitator or coordinator about your absence.\n\nTAU NSTP Portal";
+
+    if (sendAppMail($recipient['email'], $recipient['name'], $title, $htmlBody, $textBody)) {
+        $sentStmt = $conn->prepare("UPDATE tbl_absent_notifications SET email_sent = 1 WHERE absent_notification_id = ?");
+        $sentStmt->execute([$absentNotificationId]);
+        if (!empty($absentNotification['notification_id'])) {
+            markNotificationEmailed($conn, (int) $absentNotification['notification_id']);
+        }
+        return true;
+    }
+
+    $resetStmt = $conn->prepare("UPDATE tbl_absent_notifications SET email_sent = 0 WHERE absent_notification_id = ?");
+    $resetStmt->execute([$absentNotificationId]);
+    return false;
 }
 
 function clearAbsentAttendanceNotificationForStudentDate(PDO $conn, $studentId, $attendanceDate) {

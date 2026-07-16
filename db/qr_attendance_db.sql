@@ -91,7 +91,8 @@ CREATE TABLE `tbl_attendance` (
   `tbl_student_id` int(11) NOT NULL,
   `time_in` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `notes` text DEFAULT NULL,
-  `status` varchar(50) DEFAULT 'On Time'
+  `status` varchar(50) DEFAULT 'On Time',
+  `late_email_sent` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --
