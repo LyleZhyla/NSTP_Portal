@@ -167,6 +167,44 @@ function gdFontForSize($size) {
     return 2;
 }
 
+/**
+ * GD's built-in bitmap fonts expect a single-byte Windows character set, not
+ * UTF-8. Convert only for that fallback path so characters such as Ñ/ñ are
+ * rendered correctly when no TrueType font is installed on the server.
+ */
+function gdBitmapText($text) {
+    $text = (string) $text;
+
+    if (function_exists('iconv') && preg_match('//u', $text)) {
+        $converted = @iconv('UTF-8', 'Windows-1252//TRANSLIT', $text);
+        if ($converted !== false) {
+            return $converted;
+        }
+    }
+
+    return $text;
+}
+
+function qrCardFirstCharacter($text) {
+    $text = trim((string) $text);
+    if ($text === '') {
+        return '';
+    }
+
+    if (function_exists('mb_substr')) {
+        $character = mb_substr($text, 0, 1, 'UTF-8');
+        return function_exists('mb_strtoupper')
+            ? mb_strtoupper($character, 'UTF-8')
+            : strtoupper($character);
+    }
+
+    if (preg_match('/^./us', $text, $match)) {
+        return strtr(strtoupper($match[0]), ['ñ' => 'Ñ']);
+    }
+
+    return strtoupper(substr($text, 0, 1));
+}
+
 function textWidth($font, $size, $text) {
     if ($font) {
         $box = imagettfbbox($size, 0, $font, $text);
@@ -174,7 +212,7 @@ function textWidth($font, $size, $text) {
     }
 
     $gdFont = gdFontForSize($size);
-    return imagefontwidth($gdFont) * strlen((string) $text);
+    return imagefontwidth($gdFont) * strlen(gdBitmapText($text));
 }
 
 function drawText($image, $size, $x, $y, $color, $font, $text) {
@@ -184,7 +222,7 @@ function drawText($image, $size, $x, $y, $color, $font, $text) {
     }
 
     $gdFont = gdFontForSize($size);
-    imagestring($image, $gdFont, $x, max(0, $y - imagefontheight($gdFont)), $text, $color);
+    imagestring($image, $gdFont, $x, max(0, $y - imagefontheight($gdFont)), gdBitmapText($text), $color);
 }
 
 function fitText($image, $font, $size, $x, $y, $text, $color, $maxWidth) {
@@ -363,7 +401,7 @@ if ($picture) {
 } else {
     imagefilledrectangle($canvas, 70, 156, 212, 298, $white);
     imagerectangle($canvas, 70, 156, 212, 298, $line);
-    drawText($canvas, 46, 112, 244, $green, $boldFont, strtoupper(substr($displayStudentName, 0, 1)));
+    drawText($canvas, 46, 112, 244, $green, $boldFont, qrCardFirstCharacter($displayStudentName));
 }
 
 $x = 236;

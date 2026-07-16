@@ -185,7 +185,7 @@ CREATE TABLE `tbl_student` (
   `generated_code` varchar(255) NOT NULL,
   `qr_code` varchar(255) DEFAULT NULL,
   `created_by` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
