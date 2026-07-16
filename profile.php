@@ -17,8 +17,6 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $message = '';
 $error = '';
-$componentOptions = ['CWTS', 'LTS', 'ROTC'];
-
 // Handle profile picture upload
 if (isset($_POST['upload_picture'])) {
     try {
@@ -1160,7 +1158,7 @@ if (!empty($user['full_name'])) {
                                     'Personal Information' => ['last_name', 'extension_name', 'first_name', 'middle_name', 'gender', 'date_of_birth', 'place_of_birth', 'religion', 'blood_type'],
                                     'Contact Information' => ['email', 'contact_number', 'house_no', 'street', 'barangay', 'city_municipality', 'province'],
                                     'Emergency Contact' => ['emergency_name', 'emergency_relationship', 'emergency_contact_number', 'emergency_address'],
-                                    'Academic Information' => ['college', 'course', 'major', 'year_section', 'component', 'shirt_size'],
+                                    'Academic Information' => ['college', 'course', 'major', 'year_section', 'shirt_size'],
                                 ];
                                 $registrationEditFields = registrationEditRequestFields();
                             ?>
@@ -1247,13 +1245,7 @@ if (!empty($user['full_name'])) {
                                                                     <div class="col-md-6">
                                                                         <div class="form-group">
                                                                             <label for="registration_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo htmlspecialchars($registrationEditFields[$fieldKey]); ?></label>
-                                                                            <?php if ($fieldKey === 'component'): ?>
-                                                                            <select class="form-control" id="registration_component" name="registration[component]" required>
-                                                                                <?php foreach (['CWTS', 'LTS', 'ROTC'] as $requestComponent): ?>
-                                                                                <option value="<?php echo $requestComponent; ?>" <?php echo $fieldValue === $requestComponent ? 'selected' : ''; ?>><?php echo $requestComponent; ?></option>
-                                                                                <?php endforeach; ?>
-                                                                            </select>
-                                                                            <?php elseif ($fieldKey === 'shirt_size'): ?>
+                                                                            <?php if ($fieldKey === 'shirt_size'): ?>
                                                                             <input type="text" class="form-control" id="registration_shirt_size" name="registration[shirt_size]"
                                                                                    value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>" maxlength="30" required>
                                                                             <?php else: ?>

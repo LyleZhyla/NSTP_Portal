@@ -171,7 +171,6 @@ function registrationEditRequestFields() {
         'course' => 'Course',
         'major' => 'Major',
         'year_section' => 'Year and Section',
-        'component' => 'NSTP Component',
         'shirt_size' => 'Shirt Size',
     ];
 }
@@ -215,10 +214,6 @@ function submitRegistrationDataEditRequest(PDO $conn, array $user, array $regist
         }
     }
 
-    $newData['component'] = normalizeProgram($newData['component'] ?? null) ?: '';
-    if ($newData['component'] === '') {
-        throw new InvalidArgumentException('Please enter a valid NSTP component.');
-    }
     $newData['shirt_size'] = strtoupper(dataEditRequestClean($newData['shirt_size'] ?? '', 30));
     if ($newData['shirt_size'] === '') {
         throw new InvalidArgumentException('Please enter a shirt size.');
@@ -405,12 +400,6 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
                 $userUpdateStmt->execute([$fullName, (int) $request['user_id']]);
             }
 
-            if (($currentData['component'] ?? '') !== ($newData['component'] ?? '')) {
-                $componentUpdateStmt = $conn->prepare("UPDATE tbl_users SET program = ? WHERE user_id = ? AND role = 'student'");
-                $componentUpdateStmt->execute([$newData['component'], (int) $request['user_id']]);
-                $studentComponentStmt = $conn->prepare("UPDATE tbl_student SET course_section = ?, created_by = NULL WHERE user_id = ?");
-                $studentComponentStmt->execute([$newData['component'], (int) $request['user_id']]);
-            }
             if (($currentData['shirt_size'] ?? '') !== ($newData['shirt_size'] ?? '')) {
                 $shirtUpdateStmt = $conn->prepare("UPDATE tbl_users SET shirt_size = ? WHERE user_id = ? AND role = 'student'");
                 $shirtUpdateStmt->execute([$newData['shirt_size'], (int) $request['user_id']]);
