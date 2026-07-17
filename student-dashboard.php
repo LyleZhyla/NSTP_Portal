@@ -133,6 +133,14 @@ function dashboardCleanValue($value) {
 }
 
 function dashboardStudentDisplayName(array $student) {
+    // tbl_student.student_name is synchronized whenever an approved profile or
+    // registration edit changes the student's name. Prefer it so the NSTP ID
+    // does not keep showing the older name stored in the registration snapshot.
+    $studentName = dashboardCleanValue($student['student_name'] ?? '');
+    if ($studentName !== '') {
+        return $studentName;
+    }
+
     $nameParts = [
         dashboardCleanValue($student['first_name'] ?? ''),
         dashboardCleanValue($student['middle_name'] ?? ''),
@@ -148,7 +156,7 @@ function dashboardStudentDisplayName(array $student) {
     }
 
     $registrationName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($nameParts))));
-    return $registrationName !== '' ? $registrationName : (dashboardCleanValue($student['student_name'] ?? '') ?: 'Student');
+    return $registrationName !== '' ? $registrationName : 'Student';
 }
 
 if ($student) {

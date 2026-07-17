@@ -266,6 +266,13 @@ function qrCardCourseMajorSection(array $student) {
 }
 
 function qrCardStudentDisplayName(array $student) {
+    // Keep the downloaded ID consistent with the on-screen ID. This field is
+    // synchronized after approved profile and registration name edits.
+    $studentName = qrCardCleanValue($student['student_name'] ?? '');
+    if ($studentName !== '') {
+        return $studentName;
+    }
+
     $nameParts = [
         qrCardCleanValue($student['first_name'] ?? ''),
         qrCardCleanValue($student['middle_name'] ?? ''),
@@ -281,7 +288,7 @@ function qrCardStudentDisplayName(array $student) {
     }
 
     $registrationName = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($nameParts))));
-    return $registrationName !== '' ? $registrationName : (qrCardCleanValue($student['student_name'] ?? '') ?: 'Student');
+    return $registrationName !== '' ? $registrationName : 'Student';
 }
 
 function studentPicturePaths(array $student) {
