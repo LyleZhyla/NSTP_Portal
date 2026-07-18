@@ -19,7 +19,7 @@ if ($role !== 'student') {
 }
 
 $componentOptions = getOpenStudentComponents($conn);
-$rotcMsOptions = ['MS-1', 'MS-31', 'MS-41'];
+$rotcMsOptions = getOpenRotcMsLevels($conn);
 $shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 $componentSelectionEnabled = !empty($componentOptions);
 $message = '';
@@ -149,7 +149,7 @@ if (isset($_POST['update_component'])) {
     if ($rotcHeightFeet !== '' && $rotcHeightInches !== '') {
         $rotcHeight = ((int) $rotcHeightFeet) . ' ft ' . ((int) $rotcHeightInches) . ' in';
     }
-    $rotcMsLevel = strtoupper(trim((string) ($_POST['rotc_ms_level'] ?? '')));
+    $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
 
     if ($savedComponent && $selectedComponent !== $savedComponent) {
         $error = 'Your saved component cannot be changed without Super Admin approval.';
@@ -165,8 +165,10 @@ if (isset($_POST['update_component'])) {
         $error = 'Height feet must be between 3 and 8.';
     } elseif ($selectedComponent === 'ROTC' && ((int) $rotcHeightInches < 0 || (int) $rotcHeightInches > 11)) {
         $error = 'Height inches must be between 0 and 11.';
-    } elseif ($selectedComponent === 'ROTC' && !in_array($rotcMsLevel, $rotcMsOptions, true)) {
+    } elseif ($selectedComponent === 'ROTC' && !$rotcMsLevel) {
         $error = 'Please select the MS level you will take.';
+    } elseif ($selectedComponent === 'ROTC' && !isStudentRotcMsLevelOpen($conn, $rotcMsLevel)) {
+        $error = 'The selected ROTC MS level is currently closed.';
     } else {
         try {
             ensureRotcRegistrationColumns($conn);
