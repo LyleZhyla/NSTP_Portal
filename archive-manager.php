@@ -356,6 +356,7 @@ if (!canAccessStaffTools($user_role)) {
         </section>
     </div>
 
+    <?php if ($user_role === 'super_admin') include 'footer.php'; ?>
 </div>
 
 <!-- Scripts -->
