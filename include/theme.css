@@ -651,13 +651,13 @@ body.dark-mode .toast-body {
 }
 
 .standard-footer__logo {
-    width: 38px;
-    height: 38px;
-    flex: 0 0 38px;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
     object-fit: contain;
-    padding: 3px;
+    padding: 2px;
     background: #fff;
-    border-radius: 9px;
+    border-radius: 6px;
 }
 
 .standard-footer__identity {
@@ -865,9 +865,9 @@ body.dark-mode .super-admin-footer__portal {
     }
 
     .standard-footer__logo {
-        width: 34px;
-        height: 34px;
-        flex-basis: 34px;
+        width: 24px;
+        height: 24px;
+        flex-basis: 24px;
     }
 
     .standard-footer__identity span {
