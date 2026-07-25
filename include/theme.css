@@ -629,6 +629,67 @@ body.dark-mode .toast-body {
     color: #fff !important;
 }
 
+/* Standard role footer */
+.main-footer.standard-footer {
+    padding: 0 !important;
+}
+
+.standard-footer__inner {
+    min-height: 72px;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.standard-footer__brand {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+}
+
+.standard-footer__logo {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    object-fit: contain;
+    padding: 3px;
+    background: #fff;
+    border-radius: 9px;
+}
+
+.standard-footer__identity {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.standard-footer__identity strong {
+    font-size: 0.9rem;
+}
+
+.standard-footer__identity span,
+.standard-footer__legal {
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.standard-footer__legal {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    text-align: right;
+}
+
+.standard-footer__legal span {
+    color: inherit !important;
+}
+
 /* Super Admin footer */
 .main-footer.super-admin-footer {
     padding: 0 !important;
@@ -756,6 +817,33 @@ body.dark-mode .super-admin-footer__portal {
 }
 
 @media (max-width: 767.98px) {
+    .main-footer.standard-footer {
+        margin-left: 0 !important;
+    }
+
+    .standard-footer__inner {
+        min-height: auto;
+        padding: 16px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .standard-footer__brand {
+        width: 100%;
+    }
+
+    .standard-footer__identity strong {
+        font-size: 0.86rem;
+    }
+
+    .standard-footer__legal {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        text-align: left;
+    }
+
     .super-admin-footer__inner {
         min-height: auto;
         padding: 14px 16px;
@@ -772,6 +860,33 @@ body.dark-mode .super-admin-footer__portal {
 }
 
 @media (max-width: 479.98px) {
+    .standard-footer__inner {
+        padding: 15px 14px;
+    }
+
+    .standard-footer__logo {
+        width: 34px;
+        height: 34px;
+        flex-basis: 34px;
+    }
+
+    .standard-footer__identity span {
+        font-size: 0.72rem;
+    }
+
+    .standard-footer__legal {
+        gap: 4px;
+        font-size: 0.72rem;
+    }
+
+    .standard-footer__divider {
+        display: none;
+    }
+
+    .standard-footer__legal span:not(.standard-footer__divider) {
+        flex-basis: 100%;
+    }
+
     .super-admin-footer__identity strong {
         font-size: 0.86rem;
     }

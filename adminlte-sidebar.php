@@ -453,6 +453,30 @@ if (isset($_SESSION['user_id'])) {
     }
     
     @media (max-width: 768px) {
+        <?php if (($_SESSION['role'] ?? '') === 'student'): ?>
+        /*
+         * Keep the student navigation controls reachable while the page scrolls.
+         * Sticky positioning preserves the AdminLTE layout without covering content.
+         */
+        .main-header {
+            position: sticky !important;
+            top: 0;
+            z-index: 1037;
+            min-height: 3.5rem;
+            box-shadow: 0 3px 12px rgba(15, 81, 50, 0.12);
+        }
+
+        .main-header [data-widget="pushmenu"] {
+            min-width: 44px;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            font-size: 1.1rem;
+        }
+        <?php endif; ?>
+
         /* Sidebar collapsed state */
         .sidebar-collapse .main-sidebar {
             transform: translateX(-250px);

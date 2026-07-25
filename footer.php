@@ -1,4 +1,8 @@
-<?php $isSuperAdminFooter = ($_SESSION['role'] ?? '') === 'super_admin'; ?>
+<?php
+$footerRole = $_SESSION['role'] ?? '';
+$isSuperAdminFooter = $footerRole === 'super_admin';
+$isStudentFooter = $footerRole === 'student';
+?>
 
 <?php if ($isSuperAdminFooter): ?>
 <footer class="main-footer super-admin-footer" role="contentinfo">
@@ -21,6 +25,23 @@
             <span class="super-admin-footer__copyright">
                 &copy; <?php echo date('Y'); ?> TAU-NSTP. All rights reserved.
             </span>
+        </div>
+    </div>
+</footer>
+<?php elseif ($isStudentFooter): ?>
+<footer class="main-footer standard-footer student-footer" role="contentinfo">
+    <div class="standard-footer__inner">
+        <div class="standard-footer__brand">
+            <img src="include/logo.png" alt="" class="standard-footer__logo">
+            <div class="standard-footer__identity">
+                <strong>National Service Training Program</strong>
+                <span>TAU-NSTP QR Code Attendance System</span>
+            </div>
+        </div>
+        <div class="standard-footer__legal">
+            <span>&copy; <?php echo date('Y'); ?> TAU-NSTP</span>
+            <span aria-hidden="true" class="standard-footer__divider">&bull;</span>
+            <span>All rights reserved.</span>
         </div>
     </div>
 </footer>
