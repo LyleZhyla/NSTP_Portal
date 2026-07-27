@@ -454,16 +454,20 @@ if (isset($_SESSION['user_id'])) {
     
     @media (max-width: 768px) {
         <?php if (($_SESSION['role'] ?? '') === 'student'): ?>
-        /*
-         * Keep the student navigation controls reachable while the page scrolls.
-         * Sticky positioning preserves the AdminLTE layout without covering content.
-         */
+        /* Keep the student navigation controls reachable while the page scrolls. */
         .main-header {
-            position: sticky !important;
+            position: fixed !important;
             top: 0;
+            right: 0;
+            left: 0;
             z-index: 1037;
+            width: auto;
             min-height: 3.5rem;
             box-shadow: 0 3px 12px rgba(15, 81, 50, 0.12);
+        }
+
+        .content-wrapper {
+            padding-top: 3.5rem;
         }
 
         .main-header [data-widget="pushmenu"] {
