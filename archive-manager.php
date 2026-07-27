@@ -42,7 +42,7 @@ if (!canAccessStaffTools($user_role)) {
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
     <!-- SweetAlert2 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-    <link rel="stylesheet" href="include/theme.css">
+    <link rel="stylesheet" href="include/theme.css?v=<?php echo (int) filemtime(__DIR__ . '/include/theme.css'); ?>">
     <!-- rest of your head content... -->
     <style>
         .archive-stats-card {
@@ -104,6 +104,29 @@ if (!canAccessStaffTools($user_role)) {
             left: 15px;
             top: 50%;
             transform: translateY(-50%);
+        }
+
+        /* Keep the shared footer aligned at the bottom of the Archive Manager. */
+        .archive-manager-page .wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .archive-manager-page .main-header,
+        .archive-manager-page .main-footer {
+            flex: 0 0 auto;
+        }
+
+        .archive-manager-page .content-wrapper {
+            flex: 1 0 auto;
+        }
+
+        @media (max-width: 767.98px) {
+            .archive-manager-page .main-footer {
+                width: auto;
+                margin-left: 0 !important;
+            }
         }
 
     </style>
