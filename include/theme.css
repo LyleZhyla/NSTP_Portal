@@ -651,9 +651,10 @@ body.dark-mode .toast-body {
 }
 
 .standard-footer__logo {
-    width: 28px;
-    height: 28px;
-    flex: 0 0 28px;
+    width: 22px !important;
+    height: 22px !important;
+    max-width: 22px !important;
+    flex: 0 0 22px;
     object-fit: contain;
     padding: 2px;
     background: #fff;
@@ -865,9 +866,10 @@ body.dark-mode .super-admin-footer__portal {
     }
 
     .standard-footer__logo {
-        width: 24px;
-        height: 24px;
-        flex-basis: 24px;
+        width: 22px !important;
+        height: 22px !important;
+        max-width: 22px !important;
+        flex-basis: 22px;
     }
 
     .standard-footer__identity span {

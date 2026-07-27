@@ -32,7 +32,14 @@ $isStudentFooter = $footerRole === 'student';
 <footer class="main-footer standard-footer student-footer" role="contentinfo">
     <div class="standard-footer__inner">
         <div class="standard-footer__brand">
-            <img src="include/logo.png" alt="" class="standard-footer__logo">
+            <img
+                src="include/logo.png"
+                alt=""
+                class="standard-footer__logo"
+                width="22"
+                height="22"
+                style="width: 22px !important; height: 22px !important; max-width: 22px !important;"
+            >
             <div class="standard-footer__identity">
                 <strong>National Service Training Program</strong>
                 <span>TAU-NSTP QR Code Attendance System</span>
