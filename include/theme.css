@@ -661,18 +661,6 @@ body.dark-mode .toast-body {
     border-radius: 6px;
 }
 
-.standard-footer__identity {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.25;
-}
-
-.standard-footer__identity strong {
-    font-size: 0.9rem;
-}
-
-.standard-footer__identity span,
 .standard-footer__legal {
     font-size: 0.78rem;
     color: rgba(255, 255, 255, 0.82) !important;
@@ -834,10 +822,6 @@ body.dark-mode .super-admin-footer__portal {
         width: 100%;
     }
 
-    .standard-footer__identity strong {
-        font-size: 0.86rem;
-    }
-
     .standard-footer__legal {
         width: 100%;
         justify-content: flex-start;
@@ -870,10 +854,6 @@ body.dark-mode .super-admin-footer__portal {
         height: 22px !important;
         max-width: 22px !important;
         flex-basis: 22px;
-    }
-
-    .standard-footer__identity span {
-        font-size: 0.72rem;
     }
 
     .standard-footer__legal {

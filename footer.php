@@ -40,10 +40,6 @@ $isStudentFooter = $footerRole === 'student';
                 height="22"
                 style="width: 22px !important; height: 22px !important; max-width: 22px !important;"
             >
-            <div class="standard-footer__identity">
-                <strong>National Service Training Program</strong>
-                <span>TAU-NSTP QR Code Attendance System</span>
-            </div>
         </div>
         <div class="standard-footer__legal">
             <span>&copy; <?php echo date('Y'); ?> TAU-NSTP</span>
