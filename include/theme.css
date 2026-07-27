@@ -673,6 +673,7 @@ body.dark-mode .toast-body {
     justify-content: flex-end;
     gap: 8px;
     text-align: right;
+    white-space: nowrap;
 }
 
 .standard-footer__legal span {
@@ -812,21 +813,24 @@ body.dark-mode .super-admin-footer__portal {
 
     .standard-footer__inner {
         min-height: auto;
-        padding: 16px;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 12px;
+        padding: 14px 16px;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
     }
 
     .standard-footer__brand {
-        width: 100%;
+        width: auto;
+        flex: 0 0 auto;
     }
 
     .standard-footer__legal {
-        width: 100%;
+        width: auto;
         justify-content: flex-start;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         text-align: left;
+        white-space: nowrap;
     }
 
     .super-admin-footer__inner {
@@ -846,7 +850,7 @@ body.dark-mode .super-admin-footer__portal {
 
 @media (max-width: 479.98px) {
     .standard-footer__inner {
-        padding: 15px 14px;
+        padding: 13px 12px;
     }
 
     .standard-footer__logo {
@@ -859,14 +863,6 @@ body.dark-mode .super-admin-footer__portal {
     .standard-footer__legal {
         gap: 4px;
         font-size: 0.72rem;
-    }
-
-    .standard-footer__divider {
-        display: none;
-    }
-
-    .standard-footer__legal span:not(.standard-footer__divider) {
-        flex-basis: 100%;
     }
 
     .super-admin-footer__identity strong {
