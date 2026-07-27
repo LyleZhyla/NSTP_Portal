@@ -68,7 +68,7 @@ date_default_timezone_set('Asia/Manila');
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-    <link rel="stylesheet" href="include/theme.css">
+    <link rel="stylesheet" href="include/theme.css?v=<?php echo (int) filemtime(__DIR__ . '/include/theme.css'); ?>">
     <!-- rest of your head content... -->
     <style>
         .admin-avatar {
@@ -132,6 +132,29 @@ date_default_timezone_set('Asia/Manila');
         }
         .modal-backdrop.show {
             z-index: 2050 !important;
+        }
+
+        /* Keep the shared footer aligned at the bottom of User Management. */
+        .admin-management-page .wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .admin-management-page .main-header,
+        .admin-management-page .main-footer {
+            flex: 0 0 auto;
+        }
+
+        .admin-management-page .content-wrapper {
+            flex: 1 0 auto;
+        }
+
+        @media (max-width: 767.98px) {
+            .admin-management-page .main-footer {
+                width: auto;
+                margin-left: 0 !important;
+            }
         }
         .btn-xs {
             padding: 0.25rem 0.5rem;
@@ -197,7 +220,7 @@ date_default_timezone_set('Asia/Manila');
         }
     </style>
 </head>
-<body class="hold-transition sidebar-mini layout-fixed">
+<body class="hold-transition sidebar-mini layout-fixed admin-management-page">
 <div class="wrapper">
 
     <!-- Navbar -->
@@ -478,7 +501,6 @@ date_default_timezone_set('Asia/Manila');
     </div>
 
     <!-- Footer -->
-        <!-- Footer -->
     <?php include 'footer.php'; ?>
 </div>
 
