@@ -9,7 +9,7 @@ $isStudentFooter = $footerRole === 'student';
     <div class="super-admin-footer__inner">
         <div class="super-admin-footer__brand">
             <span class="super-admin-footer__logo" aria-hidden="true">
-                <img src="include/logo.png" alt="">
+                <img src="include/logo.png" alt="" width="24" height="24">
             </span>
             <span class="super-admin-footer__identity">
                 <strong>TAU National Service Training Program</strong>
@@ -23,7 +23,7 @@ $isStudentFooter = $footerRole === 'student';
                 Super Admin Portal
             </span>
             <span class="super-admin-footer__copyright">
-                &copy; <?php echo date('Y'); ?> TAU-NSTP. All rights reserved.
+                &copy; <?php echo date('Y'); ?> TAU-NSTP <span aria-hidden="true">&bull;</span> All rights reserved.
             </span>
         </div>
     </div>
