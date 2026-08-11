@@ -12,6 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 include('../conn/conn.php');
+require_once '../include/attendance-settings.php';
 
 $response = ['success' => false, 'message' => ''];
 
@@ -32,6 +33,7 @@ try {
     $user_id = $_SESSION['user_id'];
     $role = $_SESSION['role'] ?? 'facilitator';
     
+    $archiveHasStatus = ensureAttendanceArchiveStatusSchema($conn);
     $conn->beginTransaction();
     
     if ($role === 'super_admin') {
@@ -47,15 +49,14 @@ try {
         
         foreach ($records_to_archive as $record) {
             // Insert into archive
-            $archive_stmt = $conn->prepare("
-                INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, archived_date)
-                VALUES (?, ?, ?, NOW())
-            ");
-            $archive_stmt->execute([
-                $record['tbl_attendance_id'],
-                $record['tbl_student_id'],
-                $record['time_in']
-            ]);
+            $archive_stmt = $conn->prepare($archiveHasStatus
+                ? "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, status, archived_date) VALUES (?, ?, ?, ?, NOW())"
+                : "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, archived_date) VALUES (?, ?, ?, NOW())");
+            $archiveParams = [$record['tbl_attendance_id'], $record['tbl_student_id'], $record['time_in']];
+            if ($archiveHasStatus) {
+                $archiveParams[] = $record['status'] ?? null;
+            }
+            $archive_stmt->execute($archiveParams);
             
             // Delete from main table
             $delete_stmt = $conn->prepare("DELETE FROM tbl_attendance WHERE tbl_attendance_id = ?");
@@ -91,15 +92,14 @@ try {
             $records_to_archive = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             foreach ($records_to_archive as $record) {
-                $archive_stmt = $conn->prepare("
-                    INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, archived_date)
-                    VALUES (?, ?, ?, NOW())
-                ");
-                $archive_stmt->execute([
-                    $record['tbl_attendance_id'],
-                    $record['tbl_student_id'],
-                    $record['time_in']
-                ]);
+                $archive_stmt = $conn->prepare($archiveHasStatus
+                    ? "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, status, archived_date) VALUES (?, ?, ?, ?, NOW())"
+                    : "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, archived_date) VALUES (?, ?, ?, NOW())");
+                $archiveParams = [$record['tbl_attendance_id'], $record['tbl_student_id'], $record['time_in']];
+                if ($archiveHasStatus) {
+                    $archiveParams[] = $record['status'] ?? null;
+                }
+                $archive_stmt->execute($archiveParams);
                 
                 $delete_stmt = $conn->prepare("DELETE FROM tbl_attendance WHERE tbl_attendance_id = ?");
                 $delete_stmt->execute([$record['tbl_attendance_id']]);
@@ -122,4 +122,4 @@ try {
 
 echo json_encode($response);
 exit();
-?>  
+?>

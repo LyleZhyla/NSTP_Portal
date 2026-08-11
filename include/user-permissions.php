@@ -160,8 +160,28 @@ function rotcMs1StudentSqlCondition($studentAlias = 's') {
     return "(" . rotcStudentSqlCondition($studentAlias) . " AND " . rotcStudentMsLevelSqlExpression($studentAlias) . " = 'MS-1')";
 }
 
+function rotcMs31StudentSqlCondition($studentAlias = 's') {
+    return "(" . rotcStudentSqlCondition($studentAlias) . " AND " . rotcStudentMsLevelSqlExpression($studentAlias) . " = 'MS-31')";
+}
+
+function rotcMs41StudentSqlCondition($studentAlias = 's') {
+    return "(" . rotcStudentSqlCondition($studentAlias) . " AND " . rotcStudentMsLevelSqlExpression($studentAlias) . " = 'MS-41')";
+}
+
 function rotcAdvancedStudentSqlCondition($studentAlias = 's') {
     return "(" . rotcStudentSqlCondition($studentAlias) . " AND " . rotcStudentMsLevelSqlExpression($studentAlias) . " IN ('MS-31', 'MS-41'))";
+}
+
+function rotcMsLevelStudentSqlCondition($msLevel, $studentAlias = 's') {
+    $msLevel = normalizeRotcMsLevel($msLevel);
+    if ($msLevel === 'MS-31') {
+        return rotcMs31StudentSqlCondition($studentAlias);
+    }
+    if ($msLevel === 'MS-41') {
+        return rotcMs41StudentSqlCondition($studentAlias);
+    }
+
+    return rotcMs1StudentSqlCondition($studentAlias);
 }
 
 function rotcStudentSqlCondition($studentAlias = 's') {
@@ -249,8 +269,8 @@ function getRotcAttendanceGroup(PDO $conn, array $student) {
         return null;
     }
 
-    $msLevel = getRotcStudentMsLevel($conn, $student);
-    return in_array($msLevel, ['MS-31', 'MS-41'], true) ? 'ROTC_MS31_MS41' : 'ROTC_MS1';
+    $msLevel = getRotcStudentMsLevel($conn, $student) ?: 'MS-1';
+    return 'ROTC_' . str_replace('-', '', $msLevel);
 }
 
 function studentProgramForAttendance(PDO $conn, array $student) {
@@ -384,7 +404,7 @@ function canRecordStudentAttendance(PDO $conn, array $actor, array $student) {
         return false;
     }
 
-    if (isRotcStudentRecord($conn, $student) && getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41') {
+    if (isRotcStudentRecord($conn, $student) && getRotcAttendanceGroup($conn, $student) !== 'ROTC_MS1') {
         return false;
     }
 

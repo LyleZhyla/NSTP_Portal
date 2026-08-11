@@ -903,6 +903,18 @@ if ($role === 'super_admin') {
                                     </select>
                                 </div>
 
+                                <?php if ($role === 'coordinator' && $program === 'ROTC'): ?>
+                                <div class="form-group">
+                                    <label for="attendanceRotcMsLevel">ROTC MS Level</label>
+                                    <select class="form-control" id="attendanceRotcMsLevel" name="rotc_ms_level">
+                                        <option value="">All accessible ROTC levels</option>
+                                        <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $attendanceMsLevel): ?>
+                                        <option value="<?php echo htmlspecialchars($attendanceMsLevel); ?>"><?php echo htmlspecialchars($attendanceMsLevel); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <?php endif; ?>
+
                                 <div class="form-group attendance-period-field" id="attendanceDayField">
                                     <label for="attendanceDate">Date</label>
                                     <input type="date" class="form-control" id="attendanceDate" name="date" value="<?php echo htmlspecialchars($today); ?>">

@@ -31,6 +31,7 @@ try {
             tbl_attendance_id INT NOT NULL,
             tbl_student_id INT NOT NULL,
             time_in TIMESTAMP NOT NULL,
+            status VARCHAR(50) NULL,
             archived_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_student_id (tbl_student_id),
             INDEX idx_time_in (time_in),

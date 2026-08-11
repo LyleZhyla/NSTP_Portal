@@ -114,6 +114,7 @@ CREATE TABLE `tbl_attendance_archive` (
   `tbl_attendance_id` int(11) NOT NULL,
   `tbl_student_id` int(11) NOT NULL,
   `time_in` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `status` varchar(50) DEFAULT NULL,
   `archived_date` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 

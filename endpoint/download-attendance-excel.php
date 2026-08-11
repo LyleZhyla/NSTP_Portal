@@ -85,6 +85,12 @@ $userId = (int) $currentUser['user_id'];
 $userRole = $currentUser['role'] ?? 'facilitator';
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
 ensureRotcAttendanceSchema($conn);
+$archiveHasStatus = ensureAttendanceArchiveStatusSchema($conn);
+$requestedRotcMsLevel = normalizeRotcMsLevel($_GET['rotc_ms_level'] ?? null);
+$canFilterRotcMsLevel = $userRole === 'super_admin' || ($userRole === 'coordinator' && $program === 'ROTC');
+if (!$canFilterRotcMsLevel) {
+    $requestedRotcMsLevel = null;
+}
 $isRotcFacilitator = $userRole === 'facilitator' && $program === 'ROTC';
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $canViewAllAttendance = $userRole === 'super_admin'
@@ -92,8 +98,12 @@ $canViewAllAttendance = $userRole === 'super_admin'
 
 if ($canViewAllAttendance) {
     $studentWhere = '';
-    if ($userRole !== 'super_admin' && $program === 'ROTC') {
-        $studentWhere = 'WHERE ' . rotcMs1StudentSqlCondition('s');
+    if ($requestedRotcMsLevel) {
+        $studentWhere = 'WHERE ' . rotcMsLevelStudentSqlCondition($requestedRotcMsLevel, 's');
+    } elseif ($userRole !== 'super_admin' && $program === 'ROTC') {
+        $studentWhere = 'WHERE ' . ($userRole === 'facilitator'
+            ? rotcMs1StudentSqlCondition('s')
+            : rotcStudentSqlCondition('s'));
     }
 
     $studentSql = "
@@ -109,12 +119,15 @@ if ($canViewAllAttendance) {
     $preparedBy = $userRole === 'super_admin' ? 'SUPER ADMIN' : strtoupper($_SESSION['username'] ?? 'FACILITATOR');
 } elseif ($userRole === 'coordinator') {
     if ($program === 'ROTC') {
+        $coordinatorRotcCondition = $requestedRotcMsLevel
+            ? rotcMsLevelStudentSqlCondition($requestedRotcMsLevel, 's')
+            : rotcStudentSqlCondition('s');
         $studentSql = "
             SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
                    COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
             FROM tbl_student s
             LEFT JOIN tbl_users u ON s.created_by = u.user_id
-            WHERE " . rotcStudentSqlCondition('s') . "
+            WHERE {$coordinatorRotcCondition}
             ORDER BY s.course_section ASC, s.student_name ASC
         ";
         $studentStmt = $conn->prepare($studentSql);
@@ -168,13 +181,14 @@ $attendanceLookup = [];
 $scannedDates = [];
 if (!empty($studentIds)) {
     $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
+    $archiveStatusSelect = $archiveHasStatus ? 'status' : 'NULL AS status';
     $attendanceSql = "
         SELECT tbl_student_id, time_in, status
         FROM tbl_attendance
         WHERE tbl_student_id IN ({$placeholders})
           AND DATE(time_in) BETWEEN ? AND ?
         UNION ALL
-        SELECT tbl_student_id, time_in, NULL AS status
+        SELECT tbl_student_id, time_in, {$archiveStatusSelect}
         FROM tbl_attendance_archive
         WHERE tbl_student_id IN ({$placeholders})
           AND DATE(time_in) BETWEEN ? AND ?
@@ -187,11 +201,7 @@ if (!empty($studentIds)) {
     foreach ($attendanceStmt->fetchAll(PDO::FETCH_ASSOC) as $record) {
         $studentId = (int) $record['tbl_student_id'];
         $dateKey = date('Y-m-d', strtotime($record['time_in']));
-        if (isset($attendanceLookup[$studentId][$dateKey])) {
-            continue;
-        }
-
-        $attendanceLookup[$studentId][$dateKey] = $record;
+        $attendanceLookup[$studentId][$dateKey][] = $record;
         $scannedDates[$dateKey] = true;
     }
 }
@@ -218,7 +228,8 @@ $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
 $row++;
 
 $sheet->mergeCells("A{$row}:{$lastColumn}{$row}");
-$sheet->setCellValue("A{$row}", strtoupper($period) . ': ' . $periodLabel . ' | Prepared for: ' . $preparedBy);
+$reportScopeLabel = $requestedRotcMsLevel ? ' | ROTC Level: ' . $requestedRotcMsLevel : '';
+$sheet->setCellValue("A{$row}", strtoupper($period) . ': ' . $periodLabel . $reportScopeLabel . ' | Prepared for: ' . $preparedBy);
 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
     'font' => ['bold' => true],
     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -268,17 +279,24 @@ if (!empty($students)) {
         foreach ($dateColumns as $index => $dateValue) {
             $column = Coordinate::stringFromColumnIndex($index + 3);
             $cell = $column . $row;
-            $record = $attendanceLookup[$studentId][$dateValue] ?? null;
+            $records = $attendanceLookup[$studentId][$dateValue] ?? [];
             $statusGroup = 'Absent';
             $cellText = 'Absent';
 
-            if ($record) {
-                $status = trim((string) ($record['status'] ?? ''));
-                if ($status === '') {
-                    $status = getAttendanceStatusForStudent($conn, $student, $record['time_in'] ?? null);
+            if (!empty($records)) {
+                $scanLines = [count($records) . (count($records) === 1 ? ' scan' : ' scans')];
+                $hasLateScan = false;
+                foreach ($records as $scanIndex => $record) {
+                    $status = trim((string) ($record['status'] ?? ''));
+                    if ($status === '') {
+                        $status = getAttendanceStatusForStudent($conn, $student, $record['time_in'] ?? null);
+                    }
+                    $recordStatusGroup = exportStatusGroup($status);
+                    $hasLateScan = $hasLateScan || $recordStatusGroup === 'Late';
+                    $scanLines[] = ($scanIndex + 1) . '. ' . $recordStatusGroup . ' - ' . date('h:i A', strtotime($record['time_in']));
                 }
-                $statusGroup = exportStatusGroup($status);
-                $cellText = $statusGroup . "\n" . date('h:i A', strtotime($record['time_in']));
+                $statusGroup = $hasLateScan ? 'Late' : 'Present';
+                $cellText = implode("\n", $scanLines);
             }
 
             $sheet->setCellValue($cell, $cellText);
@@ -293,6 +311,14 @@ if (!empty($students)) {
                     'startColor' => ['rgb' => exportAttendanceFill($statusGroup)],
                 ],
             ]);
+        }
+
+        $maxScansForRow = 0;
+        foreach ($dateColumns as $dateValue) {
+            $maxScansForRow = max($maxScansForRow, count($attendanceLookup[$studentId][$dateValue] ?? []));
+        }
+        if ($maxScansForRow > 0) {
+            $sheet->getRowDimension($row)->setRowHeight(max(30, 16 * ($maxScansForRow + 1)));
         }
 
         $row++;
@@ -319,7 +345,8 @@ if (!empty($dateColumns)) {
 
 $sheet->getStyle("A1:{$lastColumn}{$lastDataRow}")->getFont()->setName('Calibri')->setSize(11);
 
-$filename = 'attendance_matrix_' . $period . '_' . $startDate . '_to_' . $endDate . '_' . date('H-i-s') . '.xlsx';
+$levelFilenamePart = $requestedRotcMsLevel ? '_' . strtolower(str_replace('-', '', $requestedRotcMsLevel)) : '';
+$filename = 'attendance_matrix' . $levelFilenamePart . '_' . $period . '_' . $startDate . '_to_' . $endDate . '_' . date('H-i-s') . '.xlsx';
 header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Cache-Control: max-age=0');

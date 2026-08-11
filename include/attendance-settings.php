@@ -3,13 +3,14 @@
 require_once __DIR__ . '/user-permissions.php';
 
 function attendanceComponents() {
-    return ['CWTS', 'LTS', 'ROTC_BASIC', 'ROTC_ADVANCED', 'PUBLIC'];
+    return ['CWTS', 'LTS', 'ROTC_MS1', 'ROTC_MS31', 'ROTC_MS41', 'PUBLIC'];
 }
 
 function attendanceComponentLabel($component) {
     $labels = [
-        'ROTC_BASIC' => 'ROTC Basic Cadets',
-        'ROTC_ADVANCED' => 'ROTC Advance Cadets',
+        'ROTC_MS1' => 'ROTC MS-1',
+        'ROTC_MS31' => 'ROTC MS-31',
+        'ROTC_MS41' => 'ROTC MS-41',
         'PUBLIC' => 'Public Registration',
     ];
 
@@ -35,8 +36,9 @@ function defaultAttendanceCutoffs() {
     return [
         'CWTS' => ['morning' => '08:00', 'afternoon' => '13:00'],
         'LTS' => ['morning' => '08:00', 'afternoon' => '13:00'],
-        'ROTC_BASIC' => ['morning' => '07:00', 'afternoon' => '13:00'],
-        'ROTC_ADVANCED' => ['morning' => '07:00', 'afternoon' => '13:00'],
+        'ROTC_MS1' => ['morning' => '07:00', 'afternoon' => '13:00'],
+        'ROTC_MS31' => ['morning' => '07:00', 'afternoon' => '13:00'],
+        'ROTC_MS41' => ['morning' => '07:00', 'afternoon' => '13:00'],
         'PUBLIC' => ['morning' => '08:00', 'afternoon' => '13:00'],
     ];
 }
@@ -46,17 +48,31 @@ function getAttendanceCutoffs(PDO $conn) {
     $cutoffs = [];
 
     foreach (attendanceComponents() as $component) {
-        $legacyComponent = strpos($component, 'ROTC_') === 0 ? 'ROTC' : $component;
+        $legacyComponent = $component;
+        if ($component === 'ROTC_MS1') {
+            $legacyComponent = 'ROTC_BASIC';
+        } elseif (in_array($component, ['ROTC_MS31', 'ROTC_MS41'], true)) {
+            $legacyComponent = 'ROTC_ADVANCED';
+        }
+        $legacyProgram = strpos($component, 'ROTC_') === 0 ? 'ROTC' : $component;
         $cutoffs[$component] = [
             'morning' => getSystemSetting(
                 $conn,
                 'attendance_' . strtolower($component) . '_morning_cutoff',
-                getSystemSetting($conn, 'attendance_' . strtolower($legacyComponent) . '_morning_cutoff', $defaults[$component]['morning'])
+                getSystemSetting(
+                    $conn,
+                    'attendance_' . strtolower($legacyComponent) . '_morning_cutoff',
+                    getSystemSetting($conn, 'attendance_' . strtolower($legacyProgram) . '_morning_cutoff', $defaults[$component]['morning'])
+                )
             ),
             'afternoon' => getSystemSetting(
                 $conn,
                 'attendance_' . strtolower($component) . '_afternoon_cutoff',
-                getSystemSetting($conn, 'attendance_' . strtolower($legacyComponent) . '_afternoon_cutoff', $defaults[$component]['afternoon'])
+                getSystemSetting(
+                    $conn,
+                    'attendance_' . strtolower($legacyComponent) . '_afternoon_cutoff',
+                    getSystemSetting($conn, 'attendance_' . strtolower($legacyProgram) . '_afternoon_cutoff', $defaults[$component]['afternoon'])
+                )
             ),
         ];
     }
@@ -93,7 +109,7 @@ function attendanceCutoffComponentsForUser(array $user) {
 
     $program = normalizeProgram($user['program'] ?? null);
     if ($program === 'ROTC') {
-        return ['ROTC_BASIC', 'ROTC_ADVANCED'];
+        return ['ROTC_MS1', 'ROTC_MS31', 'ROTC_MS41'];
     }
 
     return $program ? [$program] : [];
@@ -168,17 +184,13 @@ function attendanceComponentForStudent(PDO $conn, array $student) {
 
         if ($accountComponent) {
             if ($accountComponent === 'ROTC') {
-                return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
-                    ? 'ROTC_ADVANCED'
-                    : 'ROTC_BASIC';
+                return getRotcAttendanceGroup($conn, $student) ?: 'ROTC_MS1';
             }
             return $accountComponent;
         }
         if ($registrationComponent) {
             if ($registrationComponent === 'ROTC') {
-                return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
-                    ? 'ROTC_ADVANCED'
-                    : 'ROTC_BASIC';
+                return getRotcAttendanceGroup($conn, $student) ?: 'ROTC_MS1';
             }
             return $registrationComponent;
         }
@@ -188,9 +200,7 @@ function attendanceComponentForStudent(PDO $conn, array $student) {
     }
 
     if (isRotcStudentRecord($conn, $student)) {
-        return getRotcAttendanceGroup($conn, $student) === 'ROTC_MS31_MS41'
-            ? 'ROTC_ADVANCED'
-            : 'ROTC_BASIC';
+        return getRotcAttendanceGroup($conn, $student) ?: 'ROTC_MS1';
     }
 
     return normalizeAttendanceComponent($student['course_section'] ?? '');
@@ -205,9 +215,8 @@ function getAttendanceStatus(PDO $conn, $courseSection, $timeIn = null) {
 
     $component = normalizeAttendanceComponent($courseSection);
     if ($component === 'ROTC') {
-        $component = normalizeRotcMsLevel($courseSection) && in_array(normalizeRotcMsLevel($courseSection), ['MS-31', 'MS-41'], true)
-            ? 'ROTC_ADVANCED'
-            : 'ROTC_BASIC';
+        $msLevel = normalizeRotcMsLevel($courseSection) ?: 'MS-1';
+        $component = 'ROTC_' . str_replace('-', '', $msLevel);
     }
     $cutoffs = getAttendanceCutoffs($conn);
     $hour = (int) date('G', $timestamp);
@@ -268,20 +277,60 @@ function recalculateAttendanceStatusesForDate(PDO $conn, $date) {
 }
 
 function attendanceArchiveTableExists(PDO $conn) {
-    static $exists = null;
+    try {
+        $stmt = $conn->query("SHOW TABLES LIKE 'tbl_attendance_archive'");
+        return (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
 
-    if ($exists !== null) {
-        return $exists;
+function attendanceArchiveHasStatusColumn(PDO $conn) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'tbl_attendance_archive'
+              AND COLUMN_NAME = 'status'
+        ");
+        $stmt->execute();
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function ensureAttendanceArchiveStatusSchema(PDO $conn) {
+    if (!attendanceArchiveTableExists($conn)) {
+        try {
+            $conn->exec("
+                CREATE TABLE tbl_attendance_archive (
+                    tbl_attendance_archive_id INT AUTO_INCREMENT PRIMARY KEY,
+                    tbl_attendance_id INT NOT NULL,
+                    tbl_student_id INT NOT NULL,
+                    time_in TIMESTAMP NOT NULL,
+                    status VARCHAR(50) NULL,
+                    archived_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_student_id (tbl_student_id),
+                    INDEX idx_time_in (time_in),
+                    INDEX idx_archived_date (archived_date)
+                )
+            ");
+        } catch (Throwable $error) {
+            return false;
+        }
     }
 
     try {
-        $stmt = $conn->query("SHOW TABLES LIKE 'tbl_attendance_archive'");
-        $exists = (bool) $stmt->fetchColumn();
-    } catch (Throwable $e) {
-        $exists = false;
+        if (!attendanceArchiveHasStatusColumn($conn)) {
+            $conn->exec("ALTER TABLE tbl_attendance_archive ADD COLUMN status VARCHAR(50) NULL AFTER time_in");
+        }
+        return attendanceArchiveHasStatusColumn($conn);
+    } catch (Throwable $error) {
+        // Legacy archives remain usable; their status is recalculated when displayed.
+        return false;
     }
-
-    return $exists;
 }
 
 function studentAttendanceTimeline(PDO $conn, array $student, $limit = null, $date = null) {
@@ -311,7 +360,11 @@ function studentAttendanceTimeline(PDO $conn, array $student, $limit = null, $da
     $params = $activeParams;
 
     if (attendanceArchiveTableExists($conn)) {
-        $queries[] = "SELECT tbl_attendance_id, tbl_student_id, time_in, NULL AS status, archived_date, 1 AS is_archived
+        $archiveStatusColumn = 'NULL AS status';
+        if (attendanceArchiveHasStatusColumn($conn)) {
+            $archiveStatusColumn = 'status';
+        }
+        $queries[] = "SELECT tbl_attendance_id, tbl_student_id, time_in, {$archiveStatusColumn}, archived_date, 1 AS is_archived
                       FROM tbl_attendance_archive
                       WHERE {$archiveWhere}";
         $params = array_merge($params, $archiveParams);
@@ -367,9 +420,10 @@ function hasAttendanceForStudentScopeOnDate(PDO $conn, array $student, $date = n
     $rotcGroup = getRotcAttendanceGroup($conn, $student);
     if ($rotcGroup) {
         ensureRotcAttendanceSchema($conn);
-        $rotcGroupCondition = $rotcGroup === 'ROTC_MS31_MS41'
-            ? rotcAdvancedStudentSqlCondition('s')
-            : rotcMs1StudentSqlCondition('s');
+        $rotcGroupCondition = rotcMsLevelStudentSqlCondition(
+            str_replace('ROTC_MS', 'MS-', $rotcGroup),
+            's'
+        );
 
         $stmt = $conn->prepare("
             SELECT COUNT(*)

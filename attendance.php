@@ -1095,6 +1095,18 @@ if ($admin_role === 'super_admin') {
                         </select>
                     </div>
 
+                    <?php if (($currentUser['role'] ?? '') === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) === 'ROTC'): ?>
+                    <div class="form-group">
+                        <label for="exportRotcMsLevel">ROTC MS Level:</label>
+                        <select class="form-control" id="exportRotcMsLevel" name="rotc_ms_level">
+                            <option value="">All accessible ROTC levels</option>
+                            <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $exportMsLevel): ?>
+                            <option value="<?php echo htmlspecialchars($exportMsLevel); ?>"><?php echo htmlspecialchars($exportMsLevel); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <?php endif; ?>
+
                     <div class="form-group export-period-field" id="exportDayField">
                         <label for="exportDate">Date:</label>
                         <input type="date" class="form-control" id="exportDate" name="date" value="<?php echo date('Y-m-d'); ?>">
@@ -1117,7 +1129,7 @@ if ($admin_role === 'super_admin') {
                     </div>
 
                     <div class="mt-3 small text-muted">
-                        Only dates with facilitator scans will appear. Cells are colored by attendance status: Absent red, Present green, Late yellow.
+                        Only dates with scans will appear. Every active or archived scan is listed with its time. Cells are colored by attendance status: Absent red, Present green, Late yellow.
                     </div>
                 </div>
                 <div class="modal-footer">
