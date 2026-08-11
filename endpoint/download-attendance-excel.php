@@ -371,16 +371,16 @@ if (!empty($students)) {
             $cellText = 'Absent';
 
             if (!empty($records)) {
-                $scanLines = [count($records) . (count($records) === 1 ? ' scan' : ' scans')];
+                $scanLines = [];
                 $hasLateScan = false;
-                foreach ($records as $scanIndex => $record) {
+                foreach ($records as $record) {
                     $status = trim((string) ($record['status'] ?? ''));
                     if ($status === '') {
                         $status = getAttendanceStatusForStudent($conn, $student, $record['time_in'] ?? null);
                     }
                     $recordStatusGroup = exportStatusGroup($status);
                     $hasLateScan = $hasLateScan || $recordStatusGroup === 'Late';
-                    $scanLines[] = ($scanIndex + 1) . '. ' . $recordStatusGroup . ' - ' . date('h:i A', strtotime($record['time_in']));
+                    $scanLines[] = $recordStatusGroup . ' - ' . date('h:i A', strtotime($record['time_in']));
                 }
                 $statusGroup = $hasLateScan ? 'Late' : 'Present';
                 $cellText = implode("\n", $scanLines);
@@ -405,7 +405,7 @@ if (!empty($students)) {
             $maxScansForRow = max($maxScansForRow, count($attendanceLookup[$studentId][$dateValue] ?? []));
         }
         if ($maxScansForRow > 0) {
-            $sheet->getRowDimension($row)->setRowHeight(max(30, 16 * ($maxScansForRow + 1)));
+            $sheet->getRowDimension($row)->setRowHeight(max(30, 16 * $maxScansForRow));
         }
 
         $row++;
