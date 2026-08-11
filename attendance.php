@@ -1146,18 +1146,6 @@ if ($admin_role === 'super_admin') {
                         </select>
                     </div>
 
-                    <?php if (($currentUser['role'] ?? '') === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) === 'ROTC'): ?>
-                    <div class="form-group">
-                        <label for="exportRotcMsLevel">ROTC MS Level:</label>
-                        <select class="form-control" id="exportRotcMsLevel" name="rotc_ms_level">
-                            <option value="">All ROTC MS Levels</option>
-                            <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $exportMsLevel): ?>
-                            <option value="<?php echo htmlspecialchars($exportMsLevel); ?>"><?php echo htmlspecialchars($exportMsLevel); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <?php endif; ?>
-
                     <div class="form-group export-period-field" id="exportDayField">
                         <label for="exportDate">Date:</label>
                         <input type="date" class="form-control" id="exportDate" name="date" value="<?php echo date('Y-m-d'); ?>">

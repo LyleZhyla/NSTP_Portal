@@ -86,11 +86,6 @@ $userRole = $currentUser['role'] ?? 'facilitator';
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
 ensureRotcAttendanceSchema($conn);
 $archiveHasStatus = ensureAttendanceArchiveStatusSchema($conn);
-$requestedRotcMsLevel = normalizeRotcMsLevel($_GET['rotc_ms_level'] ?? null);
-$canFilterRotcMsLevel = $userRole === 'super_admin' || ($userRole === 'coordinator' && $program === 'ROTC');
-if (!$canFilterRotcMsLevel) {
-    $requestedRotcMsLevel = null;
-}
 
 $requestedFolderKey = trim((string) ($_GET['attendance_folder'] ?? ''));
 $selectedFolderOwnerId = null;
@@ -139,7 +134,6 @@ if ($requestedFolderKey !== '') {
     }
 
     $selectedFolderLabel = $selectedFolder;
-    $requestedRotcMsLevel = null;
 }
 $isRotcFacilitator = $userRole === 'facilitator' && $program === 'ROTC';
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
@@ -148,9 +142,7 @@ $canViewAllAttendance = $userRole === 'super_admin'
 
 if ($canViewAllAttendance) {
     $studentWhere = '';
-    if ($requestedRotcMsLevel) {
-        $studentWhere = 'WHERE ' . rotcMsLevelStudentSqlCondition($requestedRotcMsLevel, 's');
-    } elseif ($userRole !== 'super_admin' && $program === 'ROTC') {
+    if ($userRole !== 'super_admin' && $program === 'ROTC') {
         $studentWhere = 'WHERE ' . ($userRole === 'facilitator'
             ? rotcMs1StudentSqlCondition('s')
             : rotcStudentSqlCondition('s'));
@@ -169,9 +161,7 @@ if ($canViewAllAttendance) {
     $preparedBy = $userRole === 'super_admin' ? 'SUPER ADMIN' : strtoupper($_SESSION['username'] ?? 'FACILITATOR');
 } elseif ($userRole === 'coordinator') {
     if ($program === 'ROTC') {
-        $coordinatorRotcCondition = $requestedRotcMsLevel
-            ? rotcMsLevelStudentSqlCondition($requestedRotcMsLevel, 's')
-            : rotcStudentSqlCondition('s');
+        $coordinatorRotcCondition = rotcStudentSqlCondition('s');
         $studentSql = "
             SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
                    COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
@@ -255,11 +245,6 @@ usort($students, static function ($left, $right) {
         (string) ($right['student_name'] ?? '')
     );
 });
-if ($requestedRotcMsLevel) {
-    $students = array_values(array_filter($students, static function ($student) use ($conn, $requestedRotcMsLevel) {
-        return getRotcStudentMsLevel($conn, $student) === $requestedRotcMsLevel;
-    }));
-}
 $studentIds = array_map(static fn($student) => (int) $student['tbl_student_id'], $students);
 
 $attendanceLookup = [];
@@ -315,7 +300,7 @@ $row++;
 $sheet->mergeCells("A{$row}:{$lastColumn}{$row}");
 $reportScopeLabel = $selectedFolderLabel !== ''
     ? ' | Folder: ' . $selectedFolderLabel
-    : ($requestedRotcMsLevel ? ' | ROTC Level: ' . $requestedRotcMsLevel : '');
+    : '';
 $sheet->setCellValue("A{$row}", strtoupper($period) . ': ' . $periodLabel . $reportScopeLabel . ' | Prepared for: ' . $preparedBy);
 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
     'font' => ['bold' => true],
@@ -436,8 +421,6 @@ $scopeFilenamePart = '';
 if ($selectedFolderLabel !== '') {
     $safeFolderName = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '_', $selectedFolderLabel), '_'));
     $scopeFilenamePart = $safeFolderName !== '' ? '_' . $safeFolderName : '';
-} elseif ($requestedRotcMsLevel) {
-    $scopeFilenamePart = '_' . strtolower(str_replace('-', '', $requestedRotcMsLevel));
 }
 $filename = 'attendance_matrix' . $scopeFilenamePart . '_' . $period . '_' . $startDate . '_to_' . $endDate . '_' . date('H-i-s') . '.xlsx';
 header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
