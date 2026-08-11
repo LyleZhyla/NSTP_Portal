@@ -28,6 +28,44 @@ $attendanceAccess = studentAttendanceAccessSqlForUser($currentUser ?: ['role' =>
 $attendanceAccessCondition = $attendanceAccess['condition'];
 $attendanceAccessParams = $attendanceAccess['params'];
 
+$attendanceExportFolders = [];
+if ($admin_role === 'coordinator') {
+    $attendanceFolderStmt = $conn->prepare("
+        SELECT ads.user_id AS facilitator_id, ads.course_section,
+               COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name,
+               COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        LEFT JOIN tbl_student s ON s.created_by = ads.user_id AND s.course_section = ads.course_section
+        WHERE u.role = 'facilitator' AND u.program = ?
+        GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
+        ORDER BY facilitator_name ASC, ads.course_section ASC
+    ");
+    $attendanceFolderStmt->execute([normalizeProgram($currentUser['program'] ?? null)]);
+} else {
+    $attendanceFolderStmt = $conn->prepare("
+        SELECT ads.user_id AS facilitator_id, ads.course_section,
+               COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name,
+               COUNT(s.tbl_student_id) AS student_count
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users u ON u.user_id = ads.user_id
+        LEFT JOIN tbl_student s ON s.created_by = ads.user_id AND s.course_section = ads.course_section
+        WHERE ads.user_id = ?
+        GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
+        ORDER BY ads.course_section ASC
+    ");
+    $attendanceFolderStmt->execute([(int) $admin_id]);
+}
+foreach ($attendanceFolderStmt->fetchAll(PDO::FETCH_ASSOC) as $attendanceFolderRow) {
+    $attendanceExportFolders[] = [
+        'key' => $admin_role === 'facilitator'
+            ? $attendanceFolderRow['course_section']
+            : ((int) $attendanceFolderRow['facilitator_id'] . '::' . $attendanceFolderRow['course_section']),
+        'label' => ($attendanceFolderRow['facilitator_name'] ?: 'Facilitator') . ' / ' . $attendanceFolderRow['course_section'],
+        'student_count' => (int) $attendanceFolderRow['student_count'],
+    ];
+}
+
 if ($admin_role === 'super_admin') {
     header("Location: admin-management.php");
     exit();
@@ -1087,6 +1125,19 @@ if ($admin_role === 'super_admin') {
             <form action="./endpoint/download-attendance-excel.php" method="GET" id="exportAttendanceForm">
                 <div class="modal-body">
                     <div class="form-group">
+                        <label for="exportAttendanceFolder">Folder:</label>
+                        <select class="form-control" id="exportAttendanceFolder" name="attendance_folder">
+                            <option value="">All Accessible Students</option>
+                            <?php foreach ($attendanceExportFolders as $attendanceFolder): ?>
+                            <option value="<?= htmlspecialchars($attendanceFolder['key']) ?>">
+                                <?= htmlspecialchars($attendanceFolder['label'] . ' (' . $attendanceFolder['student_count'] . ' students)') ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="form-text text-muted">Selecting a folder exports its complete student roster.</small>
+                    </div>
+
+                    <div class="form-group">
                         <label for="exportPeriod">Coverage:</label>
                         <select class="form-control" id="exportPeriod" name="period">
                             <option value="day">Today / Specific Day</option>
@@ -1098,7 +1149,8 @@ if ($admin_role === 'super_admin') {
                     <?php if (($currentUser['role'] ?? '') === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) === 'ROTC'): ?>
                     <div class="form-group">
                         <label for="exportRotcMsLevel">ROTC MS Level:</label>
-                        <select class="form-control" id="exportRotcMsLevel" name="rotc_ms_level" required>
+                        <select class="form-control" id="exportRotcMsLevel" name="rotc_ms_level">
+                            <option value="">All ROTC MS Levels</option>
                             <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $exportMsLevel): ?>
                             <option value="<?php echo htmlspecialchars($exportMsLevel); ?>"><?php echo htmlspecialchars($exportMsLevel); ?></option>
                             <?php endforeach; ?>

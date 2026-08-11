@@ -895,6 +895,19 @@ if ($role === 'super_admin') {
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
+                                    <label for="attendanceFolder">Folder</label>
+                                    <select class="form-control" id="attendanceFolder" name="attendance_folder">
+                                        <option value="">All Accessible Students</option>
+                                        <?php foreach ($gradeExportFolders as $folder): ?>
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                            <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="form-text text-muted">When a folder is selected, every student in that folder is included and the MS-level filter is ignored.</small>
+                                </div>
+
+                                <div class="form-group">
                                     <label for="attendancePeriod">Coverage</label>
                                     <select class="form-control" id="attendancePeriod" name="period">
                                         <option value="day">Today / Specific Day</option>
@@ -906,7 +919,8 @@ if ($role === 'super_admin') {
                                 <?php if ($role === 'coordinator' && $program === 'ROTC'): ?>
                                 <div class="form-group">
                                     <label for="attendanceRotcMsLevel">ROTC MS Level</label>
-                                    <select class="form-control" id="attendanceRotcMsLevel" name="rotc_ms_level" required>
+                                    <select class="form-control" id="attendanceRotcMsLevel" name="rotc_ms_level">
+                                        <option value="">All ROTC MS Levels</option>
                                         <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $attendanceMsLevel): ?>
                                         <option value="<?php echo htmlspecialchars($attendanceMsLevel); ?>"><?php echo htmlspecialchars($attendanceMsLevel); ?></option>
                                         <?php endforeach; ?>
