@@ -90,6 +90,8 @@ $requestedRotcMsLevel = normalizeRotcMsLevel($_GET['rotc_ms_level'] ?? null);
 $canFilterRotcMsLevel = $userRole === 'super_admin' || ($userRole === 'coordinator' && $program === 'ROTC');
 if (!$canFilterRotcMsLevel) {
     $requestedRotcMsLevel = null;
+} elseif ($userRole === 'coordinator' && $program === 'ROTC' && !$requestedRotcMsLevel) {
+    $requestedRotcMsLevel = 'MS-1';
 }
 $isRotcFacilitator = $userRole === 'facilitator' && $program === 'ROTC';
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
@@ -107,7 +109,7 @@ if ($canViewAllAttendance) {
     }
 
     $studentSql = "
-        SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+        SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
                COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
@@ -123,7 +125,7 @@ if ($canViewAllAttendance) {
             ? rotcMsLevelStudentSqlCondition($requestedRotcMsLevel, 's')
             : rotcStudentSqlCondition('s');
         $studentSql = "
-            SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+            SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
                    COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
             FROM tbl_student s
             LEFT JOIN tbl_users u ON s.created_by = u.user_id
@@ -134,7 +136,7 @@ if ($canViewAllAttendance) {
         $studentStmt->execute();
     } else {
         $studentSql = "
-            SELECT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+            SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
                    COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
             FROM tbl_student s
             LEFT JOIN tbl_users u ON s.created_by = u.user_id
@@ -158,7 +160,7 @@ if ($canViewAllAttendance) {
     }
 
     $studentSql = "
-        SELECT DISTINCT s.tbl_student_id, s.student_number, s.student_name, s.course_section,
+        SELECT DISTINCT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
                COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name
         FROM tbl_student s
         LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
@@ -175,6 +177,11 @@ if ($canViewAllAttendance) {
 }
 
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
+if ($requestedRotcMsLevel) {
+    $students = array_values(array_filter($students, static function ($student) use ($conn, $requestedRotcMsLevel) {
+        return getRotcStudentMsLevel($conn, $student) === $requestedRotcMsLevel;
+    }));
+}
 $studentIds = array_map(static fn($student) => (int) $student['tbl_student_id'], $students);
 
 $attendanceLookup = [];

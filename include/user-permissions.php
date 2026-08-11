@@ -136,8 +136,15 @@ function rotcStudentMsLevelSqlExpression($studentAlias = 's') {
                 ELSE NULL
             END
             FROM tbl_public_student_registrations latest_rotc_registration
-            WHERE latest_rotc_registration.student_number = {$studentAlias}.student_number
-              AND latest_rotc_registration.component = 'ROTC'
+            WHERE latest_rotc_registration.component = 'ROTC'
+              AND (
+                    ({$studentAlias}.user_id IS NOT NULL AND latest_rotc_registration.user_id = {$studentAlias}.user_id)
+                    OR (
+                        {$studentAlias}.student_number IS NOT NULL
+                        AND {$studentAlias}.student_number <> ''
+                        AND latest_rotc_registration.student_number = {$studentAlias}.student_number
+                    )
+              )
             ORDER BY latest_rotc_registration.registration_id DESC
             LIMIT 1
         ),
@@ -151,6 +158,15 @@ function rotcStudentMsLevelSqlExpression($studentAlias = 's') {
             WHEN UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS-1%'
               OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS 1%'
               OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS1%' THEN 'MS-1'
+            WHEN UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS-31%'
+              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS 31%'
+              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS31%' THEN 'MS-31'
+            WHEN UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS-41%'
+              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS 41%'
+              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS41%' THEN 'MS-41'
+            WHEN UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS-1%'
+              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS 1%'
+              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS1%' THEN 'MS-1'
             ELSE NULL
         END
     )";
@@ -240,18 +256,22 @@ function isRotcStudentRecord(PDO $conn, array $student) {
 
 function getRotcStudentMsLevel(PDO $conn, array $student) {
     $studentNumber = preg_replace('/\D/', '', (string) ($student['student_number'] ?? ''));
-    if ($studentNumber !== '') {
+    $studentUserId = (int) ($student['user_id'] ?? 0);
+    if ($studentNumber !== '' || $studentUserId > 0) {
         try {
             ensureRotcAttendanceSchema($conn);
             $stmt = $conn->prepare("
                 SELECT rotc_ms_level
                 FROM tbl_public_student_registrations
-                WHERE student_number = ?
-                  AND component = 'ROTC'
+                WHERE component = 'ROTC'
+                  AND (
+                        (? > 0 AND user_id = ?)
+                        OR (? <> '' AND student_number = ?)
+                  )
                 ORDER BY registration_id DESC
                 LIMIT 1
             ");
-            $stmt->execute([$studentNumber]);
+            $stmt->execute([$studentUserId, $studentUserId, $studentNumber, $studentNumber]);
             $fromRegistration = normalizeRotcMsLevel($stmt->fetchColumn());
             if ($fromRegistration) {
                 return $fromRegistration;
@@ -261,7 +281,8 @@ function getRotcStudentMsLevel(PDO $conn, array $student) {
         }
     }
 
-    return normalizeRotcMsLevel($student['course_section'] ?? '');
+    return normalizeRotcMsLevel($student['course_section'] ?? '')
+        ?: normalizeRotcMsLevel($student['original_section'] ?? '');
 }
 
 function getRotcAttendanceGroup(PDO $conn, array $student) {

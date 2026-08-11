@@ -1098,8 +1098,7 @@ if ($admin_role === 'super_admin') {
                     <?php if (($currentUser['role'] ?? '') === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) === 'ROTC'): ?>
                     <div class="form-group">
                         <label for="exportRotcMsLevel">ROTC MS Level:</label>
-                        <select class="form-control" id="exportRotcMsLevel" name="rotc_ms_level">
-                            <option value="">All accessible ROTC levels</option>
+                        <select class="form-control" id="exportRotcMsLevel" name="rotc_ms_level" required>
                             <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $exportMsLevel): ?>
                             <option value="<?php echo htmlspecialchars($exportMsLevel); ?>"><?php echo htmlspecialchars($exportMsLevel); ?></option>
                             <?php endforeach; ?>

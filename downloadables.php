@@ -906,8 +906,7 @@ if ($role === 'super_admin') {
                                 <?php if ($role === 'coordinator' && $program === 'ROTC'): ?>
                                 <div class="form-group">
                                     <label for="attendanceRotcMsLevel">ROTC MS Level</label>
-                                    <select class="form-control" id="attendanceRotcMsLevel" name="rotc_ms_level">
-                                        <option value="">All accessible ROTC levels</option>
+                                    <select class="form-control" id="attendanceRotcMsLevel" name="rotc_ms_level" required>
                                         <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $attendanceMsLevel): ?>
                                         <option value="<?php echo htmlspecialchars($attendanceMsLevel); ?>"><?php echo htmlspecialchars($attendanceMsLevel); ?></option>
                                         <?php endforeach; ?>
