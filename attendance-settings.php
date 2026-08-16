@@ -173,8 +173,8 @@ date_default_timezone_set('Asia/Manila');
                                 <div class="setting-summary mb-3">
                                     <i class="fas fa-people-arrows"></i>
                                     <div class="flex-fill">
-                                        <strong>Allow all students to change their saved component</strong>
-                                        <span class="text-muted small d-block">When enabled, students can change directly without sending a Super Admin request.</span>
+                                        <strong>Allow all students one component change</strong>
+                                        <span class="text-muted small d-block">Each student can save once per reopening. Close and reopen this switch to grant another change.</span>
                                     </div>
                                     <div class="custom-control custom-switch ml-3">
                                         <input type="checkbox" class="custom-control-input" id="studentComponentChangeToggle"

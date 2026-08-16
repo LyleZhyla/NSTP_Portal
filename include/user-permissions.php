@@ -526,6 +526,36 @@ function isStudentComponentChangeEnabled(PDO $conn) {
     return getSystemSetting($conn, 'student_component_change_enabled', '0') === '1';
 }
 
+function getStudentComponentChangeRound(PDO $conn) {
+    return max(1, (int) getSystemSetting($conn, 'student_component_change_round', '1'));
+}
+
+function ensureStudentComponentChangeUsageTable(PDO $conn) {
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_student_component_change_usage (
+            user_id INT PRIMARY KEY,
+            last_change_round INT NOT NULL DEFAULT 0,
+            changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+function hasStudentUsedComponentChange(PDO $conn, $userId) {
+    ensureStudentComponentChangeUsageTable($conn);
+    $stmt = $conn->prepare("SELECT last_change_round FROM tbl_student_component_change_usage WHERE user_id = ? LIMIT 1");
+    $stmt->execute([(int) $userId]);
+    return (int) ($stmt->fetchColumn() ?: 0) >= getStudentComponentChangeRound($conn);
+}
+
+function markStudentComponentChangeUsed(PDO $conn, $userId, $changeRound) {
+    $stmt = $conn->prepare("
+        INSERT INTO tbl_student_component_change_usage (user_id, last_change_round)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE last_change_round = VALUES(last_change_round)
+    ");
+    return $stmt->execute([(int) $userId, max(1, (int) $changeRound)]);
+}
+
 function getOpenStudentComponents(PDO $conn) {
     if (!isComponentSelectionEnabled($conn)) {
         return [];

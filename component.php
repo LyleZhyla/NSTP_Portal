@@ -132,7 +132,9 @@ $componentUser = $componentUserStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $savedComponent = normalizeProgram($componentUser['program'] ?? null);
 $savedAccountShirtSize = trim((string) ($componentUser['shirt_size'] ?? ''));
 $studentComponentChangeEnabled = isStudentComponentChangeEnabled($conn);
-$canDirectlyChangeSavedComponent = $studentComponentChangeEnabled && $savedComponent !== null;
+$studentComponentChangeRound = getStudentComponentChangeRound($conn);
+$hasUsedDirectComponentChange = $savedComponent !== null && hasStudentUsedComponentChange($conn, $user_id);
+$canDirectlyChangeSavedComponent = $studentComponentChangeEnabled && $savedComponent !== null && !$hasUsedDirectComponentChange;
 if ($canDirectlyChangeSavedComponent) {
     $componentOptions = ['CWTS', 'LTS', 'ROTC'];
     $rotcMsOptions = getRotcMsLevels();
@@ -275,6 +277,10 @@ if (isset($_POST['update_component'])) {
                 $studentNumber,
             ]);
 
+            if ($canDirectlyChangeSavedComponent) {
+                markStudentComponentChangeUsed($conn, $user_id, $studentComponentChangeRound);
+            }
+
             if ($conn->inTransaction()) {
                 $conn->commit();
             }
@@ -378,7 +384,11 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                         <?php if ($componentChoiceLocked): ?>
                             <div class="alert alert-info">
                                 <i class="fas fa-lock mr-2"></i>
-                                Your component and shirt size are already saved and can no longer be changed here.
+                                <?php if ($studentComponentChangeEnabled && $hasUsedDirectComponentChange): ?>
+                                    You already used your one allowed change for this reopening. Your selection is locked again.
+                                <?php else: ?>
+                                    Your component and shirt size are already saved and can no longer be changed here.
+                                <?php endif; ?>
                             </div>
                             <p><strong>Component:</strong> <?php echo htmlspecialchars($savedComponent); ?></p>
                             <p><strong>Shirt Size:</strong> <?php echo htmlspecialchars(displayShirtSize($savedAccountShirtSize)); ?></p>
@@ -389,7 +399,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                         <?php if ($canDirectlyChangeSavedComponent): ?>
                             <div class="alert alert-success">
                                 <i class="fas fa-unlock mr-2"></i>
-                                Direct component changes are enabled by the Super Admin. You may update your saved component without submitting a request.
+                                Direct component changes are open. You may save once without submitting a request; after saving, your selection will lock again.
                             </div>
                         <?php endif; ?>
                         <form method="POST" enctype="multipart/form-data">

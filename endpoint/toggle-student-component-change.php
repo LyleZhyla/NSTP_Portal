@@ -17,6 +17,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $enabled = ($_POST['enabled'] ?? '0') === '1';
+$wasEnabled = isStudentComponentChangeEnabled($conn);
+if ($enabled && !$wasEnabled) {
+    setSystemSetting($conn, 'student_component_change_round', (string) (getStudentComponentChangeRound($conn) + 1));
+}
 setSystemSetting($conn, 'student_component_change_enabled', $enabled ? '1' : '0');
 
 logSystemEvent(
@@ -29,6 +33,6 @@ echo json_encode([
     'success' => true,
     'enabled' => $enabled,
     'message' => $enabled
-        ? 'All students can now change their saved component without approval.'
+        ? 'All students can now change their saved component once without approval.'
         : 'Saved component changes require Super Admin approval again.',
 ]);
