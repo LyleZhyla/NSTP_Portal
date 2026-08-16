@@ -522,6 +522,10 @@ function isComponentSelectionEnabled(PDO $conn) {
     return getSystemSetting($conn, 'component_selection_enabled', '1') === '1';
 }
 
+function isStudentComponentChangeEnabled(PDO $conn) {
+    return getSystemSetting($conn, 'student_component_change_enabled', '0') === '1';
+}
+
 function getOpenStudentComponents(PDO $conn) {
     if (!isComponentSelectionEnabled($conn)) {
         return [];

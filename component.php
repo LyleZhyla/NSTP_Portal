@@ -20,7 +20,7 @@ if ($role !== 'student') {
 
 $componentOptions = getOpenStudentComponents($conn);
 $rotcMsOptions = getOpenRotcMsLevels($conn);
-$shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+$shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', 'MAY NABILI NANG SHIRT'];
 $componentSelectionEnabled = !empty($componentOptions);
 $message = '';
 $error = '';
@@ -121,13 +121,24 @@ function parseRotcHeight($height) {
     return ['feet' => '', 'inches' => ''];
 }
 
+function displayShirtSize($shirtSize) {
+    return $shirtSize === 'MAY NABILI NANG SHIRT' ? 'May nabili nang shirt' : $shirtSize;
+}
+
 ensureRotcRegistrationColumns($conn);
 $componentUserStmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ? LIMIT 1");
 $componentUserStmt->execute([$user_id]);
 $componentUser = $componentUserStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $savedComponent = normalizeProgram($componentUser['program'] ?? null);
 $savedAccountShirtSize = trim((string) ($componentUser['shirt_size'] ?? ''));
-$componentChoiceLocked = $savedComponent !== null && $savedAccountShirtSize !== '';
+$studentComponentChangeEnabled = isStudentComponentChangeEnabled($conn);
+$canDirectlyChangeSavedComponent = $studentComponentChangeEnabled && $savedComponent !== null;
+if ($canDirectlyChangeSavedComponent) {
+    $componentOptions = ['CWTS', 'LTS', 'ROTC'];
+    $rotcMsOptions = getRotcMsLevels();
+    $componentSelectionEnabled = true;
+}
+$componentChoiceLocked = $savedComponent !== null && $savedAccountShirtSize !== '' && !$canDirectlyChangeSavedComponent;
 if ($savedComponent && !in_array($savedComponent, $componentOptions, true)) {
     $componentOptions[] = $savedComponent;
 }
@@ -151,10 +162,12 @@ if (isset($_POST['update_component'])) {
     }
     $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
 
-    if ($savedComponent && $selectedComponent !== $savedComponent) {
+    if ($savedComponent && $selectedComponent !== $savedComponent && !$canDirectlyChangeSavedComponent) {
         $error = 'Your saved component cannot be changed without Super Admin approval.';
     } elseif (!$savedComponent && (!in_array($selectedComponent, $componentOptions, true) || !isStudentComponentOpen($conn, $selectedComponent))) {
         $error = 'The selected NSTP component is currently closed.';
+    } elseif ($savedComponent && $canDirectlyChangeSavedComponent && !in_array($selectedComponent, ['CWTS', 'LTS', 'ROTC'], true)) {
+        $error = 'Please select a valid NSTP component.';
     } elseif ($shirtSizeSelection !== 'OTHER' && !in_array($shirtSize, $shirtSizeOptions, true)) {
         $error = 'Please select your shirt size before saving your component.';
     } elseif ($shirtSizeSelection === 'OTHER' && ($shirtSize === '' || strlen($shirtSize) > 30)) {
@@ -167,7 +180,7 @@ if (isset($_POST['update_component'])) {
         $error = 'Height inches must be between 0 and 11.';
     } elseif ($selectedComponent === 'ROTC' && !$rotcMsLevel) {
         $error = 'Please select the MS level you will take.';
-    } elseif ($selectedComponent === 'ROTC' && !isStudentRotcMsLevelOpen($conn, $rotcMsLevel)) {
+    } elseif ($selectedComponent === 'ROTC' && !$canDirectlyChangeSavedComponent && !isStudentRotcMsLevelOpen($conn, $rotcMsLevel)) {
         $error = 'The selected ROTC MS level is currently closed.';
     } else {
         try {
@@ -368,11 +381,17 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                                 Your component and shirt size are already saved and can no longer be changed here.
                             </div>
                             <p><strong>Component:</strong> <?php echo htmlspecialchars($savedComponent); ?></p>
-                            <p><strong>Shirt Size:</strong> <?php echo htmlspecialchars($savedAccountShirtSize); ?></p>
+                            <p><strong>Shirt Size:</strong> <?php echo htmlspecialchars(displayShirtSize($savedAccountShirtSize)); ?></p>
                             <a href="profile.php?request_component_change=1#registrationEditRequestForm" class="btn btn-primary">
                                 <i class="fas fa-paper-plane mr-2"></i>Request Change from Super Admin
                             </a>
                         <?php else: ?>
+                        <?php if ($canDirectlyChangeSavedComponent): ?>
+                            <div class="alert alert-success">
+                                <i class="fas fa-unlock mr-2"></i>
+                                Direct component changes are enabled by the Super Admin. You may update your saved component without submitting a request.
+                            </div>
+                        <?php endif; ?>
                         <form method="POST" enctype="multipart/form-data">
                             <div class="form-group">
                                 <label for="component">NSTP Component</label>
@@ -393,7 +412,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                                     <?php $savedShirtSize = $user['shirt_size'] ?? ($rotcDetails['shirt_size'] ?? ''); ?>
                                     <?php foreach ($shirtSizeOptions as $shirtSizeOption): ?>
                                         <option value="<?php echo htmlspecialchars($shirtSizeOption); ?>" <?php echo $savedShirtSize === $shirtSizeOption ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($shirtSizeOption); ?>
+                                            <?php echo htmlspecialchars(displayShirtSize($shirtSizeOption)); ?>
                                         </option>
                                     <?php endforeach; ?>
                                     <option value="OTHER" <?php echo $savedShirtSize !== '' && !in_array($savedShirtSize, $shirtSizeOptions, true) ? 'selected' : ''; ?>>Others</option>
@@ -461,7 +480,7 @@ $rotcHeightParts = parseRotcHeight($rotcDetails['height'] ?? '');
                         <?php if ($studentRecord): ?>
                             <hr>
                             <p class="mb-1"><strong>Current Component:</strong> <?php echo htmlspecialchars($studentRecord['course_section']); ?></p>
-                            <p class="mb-1"><strong>Shirt Size:</strong> <?php echo htmlspecialchars($user['shirt_size'] ?? ($rotcDetails['shirt_size'] ?? 'Not set')); ?></p>
+                            <p class="mb-1"><strong>Shirt Size:</strong> <?php echo htmlspecialchars(displayShirtSize($user['shirt_size'] ?? ($rotcDetails['shirt_size'] ?? 'Not set'))); ?></p>
                             <?php if (($user['program'] ?? '') === 'ROTC'): ?>
                                 <p class="mb-1"><strong>Height:</strong> <?php echo htmlspecialchars($rotcDetails['height'] ?? 'Not set'); ?></p>
                                 <p class="mb-1"><strong>Enrollment Level:</strong> <?php echo htmlspecialchars($rotcDetails['rotc_ms_level'] ?? 'Not set'); ?></p>

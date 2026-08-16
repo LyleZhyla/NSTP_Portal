@@ -13,6 +13,7 @@ if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coor
 }
 
 $componentSelectionEnabled = isComponentSelectionEnabled($conn);
+$studentComponentChangeEnabled = isStudentComponentChangeEnabled($conn);
 $openStudentComponents = getOpenStudentComponents($conn);
 $openRotcMsLevels = getOpenRotcMsLevels($conn);
 $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
@@ -169,6 +170,20 @@ date_default_timezone_set('Asia/Manila');
                                 <h3 class="card-title"><i class="fas fa-layer-group mr-2"></i>Student Component Selection</h3>
                             </div>
                             <div class="card-body">
+                                <div class="setting-summary mb-3">
+                                    <i class="fas fa-people-arrows"></i>
+                                    <div class="flex-fill">
+                                        <strong>Allow all students to change their saved component</strong>
+                                        <span class="text-muted small d-block">When enabled, students can change directly without sending a Super Admin request.</span>
+                                    </div>
+                                    <div class="custom-control custom-switch ml-3">
+                                        <input type="checkbox" class="custom-control-input" id="studentComponentChangeToggle"
+                                               <?php echo $studentComponentChangeEnabled ? 'checked' : ''; ?>>
+                                        <label class="custom-control-label font-weight-bold" for="studentComponentChangeToggle" id="studentComponentChangeLabel">
+                                            <?php echo $studentComponentChangeEnabled ? 'Enabled' : 'Disabled'; ?>
+                                        </label>
+                                    </div>
+                                </div>
                                 <div class="setting-summary">
                                     <i class="fas fa-toggle-on"></i>
                                     <div class="flex-fill">
@@ -415,6 +430,37 @@ date_default_timezone_set('Asia/Manila');
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(function() {
+    $('#studentComponentChangeToggle').on('change', function() {
+        const toggle = $(this);
+        const enabled = toggle.is(':checked') ? 1 : 0;
+
+        $.ajax({
+            url: 'endpoint/toggle-student-component-change.php',
+            method: 'POST',
+            data: { enabled: enabled },
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    $('#studentComponentChangeLabel').text(response.enabled ? 'Enabled' : 'Disabled');
+                    Swal.fire({
+                        icon: 'success',
+                        title: response.enabled ? 'Direct Changes Enabled' : 'Direct Changes Disabled',
+                        text: response.message,
+                        timer: 2200,
+                        showConfirmButton: false
+                    });
+                } else {
+                    toggle.prop('checked', !enabled);
+                    Swal.fire('Error', response.message, 'error');
+                }
+            },
+            error: function() {
+                toggle.prop('checked', !enabled);
+                Swal.fire('Error', 'Failed to update the student component change setting.', 'error');
+            }
+        });
+    });
+
     function syncComponentSelectionState(response) {
         const openComponents = response.open_components || [];
         const openRotcLevels = response.open_rotc_ms_levels || [];
