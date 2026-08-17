@@ -395,7 +395,7 @@ $registrationPageUrl = static function ($page) {
             display: flex;
             flex-wrap: nowrap;
             align-items: stretch;
-            justify-content: flex-end;
+            justify-content: flex-start;
             gap: 8px;
             width: 100%;
             overflow-x: auto;
@@ -720,6 +720,10 @@ $registrationPageUrl = static function ($page) {
                                 </div>
                                 <div class="col-12 mt-3 d-flex align-items-end">
                                     <div class="registration-filter-actions">
+                                        <button type="submit" class="btn btn-info"><i class="fas fa-filter mr-1"></i> Apply</button>
+                                        <a href="student-registrations.php" class="btn btn-outline-secondary">
+                                            <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
+                                        </a>
                                         <?php if ($role === 'super_admin'): ?>
                                         <button type="button" class="btn btn-outline-primary" id="sendFacilitatorAccountEmailsBtn">
                                             <i class="fas fa-user-tie mr-1"></i> Send Facilitator Emails
@@ -728,10 +732,6 @@ $registrationPageUrl = static function ($page) {
                                         <button type="button" class="btn btn-primary" id="sendAccountEmailsBtn">
                                             <i class="fas fa-user-graduate mr-1"></i> Send Student Emails
                                         </button>
-                                        <button type="submit" class="btn btn-info"><i class="fas fa-filter mr-1"></i> Apply</button>
-                                        <a href="student-registrations.php" class="btn btn-outline-secondary">
-                                            <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
-                                        </a>
                                     </div>
                                 </div>
                             </div>
