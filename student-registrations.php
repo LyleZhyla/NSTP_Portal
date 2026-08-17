@@ -377,9 +377,11 @@ $registrationPageUrl = static function ($page) {
         }
         .public-action-group {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             align-items: stretch;
             gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 2px;
         }
         .public-action-group .btn {
             display: inline-flex;
@@ -390,10 +392,14 @@ $registrationPageUrl = static function ($page) {
             white-space: nowrap;
         }
         .registration-filter-actions {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: stretch;
+            justify-content: flex-end;
             gap: 8px;
             width: 100%;
+            overflow-x: auto;
+            padding-bottom: 2px;
         }
         .registration-filter-actions .btn {
             display: inline-flex;
@@ -401,7 +407,8 @@ $registrationPageUrl = static function ($page) {
             justify-content: center;
             min-height: 38px;
             margin: 0;
-            white-space: normal;
+            white-space: nowrap;
+            flex: 0 0 auto;
         }
         .registration-row-actions {
             display: inline-flex;
@@ -418,15 +425,6 @@ $registrationPageUrl = static function ($page) {
             height: 32px;
             padding: 0;
             margin: 0;
-        }
-        @media (max-width: 575.98px) {
-            .public-action-group {
-                display: grid;
-                grid-template-columns: minmax(0, 1fr);
-            }
-            .public-action-group .btn {
-                width: 100%;
-            }
         }
         .qr-pagination-bar {
             border-top: 1px solid #e3edf1;
@@ -720,7 +718,7 @@ $registrationPageUrl = static function ($page) {
                                         <small><?php echo number_format($filteredRegistrationCount); ?> filtered / <?php echo number_format($totalRegistrations); ?> total</small>
                                     </span>
                                 </div>
-                                <div class="col-md-3 mt-3 mt-md-0 d-flex align-items-end">
+                                <div class="col-12 mt-3 d-flex align-items-end">
                                     <div class="registration-filter-actions">
                                         <?php if ($role === 'super_admin'): ?>
                                         <button type="button" class="btn btn-outline-primary" id="sendFacilitatorAccountEmailsBtn">
