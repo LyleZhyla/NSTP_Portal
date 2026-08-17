@@ -483,24 +483,7 @@ $registrationPageUrl = static function ($page) {
                         </div>
                     </div>
                     <div class="card-body">
-                        <form class="table-filter-bar" method="get" action="student-registrations.php">
-                            <div class="row mb-3">
-                                <div class="col-md-8">
-                                    <label for="registrationSearch" class="mb-1">Search Registrations</label>
-                                    <input type="search" class="form-control" id="registrationSearch" name="search" value="<?php echo htmlspecialchars($registrationSearch); ?>" placeholder="Student number, name, or email">
-                                </div>
-                                <div class="col-md-2 mt-3 mt-md-0">
-                                    <label for="registrationPageSize" class="mb-1">Rows per Page</label>
-                                    <select class="form-control" id="registrationPageSize" name="per_page">
-                                        <?php foreach ($allowedPageSizes as $allowedPageSize): ?>
-                                        <option value="<?php echo $allowedPageSize; ?>" <?php echo $pageSize === $allowedPageSize ? 'selected' : ''; ?>><?php echo $allowedPageSize; ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-2 mt-3 mt-md-0 d-flex align-items-end">
-                                    <button type="submit" class="btn btn-info btn-block"><i class="fas fa-search mr-1"></i> Search</button>
-                                </div>
-                            </div>
+                        <div class="table-filter-bar">
                             <div class="row align-items-end">
                                 <div class="col-md-4">
                                     <label for="qrRoleFilter" class="mb-1">Filter by QR Type</label>
@@ -616,7 +599,29 @@ $registrationPageUrl = static function ($page) {
                         <h3 class="card-title"><i class="fas fa-table mr-2"></i>Submitted Public Registrations</h3>
                     </div>
                     <div class="card-body">
-                        <div class="table-filter-bar">
+                        <form class="table-filter-bar" method="get" action="student-registrations.php">
+                            <div class="row mb-3">
+                                <div class="col-md-8">
+                                    <label for="registrationSearch" class="mb-1">Search Registrations</label>
+                                    <div class="input-group">
+                                        <input type="search" class="form-control" id="registrationSearch" name="search" value="<?php echo htmlspecialchars($registrationSearch); ?>" placeholder="Student number, name, or email">
+                                        <div class="input-group-append">
+                                            <button type="submit" class="btn btn-info"><i class="fas fa-search mr-1"></i> Search</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0">
+                                    <label for="registrationPageSize" class="mb-1">Rows per Page</label>
+                                    <select class="form-control" id="registrationPageSize" name="per_page">
+                                        <?php foreach ($allowedPageSizes as $allowedPageSize): ?>
+                                        <option value="<?php echo $allowedPageSize; ?>" <?php echo $pageSize === $allowedPageSize ? 'selected' : ''; ?>><?php echo $allowedPageSize; ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0 d-flex align-items-end">
+                                    <a href="student-registrations.php" class="btn btn-outline-secondary btn-block"><i class="fas fa-rotate-left mr-1"></i> Reset</a>
+                                </div>
+                            </div>
                             <div class="row align-items-end">
                                 <div class="col-md-3">
                                     <label for="formTitleFilter" class="mb-1">Filter by Form Title</label>
