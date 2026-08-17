@@ -587,6 +587,20 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
         .download-card .btn {
             margin-top: auto;
         }
+        .download-card > .card-header {
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        .download-card > .card-header:hover,
+        .download-card > .card-header:focus-visible {
+            background: #f1f6fb;
+            box-shadow: inset 4px 0 0 #0d6efd;
+            outline: none;
+        }
+        .download-card > .card-header:focus-visible {
+            box-shadow: inset 4px 0 0 #0d6efd, 0 0 0 3px rgba(13, 110, 253, 0.2);
+        }
         .stat-tile {
             display: flex;
             align-items: center;
@@ -1443,6 +1457,46 @@ const saturdayAttendanceRange = {
     end: <?php echo json_encode($saturdayEndDate); ?>
 };
 const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5e9aa6', '#b97883', '#78906d', '#9b8a78', '#6f7f98', '#a284a6', '#8793a1'];
+
+document.querySelectorAll('.download-card > .card-header').forEach(function(header) {
+    const card = header.closest('.download-card');
+    const collapseButton = header.querySelector('[data-card-widget="collapse"]');
+    if (!card || !collapseButton) {
+        return;
+    }
+
+    const updateCardState = function() {
+        const isCollapsed = card.classList.contains('collapsed-card');
+        header.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+        collapseButton.setAttribute('title', isCollapsed ? 'Show details' : 'Hide details');
+        collapseButton.setAttribute('aria-label', isCollapsed ? 'Show details' : 'Hide details');
+    };
+
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    updateCardState();
+
+    const toggleCard = function() {
+        collapseButton.click();
+        window.setTimeout(updateCardState, 0);
+    };
+
+    header.addEventListener('click', function(event) {
+        if (event.target.closest('[data-card-widget="collapse"]')) {
+            window.setTimeout(updateCardState, 0);
+            return;
+        }
+        toggleCard();
+    });
+
+    header.addEventListener('keydown', function(event) {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        event.preventDefault();
+        toggleCard();
+    });
+});
 
 function updateAttendancePeriodFields() {
     const periodSelect = document.getElementById('attendancePeriod');
