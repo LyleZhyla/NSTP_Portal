@@ -9,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once './conn/conn.php';
 require_once './include/user-permissions.php';
 require_once './include/public-registration-forms.php';
+require_once './include/performance-migrations.php';
 
 $currentUser = getCurrentUserRecord($conn);
 $role = $currentUser['role'] ?? '';
@@ -17,6 +18,8 @@ if (!in_array($role, ['coordinator', 'super_admin'], true)) {
     header("Location: index.php");
     exit();
 }
+
+runPublicRegistrationPerformanceMigration($conn);
 
 function ensurePublicRegistrationTableForView(PDO $conn) {
     $conn->exec("
@@ -116,67 +119,144 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
     }
 }
 
-ensurePublicRegistrationTableForView($conn);
-ensureSystemLogsTable($conn);
 $publicForms = getPublicRegistrationForms($conn);
 $fieldOptions = getPublicRegistrationFieldOptions();
 
-$query = "
-    SELECT r.*, u.username, u.full_name, u.role AS account_role, f.form_title,
-           login_activity.first_login_at, login_activity.last_login_at,
-           COALESCE(login_activity.login_count, 0) AS login_count
+$allowedPageSizes = [10, 25, 50, 100];
+$pageSize = (int) ($_GET['per_page'] ?? 25);
+if (!in_array($pageSize, $allowedPageSizes, true)) {
+    $pageSize = 25;
+}
+$currentPage = max(1, (int) ($_GET['page'] ?? 1));
+$selectedFormTitle = trim((string) ($_GET['form_title'] ?? ''));
+$selectedComponent = normalizeProgram($_GET['component'] ?? null);
+$selectedAccountStatus = (string) ($_GET['account_status'] ?? '');
+if (!in_array($selectedAccountStatus, ['', 'opened', 'not_opened', 'no_account'], true)) {
+    $selectedAccountStatus = '';
+}
+$registrationSearch = trim((string) ($_GET['search'] ?? ''));
+$program = $role === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
+
+$registrationJoins = "
     FROM tbl_public_student_registrations r
-    LEFT JOIN tbl_users u
-      ON r.user_id = u.user_id
-      OR (
-          r.user_id IS NULL
-          AND r.registrant_role = 'student'
-          AND u.role = 'student'
-          AND u.username = r.student_number
-      )
-    LEFT JOIN (
-        SELECT user_id,
-               MIN(created_at) AS first_login_at,
-               MAX(created_at) AS last_login_at,
-               COUNT(*) AS login_count
-        FROM tbl_system_logs
-        WHERE action = 'user_login'
-          AND user_id IS NOT NULL
-        GROUP BY user_id
-    ) login_activity ON login_activity.user_id = u.user_id
+    LEFT JOIN tbl_users linked_user ON linked_user.user_id = r.user_id
+    LEFT JOIN tbl_users matched_user
+      ON r.user_id IS NULL
+     AND r.registrant_role = 'student'
+     AND matched_user.role = 'student'
+     AND matched_user.username = r.student_number
     LEFT JOIN tbl_public_registration_forms f ON r.form_id = f.form_id
-    WHERE COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
 ";
-$params = [];
-
+$baseRegistrationWhere = ["COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')"];
+$baseRegistrationParams = [];
 if ($role === 'coordinator') {
-    $program = normalizeProgram($currentUser['program'] ?? null);
-    $query .= " AND r.component = ?";
-    $params[] = $program;
+    $baseRegistrationWhere[] = 'r.component = ?';
+    $baseRegistrationParams[] = $program;
+} elseif ($selectedComponent) {
+    $baseRegistrationWhere[] = 'r.component = ?';
+    $baseRegistrationParams[] = $selectedComponent;
 }
 
-$query .= " ORDER BY r.created_at DESC";
-$stmt = $conn->prepare($query);
-$stmt->execute($params);
-$registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-$totalRegistrations = count($registrations);
-$studentSubmissionCounts = [];
-foreach ($registrations as $registration) {
-    if (($registration['registrant_role'] ?? 'student') !== 'student') {
-        continue;
-    }
-
-    $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
-    if ($studentNumber !== '') {
-        $studentSubmissionCounts[$studentNumber] = ($studentSubmissionCounts[$studentNumber] ?? 0) + 1;
-    }
+$filteredRegistrationWhere = $baseRegistrationWhere;
+$filteredRegistrationParams = $baseRegistrationParams;
+if ($selectedFormTitle !== '') {
+    $filteredRegistrationWhere[] = "COALESCE(NULLIF(f.form_title, ''), 'Unlinked QR Form') = ?";
+    $filteredRegistrationParams[] = $selectedFormTitle;
+}
+if ($registrationSearch !== '') {
+    $filteredRegistrationWhere[] = "(
+        r.student_number LIKE ? OR r.email LIKE ? OR r.last_name LIKE ? OR
+        r.first_name LIKE ? OR CONCAT_WS(' ', r.first_name, r.middle_name, r.last_name) LIKE ?
+    )";
+    $searchPattern = '%' . $registrationSearch . '%';
+    array_push($filteredRegistrationParams, $searchPattern, $searchPattern, $searchPattern, $searchPattern, $searchPattern);
 }
 
-$duplicateSubmissionCount = array_sum(array_map(
-    static fn($count) => max(0, (int) $count - 1),
-    $studentSubmissionCounts
-));
+$accountIdExpression = 'COALESCE(linked_user.user_id, matched_user.user_id)';
+$savedLastLoginExpression = 'COALESCE(linked_user.last_login_at, matched_user.last_login_at)';
+$fallbackLastLoginExpression = "(
+    SELECT MAX(login_log.created_at)
+    FROM tbl_system_logs login_log
+    WHERE login_log.action = 'user_login'
+      AND login_log.user_id = {$accountIdExpression}
+)";
+
+$loadRegistrationPage = static function ($lastLoginExpression) use (
+    $conn, $registrationJoins, $filteredRegistrationWhere, $filteredRegistrationParams,
+    $selectedAccountStatus, $accountIdExpression, $pageSize, &$currentPage
+) {
+    $where = $filteredRegistrationWhere;
+    if ($selectedAccountStatus === 'opened') {
+        $where[] = "{$accountIdExpression} IS NOT NULL AND {$lastLoginExpression} IS NOT NULL";
+    } elseif ($selectedAccountStatus === 'not_opened') {
+        $where[] = "{$accountIdExpression} IS NOT NULL AND {$lastLoginExpression} IS NULL";
+    } elseif ($selectedAccountStatus === 'no_account') {
+        $where[] = "{$accountIdExpression} IS NULL";
+    }
+    $whereSql = implode(' AND ', $where);
+
+    $countStmt = $conn->prepare("SELECT COUNT(*) {$registrationJoins} WHERE {$whereSql}");
+    $countStmt->execute($filteredRegistrationParams);
+    $filteredTotal = (int) $countStmt->fetchColumn();
+    $totalPages = max(1, (int) ceil($filteredTotal / $pageSize));
+    $currentPage = min($currentPage, $totalPages);
+    $offset = ($currentPage - 1) * $pageSize;
+
+    $query = "
+        SELECT r.*,
+               COALESCE(linked_user.username, matched_user.username) AS username,
+               COALESCE(linked_user.full_name, matched_user.full_name) AS full_name,
+               COALESCE(linked_user.role, matched_user.role) AS account_role,
+               {$accountIdExpression} AS resolved_user_id,
+               f.form_title,
+               {$lastLoginExpression} AS last_login_at,
+               (
+                   SELECT COUNT(*)
+                   FROM tbl_public_student_registrations duplicate_registration
+                   WHERE duplicate_registration.registrant_role = 'student'
+                     AND duplicate_registration.student_number = r.student_number
+                     AND COALESCE(duplicate_registration.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+               ) AS duplicate_submission_count
+        {$registrationJoins}
+        WHERE {$whereSql}
+        ORDER BY r.created_at DESC, r.registration_id DESC
+        LIMIT {$pageSize} OFFSET {$offset}
+    ";
+    $stmt = $conn->prepare($query);
+    $stmt->execute($filteredRegistrationParams);
+    return [$stmt->fetchAll(PDO::FETCH_ASSOC), $filteredTotal, $totalPages];
+};
+
+$usingSavedLoginActivity = true;
+try {
+    [$registrations, $filteredRegistrationCount, $totalRegistrationPages] = $loadRegistrationPage($savedLastLoginExpression);
+} catch (PDOException $error) {
+    $usingSavedLoginActivity = false;
+    [$registrations, $filteredRegistrationCount, $totalRegistrationPages] = $loadRegistrationPage($fallbackLastLoginExpression);
+}
+
+$totalRegistrationStmt = $conn->prepare(
+    'SELECT COUNT(*) ' . $registrationJoins . ' WHERE ' . implode(' AND ', $baseRegistrationWhere)
+);
+$totalRegistrationStmt->execute($baseRegistrationParams);
+$totalRegistrations = (int) $totalRegistrationStmt->fetchColumn();
+
+$duplicateSql = "
+    SELECT COALESCE(SUM(duplicate_group.submission_count - 1), 0)
+    FROM (
+        SELECT r.student_number, COUNT(*) AS submission_count
+        FROM tbl_public_student_registrations r
+        WHERE " . implode(' AND ', $baseRegistrationWhere) . "
+          AND r.registrant_role = 'student'
+          AND r.student_number IS NOT NULL
+          AND r.student_number <> ''
+        GROUP BY r.student_number
+        HAVING COUNT(*) > 1
+    ) duplicate_group
+";
+$duplicateStmt = $conn->prepare($duplicateSql);
+$duplicateStmt->execute($baseRegistrationParams);
+$duplicateSubmissionCount = (int) $duplicateStmt->fetchColumn();
 
 $studentAccountWhere = "u.role = 'student'";
 $studentAccountParams = [];
@@ -189,17 +269,26 @@ $studentAccountStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users u WHERE {$s
 $studentAccountStmt->execute($studentAccountParams);
 $totalStudentAccounts = (int) $studentAccountStmt->fetchColumn();
 
-$openedAccountStmt = $conn->prepare("
-    SELECT COUNT(DISTINCT u.user_id)
-    FROM tbl_users u
-    INNER JOIN tbl_system_logs l
-      ON l.user_id = u.user_id
-     AND l.action = 'user_login'
-    WHERE {$studentAccountWhere}
-");
-$openedAccountStmt->execute($studentAccountParams);
-$openedStudentAccounts = (int) $openedAccountStmt->fetchColumn();
+try {
+    $openedAccountStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users u WHERE {$studentAccountWhere} AND u.last_login_at IS NOT NULL");
+    $openedAccountStmt->execute($studentAccountParams);
+    $openedStudentAccounts = (int) $openedAccountStmt->fetchColumn();
+} catch (PDOException $error) {
+    $openedAccountStmt = $conn->prepare("
+        SELECT COUNT(DISTINCT u.user_id)
+        FROM tbl_users u
+        INNER JOIN tbl_system_logs l ON l.user_id = u.user_id AND l.action = 'user_login'
+        WHERE {$studentAccountWhere}
+    ");
+    $openedAccountStmt->execute($studentAccountParams);
+    $openedStudentAccounts = (int) $openedAccountStmt->fetchColumn();
+}
 $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccounts);
+$registrationPageUrl = static function ($page) {
+    $query = $_GET;
+    $query['page'] = max(1, (int) $page);
+    return 'student-registrations.php?' . http_build_query($query);
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -394,7 +483,24 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="table-filter-bar">
+                        <form class="table-filter-bar" method="get" action="student-registrations.php">
+                            <div class="row mb-3">
+                                <div class="col-md-8">
+                                    <label for="registrationSearch" class="mb-1">Search Registrations</label>
+                                    <input type="search" class="form-control" id="registrationSearch" name="search" value="<?php echo htmlspecialchars($registrationSearch); ?>" placeholder="Student number, name, or email">
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0">
+                                    <label for="registrationPageSize" class="mb-1">Rows per Page</label>
+                                    <select class="form-control" id="registrationPageSize" name="per_page">
+                                        <?php foreach ($allowedPageSizes as $allowedPageSize): ?>
+                                        <option value="<?php echo $allowedPageSize; ?>" <?php echo $pageSize === $allowedPageSize ? 'selected' : ''; ?>><?php echo $allowedPageSize; ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-info btn-block"><i class="fas fa-search mr-1"></i> Search</button>
+                                </div>
+                            </div>
                             <div class="row align-items-end">
                                 <div class="col-md-4">
                                     <label for="qrRoleFilter" class="mb-1">Filter by QR Type</label>
@@ -514,10 +620,10 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                             <div class="row align-items-end">
                                 <div class="col-md-3">
                                     <label for="formTitleFilter" class="mb-1">Filter by Form Title</label>
-                                    <select class="form-control" id="formTitleFilter">
+                                    <select class="form-control" id="formTitleFilter" name="form_title">
                                         <option value="">All public registration forms</option>
                                         <?php foreach ($publicForms as $formRow): ?>
-                                            <option value="<?php echo htmlspecialchars($formRow['form_title']); ?>">
+                                            <option value="<?php echo htmlspecialchars($formRow['form_title']); ?>" <?php echo $selectedFormTitle === $formRow['form_title'] ? 'selected' : ''; ?>>
                                                 <?php echo htmlspecialchars($formRow['form_title']); ?>
                                             </option>
                                         <?php endforeach; ?>
@@ -525,33 +631,33 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                                 </div>
                                 <div class="col-md-2 mt-3 mt-md-0">
                                     <label for="componentFilter" class="mb-1">Component</label>
-                                    <select class="form-control" id="componentFilter" <?php echo $role === 'coordinator' ? 'disabled' : ''; ?>>
+                                    <select class="form-control" id="componentFilter" name="component" <?php echo $role === 'coordinator' ? 'disabled' : ''; ?>>
                                         <?php if ($role === 'coordinator'): ?>
                                             <option value="<?php echo htmlspecialchars(normalizeProgram($currentUser['program'] ?? null) ?? ''); ?>" selected>
                                                 <?php echo htmlspecialchars(normalizeProgram($currentUser['program'] ?? null) ?? 'Component'); ?>
                                             </option>
                                         <?php else: ?>
                                             <option value="">All Components</option>
-                                            <option value="CWTS">CWTS</option>
-                                            <option value="LTS">LTS</option>
-                                            <option value="ROTC">ROTC</option>
+                                            <option value="CWTS" <?php echo $selectedComponent === 'CWTS' ? 'selected' : ''; ?>>CWTS</option>
+                                            <option value="LTS" <?php echo $selectedComponent === 'LTS' ? 'selected' : ''; ?>>LTS</option>
+                                            <option value="ROTC" <?php echo $selectedComponent === 'ROTC' ? 'selected' : ''; ?>>ROTC</option>
                                         <?php endif; ?>
                                     </select>
                                 </div>
                                 <div class="col-md-2 mt-3 mt-md-0">
                                     <label for="accountStatusFilter" class="mb-1">Account Status</label>
-                                    <select class="form-control" id="accountStatusFilter">
+                                    <select class="form-control" id="accountStatusFilter" name="account_status">
                                         <option value="">All statuses</option>
-                                        <option value="Opened">Opened</option>
-                                        <option value="Not opened">Not opened</option>
-                                        <option value="No account">No account</option>
+                                        <option value="opened" <?php echo $selectedAccountStatus === 'opened' ? 'selected' : ''; ?>>Opened</option>
+                                        <option value="not_opened" <?php echo $selectedAccountStatus === 'not_opened' ? 'selected' : ''; ?>>Not opened</option>
+                                        <option value="no_account" <?php echo $selectedAccountStatus === 'no_account' ? 'selected' : ''; ?>>No account</option>
                                     </select>
                                 </div>
                                 <div class="col-md-2 mt-3 mt-md-0">
                                     <span class="detail-label">Visible Submissions</span>
                                     <span class="detail-value">
-                                        <span id="visibleSubmissionCount"><?php echo (int) $totalRegistrations; ?></span>
-                                        of <?php echo (int) $totalRegistrations; ?>
+                                        <?php echo count($registrations); ?> on this page<br>
+                                        <small><?php echo number_format($filteredRegistrationCount); ?> filtered / <?php echo number_format($totalRegistrations); ?> total</small>
                                     </span>
                                 </div>
                                 <div class="col-md-3 mt-3 mt-md-0 text-md-right">
@@ -563,12 +669,13 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                                     <button type="button" class="btn btn-primary mb-2" id="sendAccountEmailsBtn">
                                         <i class="fas fa-user-graduate mr-1"></i> Send Student Emails
                                     </button>
-                                    <button type="button" class="btn btn-outline-secondary" id="clearFormTitleFilter">
+                                    <button type="submit" class="btn btn-info mb-2"><i class="fas fa-filter mr-1"></i> Apply</button>
+                                    <a href="student-registrations.php" class="btn btn-outline-secondary mb-2">
                                         <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
-                                    </button>
+                                    </a>
                                 </div>
                             </div>
-                        </div>
+                        </form>
                         <div class="table-responsive">
                             <table class="table table-hover" id="registrationsTable">
                                 <thead>
@@ -625,10 +732,10 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                                             $dobDisplay = (!empty($row['date_of_birth']) && $row['date_of_birth'] !== '1900-01-01') ? date('m/d/Y', strtotime($row['date_of_birth'])) : 'N/A';
                                             $photoPath = $row['formal_picture'] ?: 'include/logo.png';
                                             $rotcMsLevel = trim((string) ($row['rotc_ms_level'] ?? ''));
-                                            $studentSubmissionCount = $studentSubmissionCounts[$studentNumberForEmail] ?? 0;
+                                            $studentSubmissionCount = (int) ($row['duplicate_submission_count'] ?? 0);
                                             $isDuplicateSubmission = $registrantRole === 'student' && $studentSubmissionCount > 1;
-                                            $hasAccount = !empty($row['user_id']) || !empty($row['username']);
-                                            $hasOpenedAccount = $hasAccount && !empty($row['first_login_at']);
+                                            $hasAccount = !empty($row['resolved_user_id']);
+                                            $hasOpenedAccount = $hasAccount && !empty($row['last_login_at']);
                                             $accountStatus = $hasOpenedAccount ? 'Opened' : ($hasAccount ? 'Not opened' : 'No account');
                                         ?>
                                         <tr>
@@ -672,7 +779,7 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                                             <td data-search="<?php echo htmlspecialchars($accountStatus); ?>">
                                                 <?php if ($hasOpenedAccount): ?>
                                                     <span class="badge badge-success">Opened</span>
-                                                    <small class="d-block text-muted mt-1" title="First login: <?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['first_login_at']))); ?>">
+                                                    <small class="d-block text-muted mt-1">
                                                         Last: <?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['last_login_at']))); ?>
                                                     </small>
                                                 <?php elseif ($hasAccount): ?>
@@ -701,11 +808,11 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                                                         <i class="fas <?php echo $role === 'super_admin' ? 'fa-key' : 'fa-envelope'; ?>"></i>
                                                     </button>
                                                 <?php endif; ?>
-                                                <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
+                                                <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['resolved_user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
                                                     <button
                                                         type="button"
                                                         class="btn btn-sm btn-danger delete-student-account"
-                                                        data-user-id="<?php echo (int) $row['user_id']; ?>"
+                                                        data-user-id="<?php echo (int) $row['resolved_user_id']; ?>"
                                                         data-name="<?php echo htmlspecialchars($fullName); ?>">
                                                         <i class="fas fa-user-times"></i>
                                                     </button>
@@ -835,6 +942,27 @@ $notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccount
                                 </tbody>
                             </table>
                         </div>
+                        <?php if ($totalRegistrationPages > 1): ?>
+                        <nav class="mt-3" aria-label="Registration pages">
+                            <ul class="pagination pagination-sm justify-content-center mb-0">
+                                <li class="page-item <?php echo $currentPage <= 1 ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="<?php echo htmlspecialchars($registrationPageUrl($currentPage - 1)); ?>">Previous</a>
+                                </li>
+                                <?php
+                                $pageStart = max(1, $currentPage - 2);
+                                $pageEnd = min($totalRegistrationPages, $currentPage + 2);
+                                for ($pageNumber = $pageStart; $pageNumber <= $pageEnd; $pageNumber++):
+                                ?>
+                                <li class="page-item <?php echo $pageNumber === $currentPage ? 'active' : ''; ?>">
+                                    <a class="page-link" href="<?php echo htmlspecialchars($registrationPageUrl($pageNumber)); ?>"><?php echo $pageNumber; ?></a>
+                                </li>
+                                <?php endfor; ?>
+                                <li class="page-item <?php echo $currentPage >= $totalRegistrationPages ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="<?php echo htmlspecialchars($registrationPageUrl($currentPage + 1)); ?>">Next</a>
+                                </li>
+                            </ul>
+                        </nav>
+                        <?php endif; ?>
                         <?php echo $detailsModalsHtml; ?>
                     </div>
                 </div>
@@ -930,20 +1058,10 @@ foreach ($publicForms as $formRow) {
     $(function () {
         const registrationsTable = $('#registrationsTable').DataTable({
             responsive: true,
-            order: [[11, 'desc']],
-            pageLength: 25,
-            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
-            pagingType: 'simple_numbers',
-            language: {
-                lengthMenu: 'Show _MENU_ submissions',
-                info: 'Showing _START_ to _END_ of _TOTAL_ submissions',
-                infoEmpty: 'Showing 0 submissions',
-                infoFiltered: '(filtered from _MAX_ total submissions)',
-                paginate: {
-                    previous: 'Previous',
-                    next: 'Next'
-                }
-            }
+            paging: false,
+            searching: false,
+            ordering: false,
+            info: false
         });
 
         function escapeRegex(value) {
@@ -980,49 +1098,6 @@ foreach ($publicForms as $formRow) {
 
             return responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 500) || fallback;
         }
-
-        function updateVisibleSubmissionCount() {
-            $('#visibleSubmissionCount').text(registrationsTable.rows({ filter: 'applied' }).count());
-        }
-
-        function applyComponentFilter() {
-            const selectedComponent = $('#componentFilter').val();
-            registrationsTable.column(7).search(selectedComponent || '').draw();
-        }
-
-        $('#formTitleFilter').on('change', function() {
-            const selectedFormTitle = $(this).val();
-            if (selectedFormTitle === '') {
-                registrationsTable.column(1).search('').draw();
-                return;
-            }
-
-            registrationsTable
-                .column(1)
-                .search('^' + escapeRegex(selectedFormTitle) + '$', true, false)
-                .draw();
-        });
-
-        $('#clearFormTitleFilter').on('click', function() {
-            $('#formTitleFilter').val('');
-            $('#accountStatusFilter').val('');
-            <?php if ($role !== 'coordinator'): ?>
-            $('#componentFilter').val('');
-            <?php endif; ?>
-            registrationsTable.column(7).search('');
-            registrationsTable.column(10).search('');
-            registrationsTable.column(1).search('').draw();
-        });
-
-        $('#componentFilter').on('change', applyComponentFilter);
-
-        $('#accountStatusFilter').on('change', function() {
-            const selectedStatus = $(this).val();
-            registrationsTable
-                .column(10)
-                .search(selectedStatus ? '^' + escapeRegex(selectedStatus) + '$' : '', true, false)
-                .draw();
-        });
 
         $('#sendFacilitatorAccountEmailsBtn').on('click', function() {
             const button = $(this);
@@ -1336,10 +1411,6 @@ foreach ($publicForms as $formRow) {
                 });
             });
         });
-
-        registrationsTable.on('draw', updateVisibleSubmissionCount);
-        updateVisibleSubmissionCount();
-        applyComponentFilter();
 
         const qrPageSize = 4;
         let qrCurrentPage = 1;

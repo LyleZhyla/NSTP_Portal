@@ -492,8 +492,6 @@ function publicRegistrationOriginalSection(array $registration) {
 }
 
 function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
-    ensureStudentNumberColumn($conn);
-
     $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
         throw new Exception('Student Number must be exactly 10 digits and numbers only.');
@@ -569,7 +567,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    ensurePublicRegistrationTable($conn);
     $formId = (int) ($_POST['form_id'] ?? 0);
     $stmt = $conn->prepare("SELECT * FROM tbl_public_registration_forms WHERE form_id = ? AND is_active = 1 LIMIT 1");
     $stmt->execute([$formId]);

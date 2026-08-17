@@ -50,6 +50,21 @@ try {
     $_SESSION['program'] = $user['program'] ?? null;
     $_SESSION['last_activity'] = time();
 
+    // Durable account-open tracking. The audit log remains as a fallback for
+    // databases where the one-time performance migration is still pending.
+    try {
+        $loginActivityStmt = $conn->prepare("
+            UPDATE tbl_users
+            SET first_login_at = COALESCE(first_login_at, NOW()),
+                last_login_at = NOW(),
+                login_count = login_count + 1
+            WHERE user_id = ?
+        ");
+        $loginActivityStmt->execute([(int) $user['user_id']]);
+    } catch (Throwable $ignored) {
+        // Backward compatibility until db/optimize_public_registrations.sql runs.
+    }
+
     $profilePicture = trim((string) ($user['profile_picture'] ?? ''));
     if ($profilePicture === '' || !profilePictureExists($profilePicture, dirname(__DIR__))) {
         $profilePicture = syncRegistrationProfilePicture($conn, (int) $user['user_id'], dirname(__DIR__));

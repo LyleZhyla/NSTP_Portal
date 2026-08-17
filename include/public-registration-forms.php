@@ -81,8 +81,6 @@ function ensurePublicRegistrationFormsTable(PDO $conn) {
 }
 
 function getPublicRegistrationForms(PDO $conn) {
-    ensurePublicRegistrationFormsTable($conn);
-
     $stmt = $conn->prepare("
         SELECT f.*, u.full_name AS created_by_name
         FROM tbl_public_registration_forms f
@@ -99,8 +97,6 @@ function decodePublicRegistrationFields($fieldConfig) {
 }
 
 function getPublicRegistrationForm(PDO $conn, $slug = null) {
-    ensurePublicRegistrationFormsTable($conn);
-
     if ($slug) {
         $stmt = $conn->prepare("SELECT * FROM tbl_public_registration_forms WHERE form_slug = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$slug]);

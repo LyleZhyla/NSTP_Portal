@@ -323,6 +323,9 @@ CREATE TABLE `tbl_users` (
   `assigned_section` varchar(255) DEFAULT NULL,
   `profile_picture` varchar(255) DEFAULT NULL,
   `last_password_change` timestamp NULL DEFAULT NULL,
+  `first_login_at` datetime DEFAULT NULL,
+  `last_login_at` datetime DEFAULT NULL,
+  `login_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `created_by` int(11) DEFAULT NULL
@@ -398,7 +401,10 @@ ALTER TABLE `tbl_public_student_registrations`
   ADD KEY `idx_email` (`email`),
   ADD KEY `idx_course_year` (`college`,`course`,`year_section`),
   ADD KEY `idx_status` (`status`),
-  ADD KEY `idx_created_at` (`created_at`);
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `idx_public_reg_student_status` (`student_number`,`registrant_role`,`status`),
+  ADD KEY `idx_public_reg_list` (`registrant_role`,`status`,`component`,`created_at`),
+  ADD KEY `idx_public_reg_user` (`user_id`);
 
 --
 -- Indexes for table `tbl_public_registration_forms`
@@ -452,7 +458,9 @@ ALTER TABLE `tbl_landing_sections`
 ALTER TABLE `tbl_users`
   ADD PRIMARY KEY (`user_id`),
   ADD UNIQUE KEY `username` (`username`),
-  ADD UNIQUE KEY `email` (`email`);
+  ADD UNIQUE KEY `email` (`email`),
+  ADD KEY `idx_users_role_program` (`role`,`program`),
+  ADD KEY `idx_users_last_login` (`role`,`last_login_at`);
 
 --
 -- AUTO_INCREMENT for dumped tables

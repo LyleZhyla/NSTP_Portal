@@ -125,8 +125,6 @@ function studentAutomationCourseSection(PDO $conn, array $registration) {
 }
 
 function ensureStudentQrRecordForAccount(PDO $conn, $studentNumber, $userId = null, ?array $registration = null) {
-    ensureStudentNumberColumn($conn);
-
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
         return null;
@@ -319,8 +317,6 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
 }
 
 function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
-    ensureStudentNumberColumn($conn);
-
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
         return ['created' => false, 'reason' => 'missing_student_number'];
@@ -397,8 +393,6 @@ function autoCreateStudentAccountIfEligible(PDO $conn, $studentNumber) {
 }
 
 function autoCreateStudentAccountFromPublicRegistrations(PDO $conn, $studentNumber) {
-    ensureStudentNumberColumn($conn);
-
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
         return ['created' => false, 'reason' => 'missing_student_number'];

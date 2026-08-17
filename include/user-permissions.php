@@ -483,14 +483,6 @@ function requestedManagedProgram(array $actor, $requestedProgram) {
 
 function getSystemSetting(PDO $conn, $settingKey, $defaultValue = null) {
     try {
-        $conn->exec("
-            CREATE TABLE IF NOT EXISTS tbl_system_settings (
-                setting_key VARCHAR(100) PRIMARY KEY,
-                setting_value VARCHAR(255) NOT NULL,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ");
-
         $stmt = $conn->prepare("SELECT setting_value FROM tbl_system_settings WHERE setting_key = ?");
         $stmt->execute([$settingKey]);
         $value = $stmt->fetchColumn();
