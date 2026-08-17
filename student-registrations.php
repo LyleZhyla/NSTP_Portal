@@ -375,6 +375,59 @@ $registrationPageUrl = static function ($page) {
             padding: 14px;
             margin-bottom: 16px;
         }
+        .public-action-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: stretch;
+            gap: 8px;
+        }
+        .public-action-group .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            margin: 0;
+            white-space: nowrap;
+        }
+        .registration-filter-actions {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
+            width: 100%;
+        }
+        .registration-filter-actions .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            margin: 0;
+            white-space: normal;
+        }
+        .registration-row-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .registration-row-actions .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            margin: 0;
+        }
+        @media (max-width: 575.98px) {
+            .public-action-group {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .public-action-group .btn {
+                width: 100%;
+            }
+        }
         .qr-pagination-bar {
             border-top: 1px solid #e3edf1;
             padding-top: 12px;
@@ -560,18 +613,20 @@ $registrationPageUrl = static function ($page) {
                                                         <?php endif; ?>
                                                     <?php endforeach; ?>
                                                 </div>
-                                                <button type="button" class="btn btn-sm btn-warning" data-toggle="modal" data-target="#formModal<?php echo (int) $formRow['form_id']; ?>">
-                                                    <i class="fas fa-edit mr-1"></i> Edit
-                                                </button>
-                                                <a class="btn btn-sm btn-info public-qr-btn" href="endpoint/download-public-registration-qr.php?form=<?php echo urlencode($formRow['form_slug']); ?>">
-                                                    <i class="fas fa-download mr-1"></i> Download QR
-                                                </a>
-                                                <button type="button"
-                                                        class="btn btn-sm btn-danger delete-public-form"
-                                                        data-id="<?php echo (int) $formRow['form_id']; ?>"
-                                                        data-title="<?php echo htmlspecialchars($formRow['form_title']); ?>">
-                                                    <i class="fas fa-trash mr-1"></i> Delete
-                                                </button>
+                                                <div class="public-action-group">
+                                                    <button type="button" class="btn btn-sm btn-warning" data-toggle="modal" data-target="#formModal<?php echo (int) $formRow['form_id']; ?>">
+                                                        <i class="fas fa-edit mr-1"></i> Edit
+                                                    </button>
+                                                    <a class="btn btn-sm btn-info public-qr-btn" href="endpoint/download-public-registration-qr.php?form=<?php echo urlencode($formRow['form_slug']); ?>">
+                                                        <i class="fas fa-download mr-1"></i> Download QR
+                                                    </a>
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-danger delete-public-form"
+                                                            data-id="<?php echo (int) $formRow['form_id']; ?>"
+                                                            data-title="<?php echo htmlspecialchars($formRow['form_title']); ?>">
+                                                        <i class="fas fa-trash mr-1"></i> Delete
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -665,19 +720,21 @@ $registrationPageUrl = static function ($page) {
                                         <small><?php echo number_format($filteredRegistrationCount); ?> filtered / <?php echo number_format($totalRegistrations); ?> total</small>
                                     </span>
                                 </div>
-                                <div class="col-md-3 mt-3 mt-md-0 text-md-right">
-                                    <?php if ($role === 'super_admin'): ?>
-                                    <button type="button" class="btn btn-outline-primary mb-2" id="sendFacilitatorAccountEmailsBtn">
-                                        <i class="fas fa-user-tie mr-1"></i> Send Facilitator Emails
-                                    </button>
-                                    <?php endif; ?>
-                                    <button type="button" class="btn btn-primary mb-2" id="sendAccountEmailsBtn">
-                                        <i class="fas fa-user-graduate mr-1"></i> Send Student Emails
-                                    </button>
-                                    <button type="submit" class="btn btn-info mb-2"><i class="fas fa-filter mr-1"></i> Apply</button>
-                                    <a href="student-registrations.php" class="btn btn-outline-secondary mb-2">
-                                        <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
-                                    </a>
+                                <div class="col-md-3 mt-3 mt-md-0 d-flex align-items-end">
+                                    <div class="registration-filter-actions">
+                                        <?php if ($role === 'super_admin'): ?>
+                                        <button type="button" class="btn btn-outline-primary" id="sendFacilitatorAccountEmailsBtn">
+                                            <i class="fas fa-user-tie mr-1"></i> Send Facilitator Emails
+                                        </button>
+                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-primary" id="sendAccountEmailsBtn">
+                                            <i class="fas fa-user-graduate mr-1"></i> Send Student Emails
+                                        </button>
+                                        <button type="submit" class="btn btn-info"><i class="fas fa-filter mr-1"></i> Apply</button>
+                                        <a href="student-registrations.php" class="btn btn-outline-secondary">
+                                            <i class="fas fa-filter-circle-xmark mr-1"></i> Clear Filter
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -798,30 +855,33 @@ $registrationPageUrl = static function ($page) {
                                             </td>
                                             <td data-order="<?php echo (int) strtotime($row['created_at']); ?>"><?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['created_at']))); ?></td>
                                             <td>
-                                                <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailsModal<?php echo $registrationId; ?>">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                                <?php if ($canSendStudentCredentials): ?>
-                                                    <button
-                                                        type="button"
-                                                        class="btn btn-sm <?php echo $role === 'super_admin' ? 'btn-primary' : 'btn-success'; ?> resend-student-credentials"
-                                                        data-registration-id="<?php echo (int) $registrationId; ?>"
-                                                        data-name="<?php echo htmlspecialchars($fullName); ?>"
-                                                        data-email="<?php echo htmlspecialchars($displayEmail); ?>"
-                                                        data-can-view="<?php echo $role === 'super_admin' ? '1' : '0'; ?>"
-                                                        title="<?php echo htmlspecialchars($credentialButtonTitle); ?>">
-                                                        <i class="fas <?php echo $role === 'super_admin' ? 'fa-key' : 'fa-envelope'; ?>"></i>
+                                                <div class="registration-row-actions">
+                                                    <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailsModal<?php echo $registrationId; ?>" title="View details">
+                                                        <i class="fas fa-eye"></i>
                                                     </button>
-                                                <?php endif; ?>
-                                                <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['resolved_user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
-                                                    <button
-                                                        type="button"
-                                                        class="btn btn-sm btn-danger delete-student-account"
-                                                        data-user-id="<?php echo (int) $row['resolved_user_id']; ?>"
-                                                        data-name="<?php echo htmlspecialchars($fullName); ?>">
-                                                        <i class="fas fa-user-times"></i>
-                                                    </button>
-                                                <?php endif; ?>
+                                                    <?php if ($canSendStudentCredentials): ?>
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm <?php echo $role === 'super_admin' ? 'btn-primary' : 'btn-success'; ?> resend-student-credentials"
+                                                            data-registration-id="<?php echo (int) $registrationId; ?>"
+                                                            data-name="<?php echo htmlspecialchars($fullName); ?>"
+                                                            data-email="<?php echo htmlspecialchars($displayEmail); ?>"
+                                                            data-can-view="<?php echo $role === 'super_admin' ? '1' : '0'; ?>"
+                                                            title="<?php echo htmlspecialchars($credentialButtonTitle); ?>">
+                                                            <i class="fas <?php echo $role === 'super_admin' ? 'fa-key' : 'fa-envelope'; ?>"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                    <?php if ($role === 'super_admin' && $registrantRole === 'student' && !empty($row['resolved_user_id']) && ($row['account_role'] ?? '') === 'student'): ?>
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-danger delete-student-account"
+                                                            data-user-id="<?php echo (int) $row['resolved_user_id']; ?>"
+                                                            data-name="<?php echo htmlspecialchars($fullName); ?>"
+                                                            title="Delete student account">
+                                                            <i class="fas fa-user-times"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </div>
                                             </td>
                                         </tr>
 
