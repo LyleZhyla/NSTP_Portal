@@ -472,6 +472,94 @@ if ($role === 'super_admin') {
     $downloadStats['archived'] = (int) $statsStmt->fetchColumn();
     $downloadStats['public_registrations'] = $filteredEnrollmentTotal;
 }
+
+function downloadablesValidDate($value, $fallback) {
+    $date = DateTime::createFromFormat('Y-m-d', (string) $value);
+    $errors = DateTime::getLastErrors();
+    $hasErrors = is_array($errors) && ((int) $errors['warning_count'] > 0 || (int) $errors['error_count'] > 0);
+    return $date && !$hasErrors && $date->format('Y-m-d') === (string) $value
+        ? $date->format('Y-m-d')
+        : $fallback;
+}
+
+$defaultSaturdayStart = date('Y-m-d', strtotime('-12 weeks', strtotime($today)));
+$saturdayStartDate = downloadablesValidDate($_GET['saturday_start'] ?? '', $defaultSaturdayStart);
+$saturdayEndDate = downloadablesValidDate($_GET['saturday_end'] ?? '', $today);
+if ($saturdayStartDate > $saturdayEndDate) {
+    [$saturdayStartDate, $saturdayEndDate] = [$saturdayEndDate, $saturdayStartDate];
+}
+
+// Keep the browser graph readable and protect the page from accidental
+// multi-year queries. The selected end date remains authoritative.
+if (strtotime($saturdayEndDate) - strtotime($saturdayStartDate) > 730 * 86400) {
+    $saturdayStartDate = date('Y-m-d', strtotime($saturdayEndDate . ' -730 days'));
+}
+
+$saturdayAttendance = [];
+$firstSaturday = new DateTime($saturdayStartDate);
+while ((int) $firstSaturday->format('N') !== 6) {
+    $firstSaturday->modify('+1 day');
+}
+$lastSaturdayBoundary = new DateTime($saturdayEndDate);
+for ($dateCursor = clone $firstSaturday; $dateCursor <= $lastSaturdayBoundary; $dateCursor->modify('+7 days')) {
+    $dateKey = $dateCursor->format('Y-m-d');
+    $saturdayAttendance[$dateKey] = 0;
+}
+
+$attendanceAccess = studentAttendanceAccessSqlForUser($currentUser, 's');
+$saturdayAttendanceSql = "
+    SELECT attendance_rows.tbl_student_id, attendance_rows.time_in
+    FROM (
+        SELECT DISTINCT a.tbl_student_id, a.time_in
+        FROM tbl_attendance a
+        INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
+        WHERE DATE(a.time_in) BETWEEN ? AND ?
+          AND DAYOFWEEK(a.time_in) = 7
+          AND ({$attendanceAccess['condition']})
+
+        UNION ALL
+
+        SELECT DISTINCT aa.tbl_student_id, aa.time_in
+        FROM tbl_attendance_archive aa
+        INNER JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
+        WHERE DATE(aa.time_in) BETWEEN ? AND ?
+          AND DAYOFWEEK(aa.time_in) = 7
+          AND ({$attendanceAccess['condition']})
+    ) attendance_rows
+    ORDER BY attendance_rows.time_in ASC
+";
+$saturdayAttendanceParams = array_merge(
+    [$saturdayStartDate, $saturdayEndDate],
+    $attendanceAccess['params'],
+    [$saturdayStartDate, $saturdayEndDate],
+    $attendanceAccess['params']
+);
+$saturdayAttendanceStmt = $conn->prepare($saturdayAttendanceSql);
+$saturdayAttendanceStmt->execute($saturdayAttendanceParams);
+
+$seenSaturdayStudents = [];
+foreach ($saturdayAttendanceStmt->fetchAll(PDO::FETCH_ASSOC) as $attendanceRow) {
+    $dateKey = date('Y-m-d', strtotime($attendanceRow['time_in']));
+    $studentId = (int) $attendanceRow['tbl_student_id'];
+    if (!array_key_exists($dateKey, $saturdayAttendance) || isset($seenSaturdayStudents[$dateKey][$studentId])) {
+        continue;
+    }
+    $seenSaturdayStudents[$dateKey][$studentId] = true;
+    $saturdayAttendance[$dateKey]++;
+}
+
+$saturdayChartRows = [];
+foreach ($saturdayAttendance as $dateKey => $attendanceTotal) {
+    $saturdayChartRows[] = [
+        'date' => $dateKey,
+        'label' => date('M d, Y', strtotime($dateKey)),
+        'total' => (int) $attendanceTotal,
+    ];
+}
+$saturdayAttendanceTotal = array_sum(array_column($saturdayChartRows, 'total'));
+$saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row) => (int) $row['total'] > 0));
 ?>
 
 <!DOCTYPE html>
@@ -882,6 +970,96 @@ if ($role === 'super_admin') {
                     </div>
                 </div>
 
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-chart-line mr-2"></i>Saturday Attendance Graph</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="graph-help">
+                            <strong>Attendance every Saturday:</strong>
+                            Each bar counts unique students with at least one scan on that Saturday. Active and archived attendance records are both included, while repeated scans by the same student on the same date are counted once.
+                        </div>
+
+                        <form method="get" class="mb-3">
+                            <input type="hidden" name="graph" value="<?php echo htmlspecialchars($selectedGraph); ?>">
+                            <div class="form-row align-items-end">
+                                <div class="form-group col-md-4">
+                                    <label for="saturdayStartDate">Start Date</label>
+                                    <input type="date" class="form-control" id="saturdayStartDate" name="saturday_start" value="<?php echo htmlspecialchars($saturdayStartDate); ?>">
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label for="saturdayEndDate">End Date</label>
+                                    <input type="date" class="form-control" id="saturdayEndDate" name="saturday_end" value="<?php echo htmlspecialchars($saturdayEndDate); ?>">
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <button type="submit" class="btn btn-primary btn-block">
+                                        <i class="fas fa-filter mr-1"></i> Update Saturday Graph
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+
+                        <div class="graph-summary">
+                            <div class="graph-summary-item">
+                                <span>Saturdays in Range</span>
+                                <strong><?php echo number_format(count($saturdayChartRows)); ?></strong>
+                            </div>
+                            <div class="graph-summary-item">
+                                <span>Saturdays with Attendance</span>
+                                <strong><?php echo number_format($saturdayWithAttendance); ?></strong>
+                            </div>
+                            <div class="graph-summary-item">
+                                <span>Total Saturday Attendance</span>
+                                <strong><?php echo number_format($saturdayAttendanceTotal); ?> student check-ins</strong>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-lg-9 mb-3">
+                                <div class="chart-panel">
+                                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+                                        <div>
+                                            <div class="chart-panel-title">Unique Students Present per Saturday</div>
+                                            <div class="muted-note"><?php echo htmlspecialchars(date('M d, Y', strtotime($saturdayStartDate)) . ' to ' . date('M d, Y', strtotime($saturdayEndDate))); ?></div>
+                                        </div>
+                                        <button type="button" class="btn btn-success btn-sm mt-2 mt-md-0" id="downloadSaturdayGraphBtn">
+                                            <i class="fas fa-image mr-1"></i> Download PNG Graph
+                                        </button>
+                                    </div>
+                                    <canvas id="saturdayAttendanceChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 mb-3">
+                                <div class="chart-panel">
+                                    <div class="chart-panel-title">Exact Saturday Counts</div>
+                                    <div class="chart-ranking">
+                                        <table class="table table-sm table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th class="text-right">Present</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php if ($saturdayChartRows): ?>
+                                                    <?php foreach ($saturdayChartRows as $saturdayRow): ?>
+                                                    <tr>
+                                                        <td><?php echo htmlspecialchars($saturdayRow['label']); ?></td>
+                                                        <td class="text-right"><strong><?php echo number_format($saturdayRow['total']); ?></strong></td>
+                                                    </tr>
+                                                    <?php endforeach; ?>
+                                                <?php else: ?>
+                                                    <tr><td colspan="2" class="text-center text-muted py-4">No Saturdays in this date range.</td></tr>
+                                                <?php endif; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="row">
                     <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-attendance-excel.php">
@@ -1259,6 +1437,11 @@ if ($role === 'super_admin') {
 const sectionsByFacilitator = <?php echo json_encode($sectionsByFacilitator); ?>;
 const enrollmentCharts = <?php echo json_encode($chartData); ?>;
 const selectedEnrollmentGraph = <?php echo json_encode($selectedGraph); ?>;
+const saturdayAttendanceRows = <?php echo json_encode($saturdayChartRows); ?>;
+const saturdayAttendanceRange = {
+    start: <?php echo json_encode($saturdayStartDate); ?>,
+    end: <?php echo json_encode($saturdayEndDate); ?>
+};
 const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5e9aa6', '#b97883', '#78906d', '#9b8a78', '#6f7f98', '#a284a6', '#8793a1'];
 
 function updateAttendancePeriodFields() {
@@ -1353,6 +1536,108 @@ renderEnrollmentChart(
     enrollmentCharts[selectedChartDataKey] || [],
     selectedEnrollmentGraph === 'component' ? 'doughnut' : 'bar'
 );
+
+let saturdayAttendanceChart = null;
+const saturdayCanvas = document.getElementById('saturdayAttendanceChart');
+const downloadSaturdayGraphBtn = document.getElementById('downloadSaturdayGraphBtn');
+if (saturdayCanvas && typeof Chart !== 'undefined' && saturdayAttendanceRows.length) {
+    saturdayAttendanceChart = new Chart(saturdayCanvas, {
+        type: 'bar',
+        data: {
+            labels: saturdayAttendanceRows.map(row => row.label),
+            datasets: [{
+                label: 'Unique Students Present',
+                data: saturdayAttendanceRows.map(row => Number(row.total || 0)),
+                backgroundColor: saturdayAttendanceRows.map(row => Number(row.total || 0) > 0 ? '#198754' : '#d9e2e8'),
+                borderColor: saturdayAttendanceRows.map(row => Number(row.total || 0) > 0 ? '#146c43' : '#b8c4cc'),
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: context => context.parsed.y + ' unique student' + (context.parsed.y === 1 ? '' : 's')
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Saturday Date' },
+                    ticks: { maxRotation: 45, minRotation: 0 }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Students Present' },
+                    ticks: { precision: 0 }
+                }
+            }
+        }
+    });
+} else if (saturdayCanvas) {
+    const context = saturdayCanvas.getContext('2d');
+    context.font = '14px Source Sans Pro, Arial, sans-serif';
+    context.fillStyle = '#6c757d';
+    context.fillText('No Saturdays are available in the selected date range.', 12, 36);
+    if (downloadSaturdayGraphBtn) {
+        downloadSaturdayGraphBtn.disabled = true;
+    }
+}
+
+if (downloadSaturdayGraphBtn) {
+    downloadSaturdayGraphBtn.addEventListener('click', function() {
+        if (!saturdayAttendanceChart || !saturdayCanvas) {
+            Swal.fire('No Graph', 'There is no Saturday graph available to download.', 'info');
+            return;
+        }
+
+        const exportCanvas = document.createElement('canvas');
+        const padding = 48;
+        const titleHeight = 92;
+        exportCanvas.width = Math.max(1400, saturdayCanvas.width + padding * 2);
+        exportCanvas.height = Math.max(800, saturdayCanvas.height + padding * 2 + titleHeight);
+        const exportContext = exportCanvas.getContext('2d');
+
+        exportContext.fillStyle = '#ffffff';
+        exportContext.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        exportContext.fillStyle = '#17324d';
+        exportContext.font = 'bold 30px Arial, sans-serif';
+        exportContext.fillText('TAU-NSTP Saturday Attendance', padding, 48);
+        exportContext.fillStyle = '#5f6b76';
+        exportContext.font = '18px Arial, sans-serif';
+        exportContext.fillText(
+            saturdayAttendanceRange.start + ' to ' + saturdayAttendanceRange.end + ' · Unique students per Saturday',
+            padding,
+            78
+        );
+        exportContext.drawImage(
+            saturdayCanvas,
+            padding,
+            titleHeight,
+            exportCanvas.width - padding * 2,
+            exportCanvas.height - titleHeight - padding
+        );
+
+        exportCanvas.toBlob(function(blob) {
+            if (!blob) {
+                Swal.fire('Download Failed', 'The graph image could not be generated.', 'error');
+                return;
+            }
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = 'saturday-attendance-' + saturdayAttendanceRange.start + '-to-' + saturdayAttendanceRange.end + '.png';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(downloadUrl);
+        }, 'image/png');
+    });
+}
 
 function buildQrParams() {
     const adminId = document.getElementById('qrAdminId').value;
