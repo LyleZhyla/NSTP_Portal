@@ -57,45 +57,90 @@ if ($currentUserRole === 'super_admin') {
     $stmt->execute();
     $recent = $stmt->fetchAll();
 
+    // Build one canonical component count across accounts, registrations, and
+    // legacy master-list rows. Student number is the preferred identity so a
+    // duplicate registration cannot inflate the dashboard totals.
     $componentCounts = ['CWTS' => 0, 'LTS' => 0, 'ROTC' => 0, 'Unassigned' => 0];
-
-    $stmt = $conn->prepare("
-        SELECT program, COUNT(*) AS total
-        FROM tbl_users
-        WHERE role = 'student' AND program IN ('CWTS', 'LTS', 'ROTC')
-        GROUP BY program
-    ");
-    $stmt->execute();
-    foreach ($stmt->fetchAll() as $row) {
-        $componentCounts[$row['program']] += (int) $row['total'];
-    }
-
-    $stmt = $conn->prepare("
-        SELECT component, COUNT(*) AS total
-        FROM tbl_public_student_registrations
-        WHERE component IN ('CWTS', 'LTS', 'ROTC')
-          AND (user_id IS NULL OR user_id = 0)
-        GROUP BY component
-    ");
-    $stmt->execute();
-    foreach ($stmt->fetchAll() as $row) {
-        $componentCounts[$row['component']] += (int) $row['total'];
-    }
-
-    $stmt = $conn->prepare("
-        SELECT course_section
-        FROM tbl_student
-        WHERE user_id IS NULL OR user_id = 0
-    ");
-    $stmt->execute();
-    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $section) {
-        $program = inferProgramFromText($section);
-        if ($program) {
-            $componentCounts[$program]++;
-        } else {
-            $componentCounts['Unassigned']++;
+    $countedStudentKeys = [];
+    $studentIdentityKey = static function ($studentNumber, $userId = null, $fallback = null) {
+        $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
+        if ($studentNumber !== '') {
+            return 'student:' . $studentNumber;
         }
+        if (!empty($userId)) {
+            return 'user:' . (int) $userId;
+        }
+        return 'record:' . (string) $fallback;
+    };
+    $countStudentOnce = static function ($identityKey, $program) use (&$componentCounts, &$countedStudentKeys) {
+        if (isset($countedStudentKeys[$identityKey])) {
+            return;
+        }
+        $countedStudentKeys[$identityKey] = true;
+        $program = normalizeProgram($program);
+        $componentCounts[$program ?: 'Unassigned']++;
+    };
+
+    // Accounts are authoritative. If an older account has no saved program,
+    // use its latest active public registration before marking it unmatched.
+    $stmt = $conn->query("
+        SELECT u.user_id, u.username AS student_number, u.program,
+               (
+                   SELECT r.component
+                   FROM tbl_public_student_registrations r
+                   WHERE r.registrant_role = 'student'
+                     AND COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+                     AND (r.user_id = u.user_id OR r.student_number = u.username)
+                   ORDER BY r.registration_id DESC
+                   LIMIT 1
+               ) AS registration_component
+        FROM tbl_users u
+        WHERE u.role = 'student'
+    ");
+    foreach ($stmt->fetchAll() as $row) {
+        $program = normalizeProgram($row['program'] ?? null)
+            ?: normalizeProgram($row['registration_component'] ?? null);
+        $countStudentOnce(
+            $studentIdentityKey($row['student_number'] ?? '', $row['user_id'] ?? null, 'account-' . ($row['user_id'] ?? '')),
+            $program
+        );
     }
+
+    // Add registrations that do not have an account yet. Latest rows are read
+    // first, and the identity map suppresses duplicate submissions.
+    $stmt = $conn->query("
+        SELECT registration_id, user_id, student_number, component
+        FROM tbl_public_student_registrations
+        WHERE registrant_role = 'student'
+          AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+        ORDER BY registration_id DESC
+    ");
+    foreach ($stmt->fetchAll() as $row) {
+        $countStudentOnce(
+            $studentIdentityKey($row['student_number'] ?? '', $row['user_id'] ?? null, 'registration-' . $row['registration_id']),
+            $row['component'] ?? null
+        );
+    }
+
+    // Finally include legacy/master-list students that have neither an account
+    // nor a public registration. Infer their component from the folder name.
+    $stmt = $conn->query("
+        SELECT s.tbl_student_id, s.user_id, s.student_number, s.course_section,
+               u.program AS account_program
+        FROM tbl_student s
+        LEFT JOIN tbl_users u ON u.user_id = s.user_id AND u.role = 'student'
+        ORDER BY s.tbl_student_id DESC
+    ");
+    foreach ($stmt->fetchAll() as $row) {
+        $program = normalizeProgram($row['account_program'] ?? null)
+            ?: inferProgramFromText($row['course_section'] ?? '');
+        $countStudentOnce(
+            $studentIdentityKey($row['student_number'] ?? '', $row['user_id'] ?? null, 'masterlist-' . $row['tbl_student_id']),
+            $program
+        );
+    }
+
+    $totalStudents = array_sum($componentCounts);
 } else {
     // Regular Admin: See only records they created
     
