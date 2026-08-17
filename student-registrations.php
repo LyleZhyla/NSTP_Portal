@@ -117,13 +117,33 @@ function ensurePublicRegistrationTableForView(PDO $conn) {
 }
 
 ensurePublicRegistrationTableForView($conn);
+ensureSystemLogsTable($conn);
 $publicForms = getPublicRegistrationForms($conn);
 $fieldOptions = getPublicRegistrationFieldOptions();
 
 $query = "
-    SELECT r.*, u.username, u.full_name, u.role AS account_role, f.form_title
+    SELECT r.*, u.username, u.full_name, u.role AS account_role, f.form_title,
+           login_activity.first_login_at, login_activity.last_login_at,
+           COALESCE(login_activity.login_count, 0) AS login_count
     FROM tbl_public_student_registrations r
-    LEFT JOIN tbl_users u ON r.user_id = u.user_id
+    LEFT JOIN tbl_users u
+      ON r.user_id = u.user_id
+      OR (
+          r.user_id IS NULL
+          AND r.registrant_role = 'student'
+          AND u.role = 'student'
+          AND u.username = r.student_number
+      )
+    LEFT JOIN (
+        SELECT user_id,
+               MIN(created_at) AS first_login_at,
+               MAX(created_at) AS last_login_at,
+               COUNT(*) AS login_count
+        FROM tbl_system_logs
+        WHERE action = 'user_login'
+          AND user_id IS NOT NULL
+        GROUP BY user_id
+    ) login_activity ON login_activity.user_id = u.user_id
     LEFT JOIN tbl_public_registration_forms f ON r.form_id = f.form_id
     WHERE COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
 ";
@@ -141,8 +161,45 @@ $stmt->execute($params);
 $registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $totalRegistrations = count($registrations);
-$emailSentCount = count(array_filter($registrations, fn($row) => (int) $row['email_sent'] === 1));
-$todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strtotime($row['created_at'])) === date('Y-m-d')));
+$studentSubmissionCounts = [];
+foreach ($registrations as $registration) {
+    if (($registration['registrant_role'] ?? 'student') !== 'student') {
+        continue;
+    }
+
+    $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
+    if ($studentNumber !== '') {
+        $studentSubmissionCounts[$studentNumber] = ($studentSubmissionCounts[$studentNumber] ?? 0) + 1;
+    }
+}
+
+$duplicateSubmissionCount = array_sum(array_map(
+    static fn($count) => max(0, (int) $count - 1),
+    $studentSubmissionCounts
+));
+
+$studentAccountWhere = "u.role = 'student'";
+$studentAccountParams = [];
+if ($role === 'coordinator') {
+    $studentAccountWhere .= ' AND u.program = ?';
+    $studentAccountParams[] = normalizeProgram($currentUser['program'] ?? null);
+}
+
+$studentAccountStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users u WHERE {$studentAccountWhere}");
+$studentAccountStmt->execute($studentAccountParams);
+$totalStudentAccounts = (int) $studentAccountStmt->fetchColumn();
+
+$openedAccountStmt = $conn->prepare("
+    SELECT COUNT(DISTINCT u.user_id)
+    FROM tbl_users u
+    INNER JOIN tbl_system_logs l
+      ON l.user_id = u.user_id
+     AND l.action = 'user_login'
+    WHERE {$studentAccountWhere}
+");
+$openedAccountStmt->execute($studentAccountParams);
+$openedStudentAccounts = (int) $openedAccountStmt->fetchColumn();
+$notOpenedStudentAccounts = max(0, $totalStudentAccounts - $openedStudentAccounts);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -284,33 +341,47 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
         <section class="content">
             <div class="container-fluid">
                 <div class="row">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="small-box bg-info stat-card">
                             <div class="inner">
-                                <h3><?php echo (int) $totalRegistrations; ?></h3>
-                                <p>Total Submissions</p>
+                                <h3><?php echo (int) $totalStudentAccounts; ?></h3>
+                                <p>Total Student Accounts</p>
                             </div>
-                            <div class="icon"><i class="fas fa-users"></i></div>
+                            <div class="icon"><i class="fas fa-user-graduate"></i></div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="small-box bg-success stat-card">
                             <div class="inner">
-                                <h3><?php echo (int) $emailSentCount; ?></h3>
-                                <p>Account Emails Sent</p>
+                                <h3><?php echo (int) $openedStudentAccounts; ?></h3>
+                                <p>Accounts Opened</p>
                             </div>
-                            <div class="icon"><i class="fas fa-envelope-circle-check"></i></div>
+                            <div class="icon"><i class="fas fa-right-to-bracket"></i></div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="small-box bg-warning stat-card">
                             <div class="inner">
-                                <h3><?php echo (int) $todayCount; ?></h3>
-                                <p>Submitted Today</p>
+                                <h3><?php echo (int) $notOpenedStudentAccounts; ?></h3>
+                                <p>Not Yet Opened</p>
                             </div>
-                            <div class="icon"><i class="fas fa-calendar-day"></i></div>
+                            <div class="icon"><i class="fas fa-user-clock"></i></div>
                         </div>
                     </div>
+                    <div class="col-md-3">
+                        <div class="small-box bg-danger stat-card">
+                            <div class="inner">
+                                <h3><?php echo (int) $duplicateSubmissionCount; ?></h3>
+                                <p>Duplicate Submissions</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-clone"></i></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-light border">
+                    <i class="fas fa-circle-info mr-1 text-info"></i>
+                    Student totals are based on actual student accounts, not raw registration submissions.
+                    “Opened” means the student has at least one recorded successful login.
                 </div>
 
                 <div class="card">
@@ -441,7 +512,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                     <div class="card-body">
                         <div class="table-filter-bar">
                             <div class="row align-items-end">
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label for="formTitleFilter" class="mb-1">Filter by Form Title</label>
                                     <select class="form-control" id="formTitleFilter">
                                         <option value="">All public registration forms</option>
@@ -468,13 +539,22 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                     </select>
                                 </div>
                                 <div class="col-md-2 mt-3 mt-md-0">
+                                    <label for="accountStatusFilter" class="mb-1">Account Status</label>
+                                    <select class="form-control" id="accountStatusFilter">
+                                        <option value="">All statuses</option>
+                                        <option value="Opened">Opened</option>
+                                        <option value="Not opened">Not opened</option>
+                                        <option value="No account">No account</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 mt-3 mt-md-0">
                                     <span class="detail-label">Visible Submissions</span>
                                     <span class="detail-value">
                                         <span id="visibleSubmissionCount"><?php echo (int) $totalRegistrations; ?></span>
                                         of <?php echo (int) $totalRegistrations; ?>
                                     </span>
                                 </div>
-                                <div class="col-md-4 mt-3 mt-md-0 text-md-right">
+                                <div class="col-md-3 mt-3 mt-md-0 text-md-right">
                                     <?php if ($role === 'super_admin'): ?>
                                     <button type="button" class="btn btn-outline-primary mb-2" id="sendFacilitatorAccountEmailsBtn">
                                         <i class="fas fa-user-tie mr-1"></i> Send Facilitator Emails
@@ -503,6 +583,7 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                         <th>Component</th>
                                         <th>Address</th>
                                         <th>Email Status</th>
+                                        <th>Account Status</th>
                                         <th>Submitted</th>
                                         <th>Actions</th>
                                     </tr>
@@ -544,6 +625,11 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                             $dobDisplay = (!empty($row['date_of_birth']) && $row['date_of_birth'] !== '1900-01-01') ? date('m/d/Y', strtotime($row['date_of_birth'])) : 'N/A';
                                             $photoPath = $row['formal_picture'] ?: 'include/logo.png';
                                             $rotcMsLevel = trim((string) ($row['rotc_ms_level'] ?? ''));
+                                            $studentSubmissionCount = $studentSubmissionCounts[$studentNumberForEmail] ?? 0;
+                                            $isDuplicateSubmission = $registrantRole === 'student' && $studentSubmissionCount > 1;
+                                            $hasAccount = !empty($row['user_id']) || !empty($row['username']);
+                                            $hasOpenedAccount = $hasAccount && !empty($row['first_login_at']);
+                                            $accountStatus = $hasOpenedAccount ? 'Opened' : ($hasAccount ? 'Not opened' : 'No account');
                                         ?>
                                         <tr>
                                             <td><img class="registration-photo" src="<?php echo htmlspecialchars($photoPath); ?>" alt="Formal picture"></td>
@@ -581,6 +667,21 @@ $todayCount = count(array_filter($registrations, fn($row) => date('Y-m-d', strto
                                                     <span class="badge badge-success">Email sent</span>
                                                 <?php else: ?>
                                                     <span class="badge badge-warning">Email not sent</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td data-search="<?php echo htmlspecialchars($accountStatus); ?>">
+                                                <?php if ($hasOpenedAccount): ?>
+                                                    <span class="badge badge-success">Opened</span>
+                                                    <small class="d-block text-muted mt-1" title="First login: <?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['first_login_at']))); ?>">
+                                                        Last: <?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['last_login_at']))); ?>
+                                                    </small>
+                                                <?php elseif ($hasAccount): ?>
+                                                    <span class="badge badge-warning">Not opened</span>
+                                                <?php else: ?>
+                                                    <span class="badge badge-secondary">No account</span>
+                                                <?php endif; ?>
+                                                <?php if ($isDuplicateSubmission): ?>
+                                                    <span class="badge badge-danger d-block mt-1"><?php echo (int) $studentSubmissionCount; ?> submissions</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td data-order="<?php echo (int) strtotime($row['created_at']); ?>"><?php echo htmlspecialchars(date('m/d/Y h:i A', strtotime($row['created_at']))); ?></td>
@@ -829,7 +930,7 @@ foreach ($publicForms as $formRow) {
     $(function () {
         const registrationsTable = $('#registrationsTable').DataTable({
             responsive: true,
-            order: [[10, 'desc']],
+            order: [[11, 'desc']],
             pageLength: 25,
             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
             pagingType: 'simple_numbers',
@@ -904,14 +1005,24 @@ foreach ($publicForms as $formRow) {
 
         $('#clearFormTitleFilter').on('click', function() {
             $('#formTitleFilter').val('');
+            $('#accountStatusFilter').val('');
             <?php if ($role !== 'coordinator'): ?>
             $('#componentFilter').val('');
             <?php endif; ?>
             registrationsTable.column(7).search('');
+            registrationsTable.column(10).search('');
             registrationsTable.column(1).search('').draw();
         });
 
         $('#componentFilter').on('change', applyComponentFilter);
+
+        $('#accountStatusFilter').on('change', function() {
+            const selectedStatus = $(this).val();
+            registrationsTable
+                .column(10)
+                .search(selectedStatus ? '^' + escapeRegex(selectedStatus) + '$' : '', true, false)
+                .draw();
+        });
 
         $('#sendFacilitatorAccountEmailsBtn').on('click', function() {
             const button = $(this);
