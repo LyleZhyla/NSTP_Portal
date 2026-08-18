@@ -30,8 +30,16 @@ try {
 
     $maxStudents = (int) ($_POST['max_students'] ?? 40);
     $groupingMode = (string) ($_POST['grouping_mode'] ?? 'college_course');
+    $requestedComponents = array_values(array_filter(array_map('normalizeProgram', (array) ($_POST['section_components'] ?? []))));
     saveAutoSectionMaxStudents($conn, $maxStudents, $component);
     saveAutoSectionGroupingMode($conn, $groupingMode, $component);
+    if ($component) {
+        saveAutoSectionEnabled($conn, $component, in_array($component, $requestedComponents, true));
+    } else {
+        foreach (autoSectionComponentOptions() as $sectionComponent) {
+            saveAutoSectionEnabled($conn, $sectionComponent, in_array($sectionComponent, $requestedComponents, true));
+        }
+    }
 
     $scope = $component ?: 'default';
     logSystemEvent($conn, 'auto_section_settings_updated', "Set {$scope} automatic sectioning to {$groupingMode}, {$maxStudents} students per section.");
@@ -41,6 +49,7 @@ try {
         'message' => 'Automatic sectioning setting saved.',
         'max_students' => $maxStudents,
         'grouping_mode' => $groupingMode,
+        'enabled_components' => getEnabledAutoSectionComponents($conn),
     ]);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => $error->getMessage()]);

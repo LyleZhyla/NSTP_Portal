@@ -22,9 +22,10 @@ $attendanceCutoffs = getAttendanceCutoffs($conn);
 $cutoffComponents = attendanceCutoffComponentsForUser($currentUser);
 $absentNotificationGraceHours = getAbsentNotificationGraceHours($conn);
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
-$autoSectionEnabledForCurrentUser = $autoSectionComponent !== 'ROTC';
+$autoSectionEnabledForCurrentUser = $autoSectionComponent === null || in_array($autoSectionComponent, autoSectionComponentOptions(), true);
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
 $autoSectionGroupingMode = getAutoSectionGroupingMode($conn, $autoSectionComponent);
+$enabledAutoSectionComponents = getEnabledAutoSectionComponents($conn);
 $selectedComponentCount = 0;
 if (($currentUser['role'] ?? '') === 'super_admin') {
     try {
@@ -288,6 +289,29 @@ date_default_timezone_set('Asia/Manila');
                             </div>
                             <form id="autoSectionForm">
                                 <div class="card-body">
+                                    <div class="form-group">
+                                        <label class="d-block">Components to section automatically</label>
+                                        <div class="d-flex flex-wrap" style="gap: 18px;">
+                                            <?php foreach (autoSectionComponentOptions() as $sectionComponent): ?>
+                                                <?php if ($autoSectionComponent && $sectionComponent !== $autoSectionComponent) continue; ?>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        class="custom-control-input"
+                                                        id="autoSectionComponent<?php echo htmlspecialchars($sectionComponent); ?>"
+                                                        name="section_components[]"
+                                                        value="<?php echo htmlspecialchars($sectionComponent); ?>"
+                                                        <?php echo in_array($sectionComponent, $enabledAutoSectionComponents, true) ? 'checked' : ''; ?>
+                                                    >
+                                                    <label class="custom-control-label font-weight-bold" for="autoSectionComponent<?php echo htmlspecialchars($sectionComponent); ?>">
+                                                        <?php echo htmlspecialchars($sectionComponent); ?>
+                                                    </label>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <small class="text-muted">Only checked components will receive generated sections or be included when rebuilding.</small>
+                                    </div>
+                                    <hr>
                                     <div class="row align-items-end">
                                         <div class="col-md-4">
                                             <label for="autoSectionGroupingMode">Group students by</label>
@@ -790,11 +814,15 @@ $(function() {
         const originalHtml = button.html();
         const groupingLabel = $('#autoSectionGroupingMode option:selected').text();
         const maxStudents = $('#autoSectionMaxStudents').val();
+        const selectedComponents = $('input[name="section_components[]"]:checked').map(function() {
+            return this.value;
+        }).get();
+        const componentSummary = selectedComponents.length ? selectedComponents.join(', ') : 'none';
 
         Swal.fire({
             icon: 'question',
             title: 'Rebuild automatic folders?',
-            text: `Students will be grouped by ${groupingLabel} and evenly divided with up to ${maxStudents} students per section. Existing manual assignments will be recalculated.`,
+            text: `Components: ${componentSummary}. Students in those components will be grouped by ${groupingLabel} and evenly divided with up to ${maxStudents} students per section. Existing manual assignments in selected components will be recalculated.`,
             showCancelButton: true,
             confirmButtonText: 'Rebuild',
             cancelButtonText: 'Cancel'

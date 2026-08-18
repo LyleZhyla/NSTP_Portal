@@ -517,7 +517,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
             $studentName = trim(preg_replace('/\s+/', ' ', $studentName), ' ,');
             $originalSection = autoSectionOriginalSection($record['course'], $record['year_section'], $component);
             $studentComponent = normalizeProgram($component) ?: 'PUBLIC';
-            $studentFolder = autoSectionUsesAutomaticFolders($studentComponent)
+            $studentFolder = isAutoSectionEnabled($conn, $studentComponent)
                 ? autoSectionFolderForStudent(
                     $conn,
                     $studentComponent,
@@ -543,7 +543,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
         $conn->commit();
         $response['success'] = true;
         $response['imported'] = count($rows);
-        $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s). CWTS/LTS students were placed into automatic folders; remaining students stay pending for coordinator assignment.';
+        $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s). Students in enabled components were placed into automatic sections; the rest remain pending for coordinator assignment.';
     } catch (Throwable $error) {
         if ($conn->inTransaction()) {
             $conn->rollBack();

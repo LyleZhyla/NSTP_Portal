@@ -32,8 +32,16 @@ try {
 
     $maxStudents = (int) ($_POST['max_students'] ?? getAutoSectionMaxStudents($conn, $component));
     $groupingMode = (string) ($_POST['grouping_mode'] ?? getAutoSectionGroupingMode($conn, $component));
+    $requestedComponents = array_values(array_filter(array_map('normalizeProgram', (array) ($_POST['section_components'] ?? []))));
     saveAutoSectionMaxStudents($conn, $maxStudents, $component);
     saveAutoSectionGroupingMode($conn, $groupingMode, $component);
+    if ($component) {
+        saveAutoSectionEnabled($conn, $component, in_array($component, $requestedComponents, true));
+    } else {
+        foreach (autoSectionComponentOptions() as $sectionComponent) {
+            saveAutoSectionEnabled($conn, $sectionComponent, in_array($sectionComponent, $requestedComponents, true));
+        }
+    }
 
     $conn->beginTransaction();
     $moved = rebuildAutoSectionFolders($conn, $component);

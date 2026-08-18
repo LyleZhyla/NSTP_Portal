@@ -111,7 +111,7 @@ function studentAutomationCourseSection(PDO $conn, array $registration) {
     $component = normalizeProgram($registration['component'] ?? null) ?: 'PUBLIC';
     $originalSection = studentAutomationOriginalSection($registration);
 
-    if (autoSectionUsesAutomaticFolders($component)) {
+    if (isAutoSectionEnabled($conn, $component)) {
         return autoSectionFolderForStudent(
             $conn,
             $component,

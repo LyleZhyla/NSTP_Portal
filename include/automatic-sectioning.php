@@ -15,6 +15,38 @@ function autoSectionGroupingOptions() {
     ];
 }
 
+function autoSectionComponentOptions() {
+    return ['CWTS', 'LTS', 'ROTC'];
+}
+
+function autoSectionEnabledSettingKey($component) {
+    $component = normalizeProgram($component);
+    return $component ? 'auto_section_enabled_' . strtolower($component) : '';
+}
+
+function isAutoSectionEnabled(PDO $conn, $component) {
+    $component = normalizeProgram($component);
+    if (!$component || !in_array($component, autoSectionComponentOptions(), true)) {
+        return false;
+    }
+
+    $default = in_array($component, ['CWTS', 'LTS'], true) ? '1' : '0';
+    return getSystemSetting($conn, autoSectionEnabledSettingKey($component), $default) === '1';
+}
+
+function saveAutoSectionEnabled(PDO $conn, $component, $enabled) {
+    $component = normalizeProgram($component);
+    if (!$component || !in_array($component, autoSectionComponentOptions(), true)) {
+        throw new InvalidArgumentException('Invalid automatic section component.');
+    }
+
+    setSystemSetting($conn, autoSectionEnabledSettingKey($component), $enabled ? '1' : '0');
+}
+
+function getEnabledAutoSectionComponents(PDO $conn) {
+    return array_values(array_filter(autoSectionComponentOptions(), static fn($component) => isAutoSectionEnabled($conn, $component)));
+}
+
 function autoSectionGroupingSettingKey($component = null) {
     $component = normalizeProgram($component);
     return $component ? 'auto_section_grouping_' . strtolower($component) : 'auto_section_grouping';
@@ -127,7 +159,7 @@ function autoSectionFolderName($component, $number) {
 }
 
 function autoSectionUsesAutomaticFolders($component) {
-    return autoSectionComponent($component) !== 'ROTC';
+    return in_array(autoSectionComponent($component), autoSectionComponentOptions(), true);
 }
 
 function autoSectionAlphaLabel($number) {
@@ -248,16 +280,16 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $college, $course,
 function autoSectionFolderForStudent(PDO $conn, $component, $course, $yearSection, $fallbackOriginal = '', $college = '', $createdBy = null) {
     $component = autoSectionComponent($component, $fallbackOriginal);
     $groupLabel = autoSectionOriginalSection($course, $yearSection, $fallbackOriginal);
-    if (!autoSectionUsesAutomaticFolders($component)) {
-        return $groupLabel;
+    if (!isAutoSectionEnabled($conn, $component)) {
+        return $component;
     }
 
     return autoSectionFindFolderForGroup($conn, $component, $college, $course, $createdBy);
 }
 
 function rebuildAutoSectionFolders(PDO $conn, $component = null) {
-    $components = $component ? [autoSectionComponent($component)] : ['CWTS', 'LTS', 'PUBLIC'];
-    $components = array_values(array_filter($components, 'autoSectionUsesAutomaticFolders'));
+    $components = $component ? [autoSectionComponent($component)] : getEnabledAutoSectionComponents($conn);
+    $components = array_values(array_filter($components, static fn($item) => isAutoSectionEnabled($conn, $item)));
     $moved = 0;
 
     foreach ($components as $currentComponent) {
