@@ -1,5 +1,6 @@
 <?php
 session_start();
+$isStudentAssignmentSettingsPage = !empty($showStudentAssignmentSettingsPage);
 include('./include/theme-loader.php');
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
@@ -66,7 +67,7 @@ date_default_timezone_set('Asia/Manila');
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Attendance Settings - TAU-NSTP</title>
+    <title><?php echo $isStudentAssignmentSettingsPage ? 'Student Assignment Settings' : 'Attendance Settings'; ?> - TAU-NSTP</title>
     <?php include('./include/theme-loader.php'); ?>
     <link rel="icon" type="image/png" href="include/logo.png">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
@@ -148,12 +149,12 @@ date_default_timezone_set('Asia/Manila');
             <div class="container-fluid">
                 <div class="row mb-2">
                     <div class="col-sm-6">
-                        <h1 class="m-0"><i class="fas fa-user-clock mr-2"></i>Attendance Settings</h1>
+                        <h1 class="m-0"><i class="fas <?php echo $isStudentAssignmentSettingsPage ? 'fa-users-gear' : 'fa-user-clock'; ?> mr-2"></i><?php echo $isStudentAssignmentSettingsPage ? 'Student Assignment Settings' : 'Attendance Settings'; ?></h1>
                     </div>
                     <div class="col-sm-6">
                         <ol class="breadcrumb float-sm-right">
                             <li class="breadcrumb-item"><a href="index.php">Home</a></li>
-                            <li class="breadcrumb-item active">Attendance Settings</li>
+                            <li class="breadcrumb-item active"><?php echo $isStudentAssignmentSettingsPage ? 'Student Assignment Settings' : 'Attendance Settings'; ?></li>
                         </ol>
                     </div>
                 </div>
@@ -163,6 +164,7 @@ date_default_timezone_set('Asia/Manila');
         <section class="content">
             <div class="container-fluid">
                 <div class="row">
+                    <?php if ($isStudentAssignmentSettingsPage): ?>
                     <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
                     <div class="col-lg-5">
                         <div class="card settings-card">
@@ -247,7 +249,7 @@ date_default_timezone_set('Asia/Manila');
                     </div>
                     <?php endif; ?>
 
-                    <div class="col-lg-<?php echo ($currentUser['role'] ?? '') === 'super_admin' ? '7' : '6'; ?>">
+                    <div class="col-lg-<?php echo ($currentUser['role'] ?? '') === 'super_admin' ? '7' : '12'; ?>">
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>Facilitator Scan Restriction</h3>
@@ -315,6 +317,7 @@ date_default_timezone_set('Asia/Manila');
                     </div>
                     <?php endif; ?>
 
+                    <?php else: ?>
                     <div class="col-lg-12">
                         <div class="card settings-card">
                             <div class="card-header">
@@ -415,6 +418,7 @@ date_default_timezone_set('Asia/Manila');
                             </form>
                         </div>
                     </div>
+                    <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>

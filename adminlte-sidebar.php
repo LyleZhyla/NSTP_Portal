@@ -288,6 +288,12 @@ if (isset($_SESSION['user_id'])) {
                 <?php endif; ?>
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator'], true)): ?>
                 <li class="nav-item">
+                    <a href="student-assignment-settings.php" class="nav-link <?= ($currentPage == 'student-assignment-settings.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-users-gear"></i>
+                        <p>Student Assignment</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a href="attendance-settings.php" class="nav-link <?= ($currentPage == 'attendance-settings.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-user-clock"></i>
                         <p>Attendance Settings</p>
