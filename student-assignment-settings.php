@@ -1,3 +1,130 @@
 <?php
-$showStudentAssignmentSettingsPage = true;
-require __DIR__ . '/attendance-settings.php';
+session_start();
+date_default_timezone_set('Asia/Manila');
+
+require_once './conn/conn.php';
+require_once './include/user-permissions.php';
+require_once './include/attendance-settings.php';
+require_once './include/automatic-sectioning.php';
+
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true)) {
+    header('Location: index.php');
+    exit();
+}
+
+$role = $currentUser['role'] ?? '';
+$isSuperAdmin = $role === 'super_admin';
+$managedComponent = $role === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
+$canManageSectioning = $isSuperAdmin || ($managedComponent && in_array($managedComponent, autoSectionComponentOptions(), true));
+$visibleSectionComponents = $isSuperAdmin ? autoSectionComponentOptions() : array_filter([$managedComponent]);
+$componentChangeEnabled = isStudentComponentChangeEnabled($conn);
+$openComponents = getOpenStudentComponents($conn);
+$openRotcLevels = getOpenRotcMsLevels($conn);
+$scanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
+$sectionMax = getAutoSectionMaxStudents($conn, $managedComponent);
+$sectionGrouping = getAutoSectionGroupingMode($conn, $managedComponent);
+$enabledSectionComponents = getEnabledAutoSectionComponents($conn);
+$selectedComponentCount = 0;
+
+if ($isSuperAdmin) {
+    try {
+        $countStmt = $conn->prepare("
+            SELECT COUNT(DISTINCT u.user_id)
+            FROM tbl_users u
+            LEFT JOIN tbl_public_student_registrations r
+              ON r.user_id = u.user_id
+              OR (u.username REGEXP '^[0-9]{10}$' AND r.student_number = u.username)
+            WHERE u.role = 'student'
+              AND (u.program IS NOT NULL OR (r.component IS NOT NULL AND r.component <> ''))
+        ");
+        $countStmt->execute();
+        $selectedComponentCount = (int) $countStmt->fetchColumn();
+    } catch (Throwable $error) {
+        $selectedComponentCount = 0;
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Student Assignment Settings - TAU-NSTP</title>
+    <?php include './include/theme-loader.php'; ?>
+    <link rel="icon" type="image/png" href="include/logo.png">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <link rel="stylesheet" href="include/theme.css">
+    <style>
+        .assignment-grid{display:grid;grid-template-columns:minmax(340px,5fr) minmax(0,7fr);gap:16px;align-items:start}
+        .component-panel{grid-column:1;grid-row:1/span 2}.scan-panel,.sectioning-panel{grid-column:2}
+        .assignment-grid.single{grid-template-columns:1fr}.assignment-grid.single .scan-panel,.assignment-grid.single .sectioning-panel{grid-column:1}
+        .settings-card{margin:0;border-top:3px solid #0d6efd}.setting-summary{display:flex;align-items:center;gap:14px;padding:16px;border:1px solid rgba(0,0,0,.08);border-radius:8px;background:#fff}
+        .setting-summary>i{width:44px;height:44px;flex:0 0 44px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#eef5ff;color:#0d6efd}
+        .setting-row{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;margin-bottom:9px;border:1px solid #dee2e6;border-radius:7px}
+        .student-assignment-page .main-footer{min-height:0;padding:8px 14px!important;font-size:.76rem}.student-assignment-page .main-footer.super-admin-footer{padding:0!important}
+        .student-assignment-page .super-admin-footer__inner{min-height:46px;padding:6px 14px;gap:12px;flex-wrap:wrap}.student-assignment-page .super-admin-footer__brand{flex:1 1 280px}.student-assignment-page .super-admin-footer__meta{flex-wrap:wrap}
+        .student-assignment-page .main-footer.super-admin-footer .super-admin-footer__identity strong{color:#143d2a!important}.student-assignment-page .main-footer.super-admin-footer .super-admin-footer__identity>span,.student-assignment-page .main-footer.super-admin-footer .super-admin-footer__copyright{color:#708078!important}.student-assignment-page .main-footer.super-admin-footer .super-admin-footer__portal{color:#146c43!important}
+        @media(max-width:991.98px){.assignment-grid{grid-template-columns:1fr}.component-panel,.scan-panel,.sectioning-panel{grid-column:1;grid-row:auto}}
+        @media(max-width:575.98px){.setting-summary{align-items:flex-start;flex-wrap:wrap}.student-assignment-page .super-admin-footer__brand,.student-assignment-page .super-admin-footer__meta{flex-basis:100%;width:100%;justify-content:flex-start}}
+    </style>
+</head>
+<body class="hold-transition sidebar-mini layout-fixed student-assignment-page">
+<div class="wrapper">
+    <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+        <ul class="navbar-nav"><li class="nav-item"><a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a></li></ul>
+        <ul class="navbar-nav ml-auto"><?php include './include/header-notifications.php'; ?></ul>
+    </nav>
+    <?php include 'adminlte-sidebar.php'; ?>
+    <div class="content-wrapper">
+        <div class="content-header"><div class="container-fluid"><div class="row mb-2"><div class="col-sm-6"><h1 class="m-0"><i class="fas fa-users-gear mr-2"></i>Student Assignment Settings</h1></div><div class="col-sm-6"><ol class="breadcrumb float-sm-right"><li class="breadcrumb-item"><a href="index.php">Home</a></li><li class="breadcrumb-item active">Student Assignment Settings</li></ol></div></div></div></div>
+        <section class="content"><div class="container-fluid"><div class="assignment-grid<?php echo $isSuperAdmin ? '' : ' single'; ?>">
+            <?php if ($isSuperAdmin): ?>
+            <div class="component-panel"><div class="card settings-card">
+                <div class="card-header"><h3 class="card-title"><i class="fas fa-layer-group mr-2"></i>Student Component Selection</h3></div>
+                <div class="card-body">
+                    <div class="setting-summary mb-3"><i class="fas fa-people-arrows"></i><div class="flex-fill"><strong>Allow all students one component change</strong><small class="text-muted d-block">Each student can save once per reopening.</small></div><div class="custom-control custom-switch"><input type="checkbox" class="custom-control-input" id="componentChangeToggle" <?php echo $componentChangeEnabled?'checked':''; ?>><label class="custom-control-label font-weight-bold" id="componentChangeLabel" for="componentChangeToggle"><?php echo $componentChangeEnabled?'Enabled':'Disabled'; ?></label></div></div>
+                    <div class="setting-summary mb-3"><i class="fas fa-toggle-on"></i><div><strong id="componentStatus"><?php echo count($openComponents); ?> component(s) open.</strong><small class="text-muted">Closed components do not appear on the public form.</small></div></div>
+                    <?php foreach (['CWTS','LTS','ROTC'] as $component): $isOpen=in_array($component,$openComponents,true); ?>
+                    <div class="setting-row"><strong><?php echo $component; ?></strong><div class="custom-control custom-switch"><input type="checkbox" class="custom-control-input component-toggle" id="component<?php echo $component; ?>" data-component="<?php echo $component; ?>" <?php echo $isOpen?'checked':''; ?>><label class="custom-control-label font-weight-bold" for="component<?php echo $component; ?>"><?php echo $isOpen?'Open':'Closed'; ?></label></div></div>
+                    <?php endforeach; ?>
+                    <div class="ml-3 pl-3 border-left"><small class="text-muted d-block mb-2">ROTC MS levels available for selection</small><?php foreach(getRotcMsLevels() as $level):$isOpen=in_array($level,$openRotcLevels,true);?><div class="setting-row py-2"><strong><?php echo htmlspecialchars($level); ?></strong><div class="custom-control custom-switch"><input type="checkbox" class="custom-control-input rotc-toggle" id="rotc<?php echo str_replace('-','',$level); ?>" data-level="<?php echo htmlspecialchars($level); ?>" <?php echo $isOpen?'checked':''; ?>><label class="custom-control-label" for="rotc<?php echo str_replace('-','',$level); ?>"><?php echo $isOpen?'Open':'Closed'; ?></label></div></div><?php endforeach;?></div>
+                    <div class="mt-3 p-3 border rounded"><strong>Reset selected components</strong><small class="text-muted d-block mb-2"><?php echo $selectedComponentCount; ?> student account(s) currently selected.</small><button class="btn btn-outline-danger" type="button" id="resetComponents"><i class="fas fa-rotate-left mr-1"></i>Reset Components</button></div>
+                </div>
+            </div></div>
+            <?php endif; ?>
+
+            <div class="scan-panel"><div class="card settings-card"><div class="card-header"><h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>Facilitator Scan Restriction</h3></div><div class="card-body"><div class="setting-summary"><i class="fas fa-user-shield"></i><div class="flex-fill"><strong id="scanStatus">Restriction is <?php echo $scanRestrictionEnabled?'active':'off'; ?>.</strong><small class="text-muted">Facilitators can scan only assigned students when active.</small></div><div class="custom-control custom-switch"><input type="checkbox" class="custom-control-input" id="scanToggle" <?php echo $scanRestrictionEnabled?'checked':''; ?>><label class="custom-control-label font-weight-bold" for="scanToggle"><?php echo $scanRestrictionEnabled?'Active':'Off'; ?></label></div></div></div></div></div>
+
+            <?php if($canManageSectioning): ?>
+            <div class="sectioning-panel"><div class="card settings-card"><div class="card-header"><h3 class="card-title"><i class="fas fa-folder-tree mr-2"></i>Automatic Folder Sectioning<?php if($managedComponent):?><span class="badge badge-primary ml-2"><?php echo htmlspecialchars($managedComponent); ?></span><?php endif;?></h3></div>
+                <form id="sectioningForm"><div class="card-body">
+                    <div class="alert alert-<?php echo $isSuperAdmin?'info':'primary'; ?> py-2"><i class="fas fa-shield-halved mr-1"></i><?php echo $isSuperAdmin?'You can configure every selected component.':'You can configure only your '.htmlspecialchars($managedComponent).' component.'; ?></div>
+                    <div class="form-group"><label>Components to section automatically</label><div class="d-flex flex-wrap" style="gap:18px"><?php foreach($visibleSectionComponents as $component):?><div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="section<?php echo $component;?>" name="section_components[]" value="<?php echo $component;?>" <?php echo in_array($component,$enabledSectionComponents,true)?'checked':'';?>><label class="custom-control-label font-weight-bold" for="section<?php echo $component;?>"><?php echo $component;?></label></div><?php endforeach;?></div></div><hr>
+                    <div class="row align-items-end"><div class="col-md-4"><label>Group students by</label><select class="form-control" name="grouping_mode" id="groupingMode"><?php foreach(autoSectionGroupingOptions() as $value=>$label):?><option value="<?php echo $value;?>" <?php echo $sectionGrouping===$value?'selected':'';?>><?php echo htmlspecialchars($label);?></option><?php endforeach;?></select></div><div class="col-md-3 mt-3 mt-md-0"><label>Students per section</label><select class="form-control" name="max_students" id="sectionMax"><?php foreach(autoSectionMaxOptions() as $max):?><option value="<?php echo $max;?>" <?php echo $sectionMax===$max?'selected':'';?>><?php echo $max;?> students</option><?php endforeach;?></select></div><div class="col-md-5 mt-3 mt-md-0"><button class="btn btn-primary" id="saveSectioning"><i class="fas fa-save mr-1"></i>Save Sectioning</button><button class="btn btn-outline-primary ml-2" type="button" id="rebuildSections"><i class="fas fa-sync-alt mr-1"></i>Rebuild Existing Folders</button></div></div>
+                    <p class="text-muted small mb-0 mt-3">Components are separated first, then students are grouped and divided evenly. Manual assignments remain editable until the next rebuild.</p>
+                </div></form>
+            </div></div>
+            <?php endif; ?>
+        </div></div></section>
+    </div>
+    <?php if ($role === 'super_admin') include 'footer.php'; ?>
+</div>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script><script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+$(function(){
+ const request=(toggle,url,data,done,message)=>$.ajax({url:url,method:'POST',data:data,dataType:'json'}).done(r=>{if(r.success){done(r)}else{toggle.prop('checked',!toggle.is(':checked'));Swal.fire('Error',r.message||message,'error')}}).fail(()=>{toggle.prop('checked',!toggle.is(':checked'));Swal.fire('Error',message,'error')});
+ $('#componentChangeToggle').on('change',function(){const t=$(this);request(t,'endpoint/toggle-student-component-change.php',{enabled:t.is(':checked')?1:0},r=>{$('#componentChangeLabel').text(r.enabled?'Enabled':'Disabled')},'Unable to update component changes.')});
+ const sync=r=>{const components=r.open_components||[],levels=r.open_rotc_ms_levels||[];$('.component-toggle').each(function(){const open=components.includes($(this).data('component'));$(this).prop('checked',open).next().text(open?'Open':'Closed')});$('.rotc-toggle').each(function(){const open=levels.includes($(this).data('level'));$(this).prop('checked',open).next().text(open?'Open':'Closed')});$('#componentStatus').text(components.length+' component(s) open.')};
+ $('.component-toggle').on('change',function(){const t=$(this);request(t,'endpoint/toggle-component-selection.php',{enabled:t.is(':checked')?1:0,component:t.data('component')},sync,'Unable to update component selection.')});
+ $('.rotc-toggle').on('change',function(){const t=$(this);request(t,'endpoint/toggle-component-selection.php',{enabled:t.is(':checked')?1:0,component:'ROTC',rotc_ms_level:t.data('level')},sync,'Unable to update ROTC level.')});
+ $('#scanToggle').on('change',function(){const t=$(this);request(t,'endpoint/toggle-facilitator-scan-restriction.php',{enabled:t.is(':checked')?1:0},r=>{t.next().text(r.enabled?'Active':'Off');$('#scanStatus').text('Restriction is '+(r.enabled?'active':'off')+'.')},'Unable to update scan restriction.')});
+ $('#resetComponents').on('click',function(){Swal.fire({icon:'warning',title:'Reset selected components?',text:'Student component choices will be cleared.',showCancelButton:true,confirmButtonColor:'#dc3545',confirmButtonText:'Reset'}).then(x=>{if(!x.isConfirmed)return;$.post('endpoint/reset-student-components.php').done(r=>{if(typeof r==='string')r=JSON.parse(r);Swal.fire(r.success?'Reset Complete':'Unable to reset',r.message,r.success?'success':'error').then(()=>{if(r.success)location.reload()})})})});
+ $('#sectioningForm').on('submit',function(e){e.preventDefault();const b=$('#saveSectioning'),html=b.html();b.prop('disabled',true).html('Saving...');$.ajax({url:'endpoint/update-auto-section-settings.php',method:'POST',data:$(this).serialize(),dataType:'json'}).done(r=>Swal.fire(r.success?'Saved':'Unable to save',r.message,r.success?'success':'error')).fail(()=>Swal.fire('Error','Unable to save settings.','error')).always(()=>b.prop('disabled',false).html(html))});
+ $('#rebuildSections').on('click',function(){const b=$(this),html=b.html(),components=$('[name="section_components[]"]:checked').map(function(){return this.value}).get().join(', ')||'none';Swal.fire({icon:'question',title:'Rebuild sections?',text:'Selected components: '+components+'. Existing manual assignments will be recalculated.',showCancelButton:true,confirmButtonText:'Rebuild'}).then(x=>{if(!x.isConfirmed)return;b.prop('disabled',true).html('Rebuilding...');$.ajax({url:'endpoint/rebuild-auto-section-folders.php',method:'POST',data:$('#sectioningForm').serialize(),dataType:'json'}).done(r=>Swal.fire(r.success?'Done':'Unable to rebuild',r.message,r.success?'success':'error')).fail(()=>Swal.fire('Error','Unable to rebuild sections.','error')).always(()=>b.prop('disabled',false).html(html))})});
+});
+</script>
+</body></html>
