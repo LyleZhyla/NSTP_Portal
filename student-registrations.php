@@ -612,7 +612,10 @@ $registrationPageUrl = static function ($page) {
                                                     <?php endforeach; ?>
                                                 </div>
                                                 <div class="public-action-group">
-                                                    <button type="button" class="btn btn-sm btn-warning" data-toggle="modal" data-target="#formModal<?php echo (int) $formRow['form_id']; ?>">
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-warning edit-public-form"
+                                                            data-modal-id="formModal<?php echo (int) $formRow['form_id']; ?>"
+                                                            aria-controls="formModal<?php echo (int) $formRow['form_id']; ?>">
                                                         <i class="fas fa-edit mr-1"></i> Edit
                                                     </button>
                                                     <a class="btn btn-sm btn-info public-qr-btn" href="endpoint/download-public-registration-qr.php?form=<?php echo urlencode($formRow['form_slug']); ?>">
@@ -1569,6 +1572,20 @@ foreach ($publicForms as $formRow) {
         });
 
         applyQrFilters();
+
+        $('.edit-public-form').on('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const modalId = String($(this).data('modal-id') || '');
+            const modal = modalId ? document.getElementById(modalId) : null;
+            if (!modal) {
+                Swal.fire('Unable to Edit', 'The edit form for this QR could not be loaded.', 'error');
+                return;
+            }
+
+            $(modal).appendTo(document.body).modal('show');
+        });
 
         $('.public-form-settings').on('submit', function(e) {
             e.preventDefault();
