@@ -11,7 +11,7 @@ if (!empty($token)) {
     try {
         $check_token_query = "SELECT pr.*, tu.full_name, tu.email, tu.user_id 
                              FROM password_resets pr
-                             JOIN tbl_users tu ON pr.email = tu.email
+                             JOIN tbl_users tu ON LOWER(TRIM(pr.email)) = LOWER(TRIM(tu.email))
                              WHERE pr.token = :token AND pr.expires_at > NOW()
                              LIMIT 1";
         $stmt = $conn->prepare($check_token_query);

@@ -14,7 +14,7 @@ $success = '';
 $local_reset_link = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
+    $email = strtolower(trim($_POST['email'] ?? ''));
     
     if (empty($email)) {
         $error = 'Please enter your email address';
@@ -22,33 +22,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please enter a valid email address';
     } else {
         try {
-            // Check if email exists in tbl_users
-            $check_query = "SELECT user_id, full_name, email FROM tbl_users WHERE email = :email";
+            // Prefer the account email, but also recognize the real email saved in a
+            // student's public registration. Some imported student accounts still
+            // contain an @no-email.tau-nstp.local placeholder in tbl_users.
+            $check_query = "SELECT user_id, full_name, email AS account_email,
+                                   email AS delivery_email
+                            FROM tbl_users
+                            WHERE LOWER(TRIM(email)) = :email
+                            LIMIT 1";
             $stmt = $conn->prepare($check_query);
             $stmt->execute([':email' => $email]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$user) {
+                $registration_query = "SELECT u.user_id, u.full_name,
+                                              u.email AS account_email,
+                                              r.email AS delivery_email
+                                       FROM tbl_public_student_registrations r
+                                       INNER JOIN tbl_users u
+                                           ON u.user_id = r.user_id
+                                           OR ((r.user_id IS NULL OR r.user_id = 0)
+                                               AND u.role = 'student'
+                                               AND u.username = r.student_number)
+                                       WHERE LOWER(TRIM(r.email)) = :email
+                                       ORDER BY r.created_at DESC
+                                       LIMIT 1";
+                $registration_stmt = $conn->prepare($registration_query);
+                $registration_stmt->execute([':email' => $email]);
+                $user = $registration_stmt->fetch(PDO::FETCH_ASSOC);
+            }
             
             if ($user) {
                 // Generate unique token
                 $token = bin2hex(random_bytes(32));
                 $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
                 
-                // Delete any existing tokens for this email
+                $accountEmail = trim((string) $user['account_email']);
+                $deliveryEmail = trim((string) $user['delivery_email']);
+
+                // Store the account email so reset-password.php resolves the exact
+                // tbl_users account even when delivery uses a registration email.
                 $delete_query = "DELETE FROM password_resets WHERE email = :email";
                 $delete_stmt = $conn->prepare($delete_query);
-                $delete_stmt->execute([':email' => $email]);
+                $delete_stmt->execute([':email' => $accountEmail]);
                 
                 // Insert new token
                 $insert_query = "INSERT INTO password_resets (email, token, expires_at) VALUES (:email, :token, :expires_at)";
                 $insert_stmt = $conn->prepare($insert_query);
                 
                 if ($insert_stmt->execute([
-                    ':email' => $email,
+                    ':email' => $accountEmail,
                     ':token' => $token,
                     ':expires_at' => $expires
                 ])) {
                     // Create reset link
-                    $reset_link = "http://" . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . "/reset-password.php?token=" . $token;
+                    $forwardedProto = strtolower(trim(explode(',', $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')[0]));
+                    $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+                        || $forwardedProto === 'https';
+                    $scheme = $isHttps ? 'https' : 'http';
+                    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+                    $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['PHP_SELF'] ?? '/')), '/');
+                    $reset_link = $scheme . '://' . $host . $basePath . '/reset-password.php?token=' . rawurlencode($token);
                     
                     $subject = "Password Reset Request - QR Code Attendance System";
                     $safeName = htmlspecialchars($user['full_name'] ?: 'User', ENT_QUOTES, 'UTF-8');
@@ -76,10 +110,12 @@ HTML;
                         . "If you did not request this, please ignore this email.\n\n"
                         . "Best regards,\nNational Service Training Program";
 
-                    if (sendAppMail($email, $user['full_name'], $subject, $htmlMessage, $textMessage)) {
+                    if (sendAppMail($deliveryEmail, $user['full_name'], $subject, $htmlMessage, $textMessage)) {
                         $success = "Password reset link has been sent to your email.";
                     } else {
-                        $error = "Reset link was generated, but email delivery is not configured yet. Please contact the system administrator.";
+                        $mailError = getAppMailLastError();
+                        error_log('Forgot-password delivery failed for user ID ' . (int) $user['user_id'] . ': ' . $mailError);
+                        $error = "The reset link could not be emailed. Please try again or contact the system administrator.";
                         if (in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true)) {
                             $local_reset_link = $reset_link;
                         }
