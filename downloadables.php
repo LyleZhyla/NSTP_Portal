@@ -1,6 +1,8 @@
 <?php
 session_start();
 
+$isGraphsPage = !empty($showGraphsPage);
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: landing_page.php");
     exit();
@@ -567,7 +569,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Downloadables - TAU-NSTP</title>
+    <title><?php echo $isGraphsPage ? 'Graphs' : 'Downloadables'; ?> - TAU-NSTP</title>
     <?php include('./include/theme-loader.php'); ?>
     <link rel="icon" type="image/png" href="include/logo.png">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
@@ -771,12 +773,12 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
             <div class="container-fluid">
                 <div class="row mb-2">
                     <div class="col-sm-6">
-                        <h1 class="m-0"><i class="fas fa-download mr-2"></i>Downloadables</h1>
+                        <h1 class="m-0"><i class="fas <?php echo $isGraphsPage ? 'fa-chart-column' : 'fa-download'; ?> mr-2"></i><?php echo $isGraphsPage ? 'Graphs' : 'Downloadables'; ?></h1>
                     </div>
                     <div class="col-sm-6">
                         <ol class="breadcrumb float-sm-right">
                             <li class="breadcrumb-item"><a href="index.php">Home</a></li>
-                            <li class="breadcrumb-item active">Downloadables</li>
+                            <li class="breadcrumb-item active"><?php echo $isGraphsPage ? 'Graphs' : 'Downloadables'; ?></li>
                         </ol>
                     </div>
                 </div>
@@ -785,6 +787,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
 
         <section class="content">
             <div class="container-fluid">
+                <?php if (!$isGraphsPage): ?>
                 <div class="row">
                     <div class="col-md-3 col-sm-6 mb-3">
                         <div class="stat-tile">
@@ -811,7 +814,9 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
 
+                <?php if ($isGraphsPage): ?>
                 <div class="card mb-3">
                     <div class="card-header">
                         <h3 class="card-title"><i class="fas fa-chart-column mr-2"></i>Enrollment Graphs</h3>
@@ -826,7 +831,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                             <?php foreach ($availableGraphTypes as $graphKey => $graphLabel): ?>
                                 <?php
                                     $graphQuery = array_merge($_GET, ['graph' => $graphKey]);
-                                    $graphUrl = 'downloadables.php?' . http_build_query($graphQuery);
+                                    $graphUrl = 'graphs.php?' . http_build_query($graphQuery);
                                 ?>
                                 <a class="graph-view-option <?php echo $selectedGraph === $graphKey ? 'active' : ''; ?>" href="<?php echo htmlspecialchars($graphUrl); ?>">
                                     <i class="fas <?php echo $graphKey === 'component' ? 'fa-layer-group' : ($graphKey === 'gender' ? 'fa-venus-mars' : ($graphKey === 'course' ? 'fa-graduation-cap' : ($graphKey === 'college' ? 'fa-university' : 'fa-map-marked-alt'))); ?>"></i>
@@ -904,7 +909,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fas fa-filter mr-1"></i> Apply Filters
                                 </button>
-                                <a href="downloadables.php" class="btn btn-outline-secondary">
+                                <a href="graphs.php" class="btn btn-outline-secondary">
                                     <i class="fas fa-rotate-left mr-1"></i> Reset
                                 </a>
                                 <span class="muted-note ml-auto"><?php echo number_format($filteredEnrollmentTotal); ?> enrollment record(s) found</span>
@@ -1073,7 +1078,9 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
 
+                <?php if (!$isGraphsPage): ?>
                 <div class="row">
                     <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-attendance-excel.php">
@@ -1435,6 +1442,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                     </div>
                     <?php endif; ?>
                 </div>
+                <?php endif; ?>
             </div>
         </section>
     </div>
@@ -1709,7 +1717,9 @@ function buildQrParams() {
     return params;
 }
 
-document.getElementById('qrAdminId').addEventListener('change', function() {
+const qrAdminSelect = document.getElementById('qrAdminId');
+if (qrAdminSelect) {
+qrAdminSelect.addEventListener('change', function() {
     const sectionSelect = document.getElementById('qrSection');
     const sections = sectionsByFacilitator[this.value] || [];
     sectionSelect.innerHTML = '<option value="">All Folders</option>';
@@ -1721,8 +1731,11 @@ document.getElementById('qrAdminId').addEventListener('change', function() {
     });
     sectionSelect.disabled = sections.length === 0;
 });
+}
 
-document.getElementById('previewQrBtn').addEventListener('click', function() {
+const previewQrBtn = document.getElementById('previewQrBtn');
+if (previewQrBtn) {
+previewQrBtn.addEventListener('click', function() {
     const params = buildQrParams();
     if (!params) {
         return;
@@ -1767,14 +1780,18 @@ document.getElementById('previewQrBtn').addEventListener('click', function() {
             this.innerHTML = '<i class="fas fa-eye mr-1"></i> Preview QR Export';
         });
 });
+}
 
-document.getElementById('downloadQrBtn').addEventListener('click', function() {
+const downloadQrBtn = document.getElementById('downloadQrBtn');
+if (downloadQrBtn) {
+downloadQrBtn.addEventListener('click', function() {
     const params = buildQrParams();
     if (!params) {
         return;
     }
     window.location.href = 'endpoint/export-qr-zip.php?' + params.toString();
 });
+}
 </script>
 </body>
 </html>

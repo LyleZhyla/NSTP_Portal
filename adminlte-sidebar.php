@@ -197,6 +197,12 @@ if (isset($_SESSION['user_id'])) {
 
                 <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator', 'facilitator'], true)): ?>
                 <li class="nav-item">
+                    <a href="graphs.php" class="nav-link <?= ($currentPage == 'graphs.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-chart-column"></i>
+                        <p>Graphs</p>
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a href="downloadables.php" class="nav-link <?= ($currentPage == 'downloadables.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-download"></i>
                         <p>Downloadables</p>
