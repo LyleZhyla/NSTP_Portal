@@ -123,6 +123,46 @@ date_default_timezone_set('Asia/Manila');
             display: block;
             font-size: 0.95rem;
         }
+        .assignment-settings-grid {
+            display: grid;
+            grid-template-columns: minmax(340px, 5fr) minmax(0, 7fr);
+            gap: 16px;
+            align-items: start;
+        }
+        .assignment-settings-grid > [class*="col-"] {
+            width: 100%;
+            max-width: none;
+            padding: 0;
+        }
+        .assignment-settings-grid .settings-card {
+            margin-bottom: 0;
+        }
+        .assignment-component-panel {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+        }
+        .assignment-scan-panel,
+        .assignment-auto-panel {
+            grid-column: 2;
+        }
+        .assignment-settings-grid--single {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .assignment-settings-grid--single .assignment-scan-panel,
+        .assignment-settings-grid--single .assignment-auto-panel {
+            grid-column: 1;
+        }
+        @media (max-width: 991.98px) {
+            .assignment-settings-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .assignment-component-panel,
+            .assignment-scan-panel,
+            .assignment-auto-panel {
+                grid-column: 1;
+                grid-row: auto;
+            }
+        }
         @media (max-width: 575.98px) {
             .setting-summary {
                 align-items: flex-start;
@@ -167,10 +207,10 @@ date_default_timezone_set('Asia/Manila');
 
         <section class="content">
             <div class="container-fluid">
-                <div class="row">
+                <div class="<?php echo $isStudentAssignmentSettingsPage ? 'assignment-settings-grid' . ((($currentUser['role'] ?? '') === 'super_admin') ? '' : ' assignment-settings-grid--single') : 'row'; ?>">
                     <?php if ($isStudentAssignmentSettingsPage): ?>
                     <?php if (($currentUser['role'] ?? '') === 'super_admin'): ?>
-                    <div class="col-lg-5">
+                    <div class="col-lg-5 assignment-component-panel">
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-layer-group mr-2"></i>Student Component Selection</h3>
@@ -253,7 +293,7 @@ date_default_timezone_set('Asia/Manila');
                     </div>
                     <?php endif; ?>
 
-                    <div class="col-lg-<?php echo ($currentUser['role'] ?? '') === 'super_admin' ? '7' : '12'; ?>">
+                    <div class="col-lg-<?php echo ($currentUser['role'] ?? '') === 'super_admin' ? '7' : '12'; ?> assignment-scan-panel">
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-qrcode mr-2"></i>Facilitator Scan Restriction</h3>
@@ -279,7 +319,7 @@ date_default_timezone_set('Asia/Manila');
                     </div>
 
                     <?php if ($autoSectionEnabledForCurrentUser): ?>
-                    <div class="col-lg-12">
+                    <div class="col-lg-12 assignment-auto-panel">
                         <div class="card settings-card">
                             <div class="card-header">
                                 <h3 class="card-title">
