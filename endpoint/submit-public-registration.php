@@ -477,7 +477,8 @@ function publicRegistrationCourseSection(PDO $conn, array $registration) {
             $component,
             $registration['course'] ?? '',
             $registration['year_section'] ?? '',
-            publicRegistrationOriginalSection($registration)
+            publicRegistrationOriginalSection($registration),
+            $registration['college'] ?? ''
         );
     }
 

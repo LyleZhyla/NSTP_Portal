@@ -24,6 +24,7 @@ $absentNotificationGraceHours = getAbsentNotificationGraceHours($conn);
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
 $autoSectionEnabledForCurrentUser = $autoSectionComponent !== 'ROTC';
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
+$autoSectionGroupingMode = getAutoSectionGroupingMode($conn, $autoSectionComponent);
 $selectedComponentCount = 0;
 if (($currentUser['role'] ?? '') === 'super_admin') {
     try {
@@ -288,8 +289,18 @@ date_default_timezone_set('Asia/Manila');
                             <form id="autoSectionForm">
                                 <div class="card-body">
                                     <div class="row align-items-end">
-                                        <div class="col-md-5">
-                                            <label for="autoSectionMaxStudents">Maximum students per folder</label>
+                                        <div class="col-md-4">
+                                            <label for="autoSectionGroupingMode">Group students by</label>
+                                            <select class="form-control" id="autoSectionGroupingMode" name="grouping_mode">
+                                                <?php foreach (autoSectionGroupingOptions() as $modeValue => $modeLabel): ?>
+                                                    <option value="<?php echo htmlspecialchars($modeValue); ?>" <?php echo $autoSectionGroupingMode === $modeValue ? 'selected' : ''; ?>>
+                                                        <?php echo htmlspecialchars($modeLabel); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 mt-3 mt-md-0">
+                                            <label for="autoSectionMaxStudents">Students per section</label>
                                             <select class="form-control" id="autoSectionMaxStudents" name="max_students">
                                                 <?php foreach (autoSectionMaxOptions() as $option): ?>
                                                     <option value="<?php echo (int) $option; ?>" <?php echo $autoSectionMaxStudents === $option ? 'selected' : ''; ?>>
@@ -298,9 +309,9 @@ date_default_timezone_set('Asia/Manila');
                                                 <?php endforeach; ?>
                                             </select>
                                         </div>
-                                        <div class="col-md-7 mt-3 mt-md-0">
+                                        <div class="col-md-5 mt-3 mt-md-0">
                                             <button type="submit" class="btn btn-primary" id="saveAutoSectionBtn">
-                                                <i class="fas fa-save mr-1"></i> Save Maximum
+                                                <i class="fas fa-save mr-1"></i> Save Sectioning
                                             </button>
                                             <button type="button" class="btn btn-outline-primary ml-2" id="rebuildAutoSectionBtn">
                                                 <i class="fas fa-sync-alt mr-1"></i> Rebuild Existing Folders
@@ -308,8 +319,9 @@ date_default_timezone_set('Asia/Manila');
                                         </div>
                                     </div>
                                     <p class="text-muted small mb-0 mt-3">
-                                        Students stay in the component pending list until you click rebuild. Rebuild creates folders by course and section, then continues to the next folder when the maximum is reached.
+                                        Rebuild keeps each selected college/course group together, creates the required number of sections, and divides students as evenly as possible without exceeding the selected limit.
                                         <?php echo $autoSectionComponent ? 'This setting applies to your component only.' : 'This is the default setting for automatic folders.'; ?>
+                                        You may still edit a student's assigned section manually after rebuilding; a future rebuild will calculate the assignments again.
                                     </p>
                                 </div>
                             </form>
@@ -775,11 +787,13 @@ $(function() {
     $('#rebuildAutoSectionBtn').on('click', function() {
         const button = $(this);
         const originalHtml = button.html();
+        const groupingLabel = $('#autoSectionGroupingMode option:selected').text();
+        const maxStudents = $('#autoSectionMaxStudents').val();
 
         Swal.fire({
             icon: 'question',
             title: 'Rebuild automatic folders?',
-            text: 'Existing system/public student folders will be recalculated using the selected maximum.',
+            text: `Students will be grouped by ${groupingLabel} and evenly divided with up to ${maxStudents} students per section. Existing manual assignments will be recalculated.`,
             showCancelButton: true,
             confirmButtonText: 'Rebuild',
             cancelButtonText: 'Cancel'
@@ -793,6 +807,7 @@ $(function() {
             $.ajax({
                 url: 'endpoint/rebuild-auto-section-folders.php',
                 method: 'POST',
+                data: $('#autoSectionForm').serialize(),
                 dataType: 'json',
                 success: function(response) {
                     if (response.success) {

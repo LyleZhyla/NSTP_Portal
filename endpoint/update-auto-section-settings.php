@@ -29,15 +29,18 @@ try {
     }
 
     $maxStudents = (int) ($_POST['max_students'] ?? 40);
+    $groupingMode = (string) ($_POST['grouping_mode'] ?? 'college_course');
     saveAutoSectionMaxStudents($conn, $maxStudents, $component);
+    saveAutoSectionGroupingMode($conn, $groupingMode, $component);
 
     $scope = $component ?: 'default';
-    logSystemEvent($conn, 'auto_section_settings_updated', "Set {$scope} automatic folder max students to {$maxStudents}.");
+    logSystemEvent($conn, 'auto_section_settings_updated', "Set {$scope} automatic sectioning to {$groupingMode}, {$maxStudents} students per section.");
 
     echo json_encode([
         'success' => true,
         'message' => 'Automatic sectioning setting saved.',
         'max_students' => $maxStudents,
+        'grouping_mode' => $groupingMode,
     ]);
 } catch (Throwable $error) {
     echo json_encode(['success' => false, 'message' => $error->getMessage()]);

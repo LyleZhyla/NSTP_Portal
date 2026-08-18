@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Check if student exists and get creator info
-            $checkStmt = $conn->prepare("SELECT created_by, user_id, student_number FROM tbl_student WHERE tbl_student_id = :student_id");
+            $checkStmt = $conn->prepare("SELECT tbl_student_id, created_by, user_id, student_number, course_section, original_section FROM tbl_student WHERE tbl_student_id = :student_id");
             $checkStmt->bindParam(":student_id", $studentId, PDO::PARAM_INT);
             $checkStmt->execute();
             
@@ -63,7 +63,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $currentStudentNumber = preg_replace('/\D/', '', (string) ($student['student_number'] ?? ''));
             
             // Check permission
-            if ($userRole !== 'super_admin' && $student['created_by'] != $userId) {
+            if ($userRole === 'coordinator') {
+                $coordinatorProgram = normalizeProgram($currentUser['program'] ?? null);
+                $studentProgram = studentProgramForAttendance($conn, $student);
+                if (!$coordinatorProgram || $studentProgram !== $coordinatorProgram) {
+                    throw new Exception('You do not have permission to edit this student!');
+                }
+            } elseif ($userRole !== 'super_admin' && $student['created_by'] != $userId) {
                 throw new Exception('You do not have permission to edit this student!');
             }
 
@@ -116,7 +122,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // For regular admins, verify they are assigned to the new admin folder section
-            if ($userRole !== 'super_admin') {
+            if ($userRole === 'coordinator') {
+                ensureSectionFoldersTable($conn);
+                $folderStmt = $conn->prepare("
+                    SELECT COUNT(*)
+                    FROM tbl_section_folders
+                    WHERE program = ? AND course_section = ?
+                ");
+                $folderStmt->execute([normalizeProgram($currentUser['program'] ?? null), $studentCourse]);
+                if ((int) $folderStmt->fetchColumn() === 0) {
+                    throw new Exception("The selected section is not part of your component: $studentCourse");
+                }
+            } elseif ($userRole !== 'super_admin') {
                 $checkSectionStmt = $conn->prepare("
                     SELECT COUNT(*) 
                     FROM tbl_admin_sections 

@@ -7,6 +7,35 @@ function autoSectionMaxOptions() {
     return [20, 30, 35, 40, 45, 50, 60];
 }
 
+function autoSectionGroupingOptions() {
+    return [
+        'college_course' => 'College and Course',
+        'course' => 'Course only',
+        'college' => 'College only',
+    ];
+}
+
+function autoSectionGroupingSettingKey($component = null) {
+    $component = normalizeProgram($component);
+    return $component ? 'auto_section_grouping_' . strtolower($component) : 'auto_section_grouping';
+}
+
+function getAutoSectionGroupingMode(PDO $conn, $component = null) {
+    $componentKey = autoSectionGroupingSettingKey($component);
+    $fallback = getSystemSetting($conn, 'auto_section_grouping', 'college_course');
+    $mode = (string) getSystemSetting($conn, $componentKey, $fallback);
+    return array_key_exists($mode, autoSectionGroupingOptions()) ? $mode : 'college_course';
+}
+
+function saveAutoSectionGroupingMode(PDO $conn, $mode, $component = null) {
+    $mode = trim((string) $mode);
+    if (!array_key_exists($mode, autoSectionGroupingOptions())) {
+        throw new InvalidArgumentException('Invalid automatic section grouping mode.');
+    }
+
+    setSystemSetting($conn, autoSectionGroupingSettingKey($component), $mode);
+}
+
 function autoSectionMaxSettingKey($component = null) {
     $component = normalizeProgram($component);
     return $component ? 'auto_section_max_students_' . strtolower($component) : 'auto_section_max_students';
@@ -31,6 +60,38 @@ function saveAutoSectionMaxStudents(PDO $conn, $maxStudents, $component = null) 
 function autoSectionCleanPart($value) {
     $value = trim(preg_replace('/\s+/', ' ', (string) $value));
     return strtoupper($value) === 'N/A' ? '' : $value;
+}
+
+function autoSectionGroupKey($mode, $college, $course) {
+    $college = autoSectionCleanPart($college);
+    $course = autoSectionCleanPart($course);
+    $unspecified = 'Unspecified';
+
+    if ($mode === 'college') {
+        return strtolower($college !== '' ? $college : $unspecified);
+    }
+    if ($mode === 'course') {
+        return strtolower($course !== '' ? $course : $unspecified);
+    }
+
+    return strtolower(($college !== '' ? $college : $unspecified) . ' / ' . ($course !== '' ? $course : $unspecified));
+}
+
+function autoSectionBalancedSizes($studentCount, $maxStudents) {
+    $studentCount = max(0, (int) $studentCount);
+    $maxStudents = max(1, (int) $maxStudents);
+    if ($studentCount === 0) {
+        return [];
+    }
+
+    $sectionCount = (int) ceil($studentCount / $maxStudents);
+    $baseSize = intdiv($studentCount, $sectionCount);
+    $remainder = $studentCount % $sectionCount;
+    $sizes = [];
+    for ($index = 0; $index < $sectionCount; $index++) {
+        $sizes[] = $baseSize + ($index < $remainder ? 1 : 0);
+    }
+    return $sizes;
 }
 
 function autoSectionOriginalSection($course, $yearSection, $fallback = '') {
@@ -140,43 +201,42 @@ function autoSectionFolderStats(PDO $conn, $component, $createdBy = null) {
     return $stats;
 }
 
-function autoSectionFindFolderForGroup(PDO $conn, $component, $groupLabel, $createdBy = null) {
+function autoSectionFindFolderForGroup(PDO $conn, $component, $college, $course, $createdBy = null) {
     $component = autoSectionComponent($component);
     $maxStudents = getAutoSectionMaxStudents($conn, $component);
+    $groupingMode = getAutoSectionGroupingMode($conn, $component);
+    $targetGroupKey = autoSectionGroupKey($groupingMode, $college, $course);
     $stats = autoSectionFolderStats($conn, $component, $createdBy);
-    $groupLabel = autoSectionCleanPart($groupLabel);
 
-    if ($groupLabel !== '') {
-        foreach ($stats as $info) {
-            if ($info['count'] >= $maxStudents) {
-                continue;
-            }
-
-            $createdClause = $createdBy === null ? 'created_by IS NULL' : 'created_by = ?';
-            $params = $createdBy === null
-                ? [$info['folder'], $groupLabel]
-                : [(int) $createdBy, $info['folder'], $groupLabel];
-
-            $stmt = $conn->prepare("
-                SELECT COUNT(*)
-                FROM tbl_student
-                WHERE $createdClause
-                  AND course_section = ?
-                  AND original_section = ?
-            ");
-            $stmt->execute($params);
-            if ((int) $stmt->fetchColumn() > 0) {
-                createSectionFolder($conn, $component, $info['folder']);
-                return $info['folder'];
-            }
-        }
+    $createdClause = $createdBy === null ? 's.created_by IS NULL' : 's.created_by = ?';
+    $params = $createdBy === null ? [] : [(int) $createdBy];
+    $params[] = autoSectionFolderPrefix($component) . ' %';
+    $groupStmt = $conn->prepare("
+        SELECT s.course_section, s.original_section, r.college, r.course
+        FROM tbl_student s
+        LEFT JOIN tbl_public_student_registrations r
+          ON r.student_number = s.student_number
+         AND r.registration_id = (
+            SELECT MAX(r2.registration_id)
+            FROM tbl_public_student_registrations r2
+            WHERE r2.student_number = s.student_number
+         )
+        WHERE {$createdClause}
+          AND s.course_section LIKE ?
+    ");
+    $groupStmt->execute($params);
+    $folderGroupKeys = [];
+    foreach ($groupStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $rowCourse = autoSectionCleanPart($row['course'] ?? '') ?: autoSectionCleanPart($row['original_section'] ?? '');
+        $folderGroupKeys[$row['course_section']][autoSectionGroupKey($groupingMode, $row['college'] ?? '', $rowCourse)] = true;
     }
 
     foreach ($stats as $info) {
-        if ($info['count'] < $maxStudents) {
-            createSectionFolder($conn, $component, $info['folder']);
-            return $info['folder'];
+        if ($info['count'] >= $maxStudents || empty($folderGroupKeys[$info['folder']][$targetGroupKey])) {
+            continue;
         }
+        createSectionFolder($conn, $component, $info['folder']);
+        return $info['folder'];
     }
 
     $nextNumber = empty($stats) ? 1 : (max(array_keys($stats)) + 1);
@@ -185,14 +245,14 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $groupLabel, $crea
     return $folderName;
 }
 
-function autoSectionFolderForStudent(PDO $conn, $component, $course, $yearSection, $fallbackOriginal = '', $createdBy = null) {
+function autoSectionFolderForStudent(PDO $conn, $component, $course, $yearSection, $fallbackOriginal = '', $college = '', $createdBy = null) {
     $component = autoSectionComponent($component, $fallbackOriginal);
     $groupLabel = autoSectionOriginalSection($course, $yearSection, $fallbackOriginal);
     if (!autoSectionUsesAutomaticFolders($component)) {
         return $groupLabel;
     }
 
-    return autoSectionFindFolderForGroup($conn, $component, $groupLabel, $createdBy);
+    return autoSectionFindFolderForGroup($conn, $component, $college, $course, $createdBy);
 }
 
 function rebuildAutoSectionFolders(PDO $conn, $component = null) {
@@ -208,6 +268,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 s.student_name,
                 s.original_section,
                 s.course_section,
+                r.college AS reg_college,
                 r.course AS reg_course,
                 r.year_section AS reg_year_section,
                 r.component AS reg_component,
@@ -236,33 +297,43 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         ");
         $stmt->execute([$currentComponent, $currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $folderNumber = 1;
-        $folderCount = 0;
-
+        $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
+        $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
+        $groupedStudents = [];
         foreach ($students as $student) {
-            $originalSection = autoSectionOriginalSection(
-                $student['reg_course'] ?? '',
-                $student['reg_year_section'] ?? '',
-                $student['original_section'] ?? ''
-            );
-            $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
-            if ($folderCount >= $maxStudents) {
-                $folderNumber++;
-                $folderCount = 0;
-            }
+            $groupCourse = autoSectionCleanPart($student['reg_course'] ?? '') ?: autoSectionCleanPart($student['original_section'] ?? '');
+            $groupKey = autoSectionGroupKey($groupingMode, $student['reg_college'] ?? '', $groupCourse);
+            $groupedStudents[$groupKey][] = $student;
+        }
+        ksort($groupedStudents, SORT_NATURAL | SORT_FLAG_CASE);
 
-            $folder = autoSectionFolderName($currentComponent, $folderNumber);
-            createSectionFolder($conn, $currentComponent, $folder);
-            $folderCount++;
+        $folderNumber = 1;
+        foreach ($groupedStudents as $groupStudents) {
+            $balancedSizes = autoSectionBalancedSizes(count($groupStudents), $maxStudents);
+            $studentOffset = 0;
+            foreach ($balancedSizes as $balancedSize) {
+                $folder = autoSectionFolderName($currentComponent, $folderNumber++);
+                createSectionFolder($conn, $currentComponent, $folder);
+                $sectionStudents = array_slice($groupStudents, $studentOffset, $balancedSize);
+                $studentOffset += $balancedSize;
 
-            if ($student['course_section'] !== $folder || ($student['original_section'] ?? '') !== $originalSection) {
-                $updateStmt = $conn->prepare("
-                    UPDATE tbl_student
-                    SET course_section = ?, original_section = ?
-                    WHERE tbl_student_id = ?
-                ");
-                $updateStmt->execute([$folder, $originalSection, $student['tbl_student_id']]);
-                $moved++;
+                foreach ($sectionStudents as $student) {
+                    $originalSection = autoSectionOriginalSection(
+                        $student['reg_course'] ?? '',
+                        $student['reg_year_section'] ?? '',
+                        $student['original_section'] ?? ''
+                    );
+
+                    if ($student['course_section'] !== $folder || ($student['original_section'] ?? '') !== $originalSection) {
+                        $updateStmt = $conn->prepare("
+                            UPDATE tbl_student
+                            SET course_section = ?, original_section = ?
+                            WHERE tbl_student_id = ?
+                        ");
+                        $updateStmt->execute([$folder, $originalSection, $student['tbl_student_id']]);
+                        $moved++;
+                    }
+                }
             }
         }
     }

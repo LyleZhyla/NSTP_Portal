@@ -117,7 +117,8 @@ function studentAutomationCourseSection(PDO $conn, array $registration) {
             $component,
             $registration['course'] ?? '',
             $registration['year_section'] ?? '',
-            $originalSection
+            $originalSection,
+            $registration['college'] ?? ''
         );
     }
 

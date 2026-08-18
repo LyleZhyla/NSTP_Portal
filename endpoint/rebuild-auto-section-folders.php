@@ -30,13 +30,18 @@ try {
 
     ensureSectionFoldersTable($conn);
 
+    $maxStudents = (int) ($_POST['max_students'] ?? getAutoSectionMaxStudents($conn, $component));
+    $groupingMode = (string) ($_POST['grouping_mode'] ?? getAutoSectionGroupingMode($conn, $component));
+    saveAutoSectionMaxStudents($conn, $maxStudents, $component);
+    saveAutoSectionGroupingMode($conn, $groupingMode, $component);
+
     $conn->beginTransaction();
     $moved = rebuildAutoSectionFolders($conn, $component);
     if ($conn->inTransaction()) {
         $conn->commit();
     }
 
-    logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections; {$moved} student record(s) updated.");
+    logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections using {$groupingMode}, {$maxStudents} students per section; {$moved} student record(s) updated.");
 
     echo json_encode([
         'success' => true,

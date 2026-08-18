@@ -195,10 +195,6 @@ if ($user_role === 'coordinator') {
         $coordinatorProgram = normalizeProgram($stmt->fetchColumn());
     }
 
-    if ($coordinatorProgram && autoSectionUsesAutomaticFolders($coordinatorProgram)) {
-        rebuildAutoSectionFolders($conn, $coordinatorProgram);
-    }
-
     $stmt = $conn->prepare("
         SELECT s.*
         FROM tbl_student s
@@ -2620,7 +2616,21 @@ if ($user_role === 'super_admin') {
                         <input type="text" class="form-control" id="updateStudentCourse" name="course_section" required>
                         <small class="text-muted">The folder where this student is organized</small>
                     </div>
-                    
+
+                    <?php elseif ($user_role === 'coordinator'): ?>
+                    <div class="form-group">
+                        <label for="updateStudentCourse">Assigned Section:</label>
+                        <select class="form-control" id="updateStudentCourse" name="course_section" required>
+                            <option value="">-- Select Section --</option>
+                            <?php foreach ($studentManagementFolders as $folder): ?>
+                                <option value="<?php echo htmlspecialchars($folder['course_section']); ?>">
+                                    <?php echo htmlspecialchars($folder['course_section']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">You can manually move the student to another section in your component.</small>
+                    </div>
+
                     <?php elseif ($user_role === 'facilitator' && $sections_count > 1): ?>
                     <!-- Admin with multiple sections can move student between folders -->
                     <div class="form-group">

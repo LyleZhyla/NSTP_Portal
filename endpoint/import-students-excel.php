@@ -523,7 +523,8 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
                     $studentComponent,
                     $record['course'],
                     $record['year_section'],
-                    $originalSection
+                    $originalSection,
+                    $record['college'] ?? ''
                 )
                 : $studentComponent;
             $generatedCode = !empty($record['student_number'])
