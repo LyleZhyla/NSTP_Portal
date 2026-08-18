@@ -21,8 +21,10 @@ $facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $attendanceCutoffs = getAttendanceCutoffs($conn);
 $cutoffComponents = attendanceCutoffComponentsForUser($currentUser);
 $absentNotificationGraceHours = getAbsentNotificationGraceHours($conn);
+$isAutoSectionSuperAdmin = ($currentUser['role'] ?? '') === 'super_admin';
 $autoSectionComponent = ($currentUser['role'] ?? '') === 'coordinator' ? normalizeProgram($currentUser['program'] ?? null) : null;
-$autoSectionEnabledForCurrentUser = $autoSectionComponent === null || in_array($autoSectionComponent, autoSectionComponentOptions(), true);
+$autoSectionEnabledForCurrentUser = $isAutoSectionSuperAdmin || ($autoSectionComponent && in_array($autoSectionComponent, autoSectionComponentOptions(), true));
+$visibleAutoSectionComponents = $isAutoSectionSuperAdmin ? autoSectionComponentOptions() : array_filter([$autoSectionComponent]);
 $autoSectionMaxStudents = getAutoSectionMaxStudents($conn, $autoSectionComponent);
 $autoSectionGroupingMode = getAutoSectionGroupingMode($conn, $autoSectionComponent);
 $enabledAutoSectionComponents = getEnabledAutoSectionComponents($conn);
@@ -289,11 +291,18 @@ date_default_timezone_set('Asia/Manila');
                             </div>
                             <form id="autoSectionForm">
                                 <div class="card-body">
+                                    <div class="alert alert-<?php echo $isAutoSectionSuperAdmin ? 'info' : 'primary'; ?> py-2">
+                                        <i class="fas fa-shield-halved mr-1"></i>
+                                        <?php if ($isAutoSectionSuperAdmin): ?>
+                                            You can configure and rebuild sections for every selected NSTP component.
+                                        <?php else: ?>
+                                            Your access is limited to the <?php echo htmlspecialchars($autoSectionComponent); ?> component. Other components cannot be changed from this account.
+                                        <?php endif; ?>
+                                    </div>
                                     <div class="form-group">
                                         <label class="d-block">Components to section automatically</label>
                                         <div class="d-flex flex-wrap" style="gap: 18px;">
-                                            <?php foreach (autoSectionComponentOptions() as $sectionComponent): ?>
-                                                <?php if ($autoSectionComponent && $sectionComponent !== $autoSectionComponent) continue; ?>
+                                            <?php foreach ($visibleAutoSectionComponents as $sectionComponent): ?>
                                                 <div class="custom-control custom-checkbox">
                                                     <input
                                                         type="checkbox"

@@ -25,7 +25,7 @@ try {
         throw new RuntimeException('Coordinator program is missing.');
     }
     if ($component && !autoSectionUsesAutomaticFolders($component)) {
-        throw new RuntimeException('Automatic folder sectioning is not used for ROTC.');
+        throw new RuntimeException('Automatic sectioning is unavailable for your assigned component.');
     }
 
     $maxStudents = (int) ($_POST['max_students'] ?? 40);
@@ -37,7 +37,12 @@ try {
         saveAutoSectionEnabled($conn, $component, in_array($component, $requestedComponents, true));
     } else {
         foreach (autoSectionComponentOptions() as $sectionComponent) {
-            saveAutoSectionEnabled($conn, $sectionComponent, in_array($sectionComponent, $requestedComponents, true));
+            $isSelected = in_array($sectionComponent, $requestedComponents, true);
+            saveAutoSectionEnabled($conn, $sectionComponent, $isSelected);
+            if ($isSelected) {
+                saveAutoSectionMaxStudents($conn, $maxStudents, $sectionComponent);
+                saveAutoSectionGroupingMode($conn, $groupingMode, $sectionComponent);
+            }
         }
     }
 
