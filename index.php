@@ -864,7 +864,7 @@ if ($currentUserRole === 'super_admin') {
     </div>
 
     <!-- Footer - Now using the included file -->
-    <?php include 'footer.php'; ?>
+    <?php if ($role === 'super_admin') include 'footer.php'; ?>
 </div>
 
 <!-- Scripts -->

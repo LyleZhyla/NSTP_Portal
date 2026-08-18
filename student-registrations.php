@@ -1036,7 +1036,7 @@ $registrationPageUrl = static function ($page) {
         </section>
     </div>
 
-    <?php include 'footer.php'; ?>
+    <?php if ($role === 'super_admin') include 'footer.php'; ?>
 </div>
 
 <?php
@@ -1104,6 +1104,7 @@ function renderPublicFormModal($modalId, $title, $fieldOptions, $formRow = null)
             </div>
         </form>
     </div>
+    
 </div>
 <?php
 }

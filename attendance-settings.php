@@ -592,7 +592,7 @@ date_default_timezone_set('Asia/Manila');
         </section>
     </div>
 
-    <?php if ($isStudentAssignmentSettingsPage || ($currentUser['role'] ?? '') === 'super_admin') include 'footer.php'; ?>
+    <?php if ($role === 'super_admin') include 'footer.php'; ?>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
