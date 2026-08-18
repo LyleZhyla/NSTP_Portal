@@ -152,6 +152,41 @@ date_default_timezone_set('Asia/Manila');
         .assignment-settings-grid--single .assignment-auto-panel {
             grid-column: 1;
         }
+        .student-assignment-settings-page .main-footer {
+            min-height: 0;
+            padding: 8px 14px !important;
+            font-size: 0.76rem;
+            line-height: 1.25;
+        }
+        .student-assignment-settings-page .main-footer.super-admin-footer {
+            padding: 0 !important;
+        }
+        .student-assignment-settings-page .super-admin-footer__inner {
+            min-height: 46px;
+            padding: 6px 14px;
+            gap: 12px;
+        }
+        .student-assignment-settings-page .super-admin-footer__logo {
+            width: 28px;
+            height: 28px;
+            flex-basis: 28px;
+        }
+        .student-assignment-settings-page .super-admin-footer__logo img {
+            width: 20px !important;
+            height: 20px !important;
+            max-width: 20px !important;
+        }
+        .student-assignment-settings-page .super-admin-footer__identity strong {
+            font-size: 0.78rem;
+        }
+        .student-assignment-settings-page .super-admin-footer__identity > span,
+        .student-assignment-settings-page .super-admin-footer__copyright,
+        .student-assignment-settings-page .super-admin-footer__portal {
+            font-size: 0.68rem;
+        }
+        .student-assignment-settings-page .super-admin-footer__portal {
+            padding: 4px 7px;
+        }
         @media (max-width: 991.98px) {
             .assignment-settings-grid {
                 grid-template-columns: minmax(0, 1fr);
@@ -173,7 +208,7 @@ date_default_timezone_set('Asia/Manila');
         }
     </style>
 </head>
-<body class="hold-transition sidebar-mini layout-fixed">
+<body class="hold-transition sidebar-mini layout-fixed<?php echo $isStudentAssignmentSettingsPage ? ' student-assignment-settings-page' : ''; ?>">
 <div class="wrapper">
     <nav class="main-header navbar navbar-expand navbar-white navbar-light">
         <ul class="navbar-nav">
