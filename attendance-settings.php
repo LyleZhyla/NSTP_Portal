@@ -165,6 +165,14 @@ date_default_timezone_set('Asia/Manila');
             min-height: 46px;
             padding: 6px 14px;
             gap: 12px;
+            flex-wrap: wrap;
+        }
+        .student-assignment-settings-page .super-admin-footer__brand {
+            flex: 1 1 280px;
+        }
+        .student-assignment-settings-page .super-admin-footer__meta {
+            flex: 0 1 auto;
+            flex-wrap: wrap;
         }
         .student-assignment-settings-page .super-admin-footer__logo {
             width: 28px;
@@ -177,15 +185,53 @@ date_default_timezone_set('Asia/Manila');
             max-width: 20px !important;
         }
         .student-assignment-settings-page .super-admin-footer__identity strong {
+            color: #143d2a !important;
             font-size: 0.78rem;
         }
-        .student-assignment-settings-page .super-admin-footer__identity > span,
-        .student-assignment-settings-page .super-admin-footer__copyright,
-        .student-assignment-settings-page .super-admin-footer__portal {
+        .student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__identity > span,
+        .student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__copyright {
+            color: #708078 !important;
             font-size: 0.68rem;
         }
-        .student-assignment-settings-page .super-admin-footer__portal {
+        .student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__portal {
             padding: 4px 7px;
+            color: #146c43 !important;
+        }
+        .student-assignment-settings-page .super-admin-footer__copyright {
+            white-space: normal;
+        }
+        .student-assignment-settings-page .main-footer > .d-flex {
+            flex-wrap: wrap;
+            gap: 6px 16px;
+        }
+        body.dark-mode.student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__identity strong {
+            color: #f1f7f4 !important;
+        }
+        body.dark-mode.student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__identity > span,
+        body.dark-mode.student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__copyright {
+            color: #b8c8bf !important;
+        }
+        body.dark-mode.student-assignment-settings-page .main-footer.super-admin-footer .super-admin-footer__portal {
+            color: #bce9ce !important;
+        }
+        @media (max-width: 767.98px) {
+            .student-assignment-settings-page .super-admin-footer__inner {
+                flex-direction: row;
+                align-items: center;
+            }
+            .student-assignment-settings-page .super-admin-footer__meta {
+                width: auto;
+                margin-left: auto;
+            }
+        }
+        @media (max-width: 575.98px) {
+            .student-assignment-settings-page .super-admin-footer__brand,
+            .student-assignment-settings-page .super-admin-footer__meta {
+                flex-basis: 100%;
+                width: 100%;
+                margin-left: 0;
+                justify-content: flex-start;
+            }
         }
         @media (max-width: 991.98px) {
             .assignment-settings-grid {
