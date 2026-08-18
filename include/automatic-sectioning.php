@@ -297,6 +297,14 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         ");
         $stmt->execute([$currentComponent, $currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $students = array_values(array_filter($students, static function ($student) use ($currentComponent) {
+            $resolvedComponent = normalizeProgram($student['reg_component'] ?? null)
+                ?: normalizeProgram($student['user_program'] ?? null)
+                ?: inferProgramFromText($student['course_section'] ?? '')
+                ?: 'PUBLIC';
+
+            return $resolvedComponent === $currentComponent;
+        }));
         $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
         $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
         $groupedStudents = [];

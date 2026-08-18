@@ -320,6 +320,7 @@ date_default_timezone_set('Asia/Manila');
                                     </div>
                                     <p class="text-muted small mb-0 mt-3">
                                         Rebuild keeps each selected college/course group together, creates the required number of sections, and divides students as evenly as possible without exceeding the selected limit.
+                                        Components are always separated first, so only students from the same NSTP component can share a section.
                                         <?php echo $autoSectionComponent ? 'This setting applies to your component only.' : 'This is the default setting for automatic folders.'; ?>
                                         You may still edit a student's assigned section manually after rebuilding; a future rebuild will calculate the assignments again.
                                     </p>
