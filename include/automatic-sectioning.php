@@ -8,6 +8,10 @@ function autoSectionMaxOptions() {
     return [20, 30, 35, 40, 45, 50, 60];
 }
 
+function autoSectionMinOptions() {
+    return [10, 15, 20, 25, 30, 35, 40, 45, 50, 60];
+}
+
 function autoSectionGroupingOptions() {
     return [
         'college_course' => 'Selected College Groups (courses may mix)',
@@ -88,6 +92,29 @@ function saveAutoSectionMaxStudents(PDO $conn, $maxStudents, $component = null) 
     }
 
     setSystemSetting($conn, autoSectionMaxSettingKey($component), (string) $maxStudents);
+}
+
+function autoSectionMinSettingKey($component = null) {
+    $component = normalizeProgram($component);
+    return $component ? 'auto_section_min_students_' . strtolower($component) : 'auto_section_min_students';
+}
+
+function getAutoSectionMinStudents(PDO $conn, $component = null) {
+    $componentKey = autoSectionMinSettingKey($component);
+    $fallback = getSystemSetting($conn, 'auto_section_min_students', '20');
+    $value = (int) getSystemSetting($conn, $componentKey, $fallback);
+    $maxStudents = getAutoSectionMaxStudents($conn, $component);
+    return $value > 0 ? min($value, $maxStudents) : min(20, $maxStudents);
+}
+
+function saveAutoSectionMinStudents(PDO $conn, $minStudents, $component = null) {
+    $minStudents = (int) $minStudents;
+    $maxStudents = getAutoSectionMaxStudents($conn, $component);
+    if ($minStudents < 1 || $minStudents > $maxStudents) {
+        throw new InvalidArgumentException("Minimum students must be between 1 and {$maxStudents}.");
+    }
+
+    setSystemSetting($conn, autoSectionMinSettingKey($component), (string) $minStudents);
 }
 
 function autoSectionCollegeOptions() {
@@ -181,19 +208,42 @@ function autoSectionGroupKey($mode, $college, $course, array $collegeGroups = []
     return autoSectionCollegePoolKey($college, $collegeGroups);
 }
 
-function autoSectionBalancedSizes($studentCount, $maxStudents) {
+function autoSectionBalancedSizes($studentCount, $maxStudents, $minStudents = 1) {
     $studentCount = max(0, (int) $studentCount);
     $maxStudents = max(1, (int) $maxStudents);
+    $minStudents = max(1, min((int) $minStudents, $maxStudents));
     if ($studentCount === 0) {
         return [];
     }
 
-    $sizes = [];
-    $remaining = $studentCount;
-    while ($remaining > 0) {
-        $size = min($remaining, $maxStudents);
-        $sizes[] = $size;
-        $remaining -= $size;
+    $fullFolderCount = intdiv($studentCount, $maxStudents);
+    $remainder = $studentCount % $maxStudents;
+    $sizes = array_fill(0, $fullFolderCount, $maxStudents);
+    if ($remainder === 0) {
+        return $sizes;
+    }
+    if ($fullFolderCount === 0) {
+        return [$remainder];
+    }
+
+    $sizes[] = $remainder;
+    if ($remainder >= $minStudents) {
+        return $sizes;
+    }
+
+    $lastIndex = count($sizes) - 1;
+    $needed = $minStudents - $remainder;
+    for ($index = $lastIndex - 1; $index >= 0 && $needed > 0; $index--) {
+        $available = max(0, $sizes[$index] - $minStudents);
+        $moved = min($available, $needed);
+        $sizes[$index] -= $moved;
+        $sizes[$lastIndex] += $moved;
+        $needed -= $moved;
+    }
+
+    if ($needed > 0) {
+        $smallRemainder = array_pop($sizes);
+        $sizes[count($sizes) - 1] += $smallRemainder;
     }
     return $sizes;
 }
@@ -444,6 +494,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         }));
         $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
         $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
+        $minStudents = getAutoSectionMinStudents($conn, $currentComponent);
         $collegeGroups = getAutoSectionCollegeGroups($conn, $currentComponent);
         $groupedStudents = [];
         foreach ($students as $student) {
@@ -455,7 +506,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
 
         $folderNumber = 1;
         foreach ($groupedStudents as $groupStudents) {
-            $balancedSizes = autoSectionBalancedSizes(count($groupStudents), $maxStudents);
+            $balancedSizes = autoSectionBalancedSizes(count($groupStudents), $maxStudents, $minStudents);
             $studentOffset = 0;
             foreach ($balancedSizes as $balancedSize) {
                 $folder = autoSectionFolderName($currentComponent, $folderNumber++);
