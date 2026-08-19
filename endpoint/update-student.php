@@ -218,6 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
+            markSharedDataChanged($conn);
+
             // Success response
             $response['success'] = true;
             $response['message'] = 'Student updated successfully!';

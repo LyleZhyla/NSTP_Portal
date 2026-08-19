@@ -170,6 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Commit transaction
         $conn->commit();
+        markSharedDataChanged($conn);
         
         echo json_encode([
             'success' => true, 

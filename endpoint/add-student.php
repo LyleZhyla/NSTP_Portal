@@ -103,6 +103,7 @@ try {
     }
     
     $studentId = $conn->lastInsertId();
+    markSharedDataChanged($conn);
 
     $response['success'] = true;
     $response['message'] = 'Student added successfully!';

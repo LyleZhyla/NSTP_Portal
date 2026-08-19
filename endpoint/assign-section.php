@@ -24,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->beginTransaction();
         $assignment = assignSectionFolderToFacilitator($conn, $user_id, $course_section, $currentUser);
         $conn->commit();
+        markSharedDataChanged($conn);
         
         echo json_encode([
             'success' => true,

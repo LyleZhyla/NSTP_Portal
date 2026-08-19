@@ -78,6 +78,7 @@ if (isset($_GET['student'])) {
                 logSystemEvent($conn, 'student_deleted', 'Deleted student record ID ' . $studentId . ': ' . ($student['student_name'] ?? 'Unknown'));
             }
             $conn->commit();
+            markSharedDataChanged($conn);
             echo "
                 <script>
                     alert('Student deleted successfully!');

@@ -541,6 +541,7 @@ function handleSuperAdminImport(PDO $conn, array $file, array &$response) {
         }
 
         $conn->commit();
+        markSharedDataChanged($conn);
         $response['success'] = true;
         $response['imported'] = count($rows);
         $response['message'] = 'Successfully imported ' . count($rows) . ' complete student registration record(s). Students in enabled components were placed into automatic sections; the rest remain pending for coordinator assignment.';
@@ -776,6 +777,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
         
         // Prepare success message
         if ($importedCount > 0) {
+            markSharedDataChanged($conn);
             $response['success'] = true;
             $assignmentText = $targetFacilitatorId ? 'assigned facilitator folder' : 'pending folder';
             $message = "Successfully imported {$importedCount} out of {$response['total_rows']} students into {$assignmentText} '{$targetSection}'.";

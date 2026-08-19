@@ -252,6 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password_only_update ? 'user_password_changed' : 'user_updated',
         ($password_only_update ? 'Changed password for user ID ' : 'Updated user account ID ') . $user_id
     );
+    markSharedDataChanged($conn);
 
     if ($stmt->rowCount() > 0) {
         echo json_encode([

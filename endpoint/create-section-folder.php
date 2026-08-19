@@ -25,6 +25,7 @@ try {
     $folderName = trim((string) ($_POST['course_section'] ?? ''));
 
     $createdFolder = createSectionFolder($conn, $program, $folderName, $currentUser['user_id'] ?? null);
+    markSharedDataChanged($conn);
 
     if (function_exists('logSystemEvent')) {
         logSystemEvent($conn, 'section_folder_created', "Created folder {$createdFolder}.");

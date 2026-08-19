@@ -102,6 +102,7 @@ try {
     }
 
     $conn->commit();
+    markSharedDataChanged($conn);
 
     logSystemEvent(
         $conn,

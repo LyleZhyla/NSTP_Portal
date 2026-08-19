@@ -72,6 +72,7 @@ try {
     $deleteFolderStmt->execute([$assignmentId]);
 
     $conn->commit();
+    markSharedDataChanged($conn);
 
     if (function_exists('logSystemEvent')) {
         $facilitatorName = trim($folder['full_name'] ?? '') ?: ($folder['username'] ?? 'Facilitator');

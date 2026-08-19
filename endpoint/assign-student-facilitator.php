@@ -133,6 +133,7 @@ try {
     }
 
     $conn->commit();
+    markSharedDataChanged($conn);
 
     echo json_encode([
         'success' => true,

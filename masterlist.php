@@ -4807,5 +4807,6 @@ window.onerror = function(message, source, lineno, colno, error) {
     return true;
 };
 </script>
+<?php include './include/shared-data-sync.php'; ?>
 </body>
 </html>

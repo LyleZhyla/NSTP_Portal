@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Delete the assignment
         $deleteStmt = $conn->prepare("DELETE FROM tbl_admin_sections WHERE admin_section_id = ?");
         $deleteStmt->execute([$assignment_id]);
+        markSharedDataChanged($conn);
         
         echo json_encode([
             'success' => true,

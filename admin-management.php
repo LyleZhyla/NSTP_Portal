@@ -1921,5 +1921,6 @@ $('#changePasswordForm').on('submit', function(e) {
     });
 });
 </script>
+<?php include './include/shared-data-sync.php'; ?>
 </body>
 </html>

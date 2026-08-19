@@ -94,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$full_name, $username, $email, $password_hash, $role, $program, $created_by]);
         }
 
+        markSharedDataChanged($conn);
         logSystemEvent($conn, 'user_created', "Created {$role} account: {$username}" . ($program ? " ({$program})" : ''));
         $emailSent = sendAccountCredentialsEmail($email, $full_name, $username, $password, $role);
         

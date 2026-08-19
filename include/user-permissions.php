@@ -510,6 +510,67 @@ function setSystemSetting(PDO $conn, $settingKey, $settingValue) {
     return $stmt->execute([$settingKey, $settingValue]);
 }
 
+function ensureSharedDataRevision(PDO $conn) {
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS tbl_shared_data_revision (
+            revision_key VARCHAR(50) PRIMARY KEY,
+            revision_value BIGINT UNSIGNED NOT NULL DEFAULT 1,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $stmt = $conn->prepare("
+        INSERT IGNORE INTO tbl_shared_data_revision (revision_key, revision_value)
+        VALUES ('management', 1)
+    ");
+    $stmt->execute();
+}
+
+function getSharedDataRevision(PDO $conn) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT revision_value
+            FROM tbl_shared_data_revision
+            WHERE revision_key = 'management'
+            LIMIT 1
+        ");
+        $stmt->execute();
+        $revision = $stmt->fetchColumn();
+
+        if ($revision !== false) {
+            return (int) $revision;
+        }
+    } catch (Throwable $error) {
+        // The table is initialized below on first use.
+    }
+
+    ensureSharedDataRevision($conn);
+
+    return 1;
+}
+
+function markSharedDataChanged(PDO $conn) {
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_shared_data_revision (revision_key, revision_value)
+            VALUES ('management', 2)
+            ON DUPLICATE KEY UPDATE revision_value = revision_value + 1
+        ");
+
+        return $stmt->execute();
+    } catch (Throwable $error) {
+        ensureSharedDataRevision($conn);
+
+        $stmt = $conn->prepare("
+            UPDATE tbl_shared_data_revision
+            SET revision_value = revision_value + 1
+            WHERE revision_key = 'management'
+        ");
+
+        return $stmt->execute();
+    }
+}
+
 function isComponentSelectionEnabled(PDO $conn) {
     return getSystemSetting($conn, 'component_selection_enabled', '1') === '1';
 }
