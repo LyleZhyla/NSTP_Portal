@@ -117,10 +117,9 @@ function defaultAutoSectionCollegeGroups() {
 
 function normalizeAutoSectionCollegeGroups($groups) {
     $normalized = defaultAutoSectionCollegeGroups();
-    $allowedMixingGroups = ['A', 'B', 'C', 'D', 'E', 'F'];
     foreach ($normalized as $collegeCode => $defaultGroup) {
         $requestedGroup = strtoupper(trim((string) ($groups[$collegeCode] ?? '')));
-        $normalized[$collegeCode] = in_array($requestedGroup, $allowedMixingGroups, true)
+        $normalized[$collegeCode] = preg_match('/^(?:[A-F]|G[1-9][0-9]*)$/', $requestedGroup)
             ? $requestedGroup
             : $defaultGroup;
     }
