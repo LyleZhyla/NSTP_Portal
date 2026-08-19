@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/user-permissions.php';
 require_once __DIR__ . '/section-folders.php';
+require_once __DIR__ . '/college-courses.php';
 
 function autoSectionMaxOptions() {
     return [20, 30, 35, 40, 45, 50, 60];
@@ -9,7 +10,7 @@ function autoSectionMaxOptions() {
 
 function autoSectionGroupingOptions() {
     return [
-        'college_course' => 'College and Course',
+        'college_course' => 'Selected College Groups (courses may mix)',
         'course' => 'Course only',
         'college' => 'College only',
     ];
@@ -89,12 +90,84 @@ function saveAutoSectionMaxStudents(PDO $conn, $maxStudents, $component = null) 
     setSystemSetting($conn, autoSectionMaxSettingKey($component), (string) $maxStudents);
 }
 
+function autoSectionCollegeOptions() {
+    $codes = ['CAF', 'CAS', 'CBM', 'CED', 'CET', 'CVM'];
+    $options = [];
+    foreach (getCollegeCourseData() as $index => $collegeItem) {
+        if (!isset($codes[$index])) {
+            continue;
+        }
+        $options[$codes[$index]] = (string) ($collegeItem['college'] ?? $codes[$index]);
+    }
+    return $options;
+}
+
+function autoSectionCollegeGroupsSettingKey($component = null) {
+    $component = normalizeProgram($component);
+    return $component ? 'auto_section_college_groups_' . strtolower($component) : 'auto_section_college_groups';
+}
+
+function defaultAutoSectionCollegeGroups() {
+    $groups = [];
+    foreach (array_keys(autoSectionCollegeOptions()) as $collegeCode) {
+        $groups[$collegeCode] = $collegeCode;
+    }
+    return $groups;
+}
+
+function normalizeAutoSectionCollegeGroups($groups) {
+    $normalized = defaultAutoSectionCollegeGroups();
+    $allowedMixingGroups = ['A', 'B', 'C', 'D', 'E', 'F'];
+    foreach ($normalized as $collegeCode => $defaultGroup) {
+        $requestedGroup = strtoupper(trim((string) ($groups[$collegeCode] ?? '')));
+        $normalized[$collegeCode] = in_array($requestedGroup, $allowedMixingGroups, true)
+            ? $requestedGroup
+            : $defaultGroup;
+    }
+    return $normalized;
+}
+
+function getAutoSectionCollegeGroups(PDO $conn, $component = null) {
+    $componentKey = autoSectionCollegeGroupsSettingKey($component);
+    $fallback = (string) getSystemSetting($conn, 'auto_section_college_groups', '');
+    $encoded = (string) getSystemSetting($conn, $componentKey, $fallback);
+    $decoded = json_decode($encoded, true);
+    return normalizeAutoSectionCollegeGroups(is_array($decoded) ? $decoded : []);
+}
+
+function saveAutoSectionCollegeGroups(PDO $conn, $groups, $component = null) {
+    $normalized = normalizeAutoSectionCollegeGroups(is_array($groups) ? $groups : []);
+    setSystemSetting($conn, autoSectionCollegeGroupsSettingKey($component), json_encode($normalized));
+    return $normalized;
+}
+
+function autoSectionCollegeCode($college) {
+    $college = strtolower(autoSectionCleanPart($college));
+    foreach (autoSectionCollegeOptions() as $collegeCode => $collegeName) {
+        if ($college === strtolower(autoSectionCleanPart($collegeName)) || $college === strtolower($collegeCode)) {
+            return $collegeCode;
+        }
+    }
+    return '';
+}
+
+function autoSectionCollegePoolKey($college, array $collegeGroups = []) {
+    $college = autoSectionCleanPart($college);
+    $collegeCode = autoSectionCollegeCode($college);
+    if ($collegeCode === '') {
+        return 'college:' . strtolower($college !== '' ? $college : 'Unspecified');
+    }
+
+    $groups = normalizeAutoSectionCollegeGroups($collegeGroups);
+    return 'college-group:' . strtolower($groups[$collegeCode] ?? $collegeCode);
+}
+
 function autoSectionCleanPart($value) {
     $value = trim(preg_replace('/\s+/', ' ', (string) $value));
     return strtoupper($value) === 'N/A' ? '' : $value;
 }
 
-function autoSectionGroupKey($mode, $college, $course) {
+function autoSectionGroupKey($mode, $college, $course, array $collegeGroups = []) {
     $college = autoSectionCleanPart($college);
     $course = autoSectionCleanPart($course);
     $unspecified = 'Unspecified';
@@ -106,7 +179,7 @@ function autoSectionGroupKey($mode, $college, $course) {
         return strtolower($course !== '' ? $course : $unspecified);
     }
 
-    return strtolower(($college !== '' ? $college : $unspecified) . ' / ' . ($course !== '' ? $course : $unspecified));
+    return autoSectionCollegePoolKey($college, $collegeGroups);
 }
 
 function autoSectionBalancedSizes($studentCount, $maxStudents) {
@@ -116,12 +189,12 @@ function autoSectionBalancedSizes($studentCount, $maxStudents) {
         return [];
     }
 
-    $sectionCount = (int) ceil($studentCount / $maxStudents);
-    $baseSize = intdiv($studentCount, $sectionCount);
-    $remainder = $studentCount % $sectionCount;
     $sizes = [];
-    for ($index = 0; $index < $sectionCount; $index++) {
-        $sizes[] = $baseSize + ($index < $remainder ? 1 : 0);
+    $remaining = $studentCount;
+    while ($remaining > 0) {
+        $size = min($remaining, $maxStudents);
+        $sizes[] = $size;
+        $remaining -= $size;
     }
     return $sizes;
 }
@@ -237,7 +310,8 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $college, $course,
     $component = autoSectionComponent($component);
     $maxStudents = getAutoSectionMaxStudents($conn, $component);
     $groupingMode = getAutoSectionGroupingMode($conn, $component);
-    $targetGroupKey = autoSectionGroupKey($groupingMode, $college, $course);
+    $collegeGroups = getAutoSectionCollegeGroups($conn, $component);
+    $targetGroupKey = autoSectionGroupKey($groupingMode, $college, $course, $collegeGroups);
     $stats = autoSectionFolderStats($conn, $component, $createdBy);
 
     $createdClause = $createdBy === null ? 's.created_by IS NULL' : 's.created_by = ?';
@@ -260,7 +334,7 @@ function autoSectionFindFolderForGroup(PDO $conn, $component, $college, $course,
     $folderGroupKeys = [];
     foreach ($groupStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $rowCourse = autoSectionCleanPart($row['course'] ?? '') ?: autoSectionCleanPart($row['original_section'] ?? '');
-        $folderGroupKeys[$row['course_section']][autoSectionGroupKey($groupingMode, $row['college'] ?? '', $rowCourse)] = true;
+        $folderGroupKeys[$row['course_section']][autoSectionGroupKey($groupingMode, $row['college'] ?? '', $rowCourse, $collegeGroups)] = true;
     }
 
     foreach ($stats as $info) {
@@ -285,6 +359,38 @@ function autoSectionFolderForStudent(PDO $conn, $component, $course, $yearSectio
     }
 
     return autoSectionFindFolderForGroup($conn, $component, $college, $course, $createdBy);
+}
+
+function removeUnusedAutoSectionFolders(PDO $conn, $component) {
+    $component = autoSectionComponent($component);
+    ensureSectionFoldersTable($conn);
+
+    $stmt = $conn->prepare("
+        SELECT
+            f.folder_id,
+            f.course_section,
+            COUNT(DISTINCT s.tbl_student_id) AS student_count,
+            COUNT(DISTINCT ads.admin_section_id) AS assignment_count
+        FROM tbl_section_folders f
+        LEFT JOIN tbl_student s ON s.course_section = f.course_section
+        LEFT JOIN tbl_admin_sections ads ON ads.course_section = f.course_section
+        WHERE f.program = ?
+          AND f.course_section LIKE ?
+        GROUP BY f.folder_id, f.course_section
+        HAVING student_count = 0 AND assignment_count = 0
+    ");
+    $stmt->execute([$component, autoSectionFolderPrefix($component) . ' %']);
+
+    $deleteStmt = $conn->prepare("DELETE FROM tbl_section_folders WHERE folder_id = ?");
+    $removed = 0;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $folder) {
+        if (autoSectionFolderNumber($component, $folder['course_section']) === null) {
+            continue;
+        }
+        $deleteStmt->execute([(int) $folder['folder_id']]);
+        $removed += $deleteStmt->rowCount();
+    }
+    return $removed;
 }
 
 function rebuildAutoSectionFolders(PDO $conn, $component = null) {
@@ -339,10 +445,11 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         }));
         $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
         $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
+        $collegeGroups = getAutoSectionCollegeGroups($conn, $currentComponent);
         $groupedStudents = [];
         foreach ($students as $student) {
             $groupCourse = autoSectionCleanPart($student['reg_course'] ?? '') ?: autoSectionCleanPart($student['original_section'] ?? '');
-            $groupKey = autoSectionGroupKey($groupingMode, $student['reg_college'] ?? '', $groupCourse);
+            $groupKey = autoSectionGroupKey($groupingMode, $student['reg_college'] ?? '', $groupCourse, $collegeGroups);
             $groupedStudents[$groupKey][] = $student;
         }
         ksort($groupedStudents, SORT_NATURAL | SORT_FLAG_CASE);
@@ -376,6 +483,8 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 }
             }
         }
+
+        removeUnusedAutoSectionFolders($conn, $currentComponent);
     }
 
     return $moved;

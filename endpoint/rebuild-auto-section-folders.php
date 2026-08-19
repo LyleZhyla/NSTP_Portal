@@ -32,9 +32,11 @@ try {
 
     $maxStudents = (int) ($_POST['max_students'] ?? getAutoSectionMaxStudents($conn, $component));
     $groupingMode = (string) ($_POST['grouping_mode'] ?? getAutoSectionGroupingMode($conn, $component));
+    $collegeGroups = normalizeAutoSectionCollegeGroups((array) ($_POST['college_groups'] ?? []));
     $requestedComponents = array_values(array_filter(array_map('normalizeProgram', (array) ($_POST['section_components'] ?? []))));
     saveAutoSectionMaxStudents($conn, $maxStudents, $component);
     saveAutoSectionGroupingMode($conn, $groupingMode, $component);
+    saveAutoSectionCollegeGroups($conn, $collegeGroups, $component);
     if ($component) {
         saveAutoSectionEnabled($conn, $component, in_array($component, $requestedComponents, true));
     } else {
@@ -44,6 +46,7 @@ try {
             if ($isSelected) {
                 saveAutoSectionMaxStudents($conn, $maxStudents, $sectionComponent);
                 saveAutoSectionGroupingMode($conn, $groupingMode, $sectionComponent);
+                saveAutoSectionCollegeGroups($conn, $collegeGroups, $sectionComponent);
             }
         }
     }
@@ -54,7 +57,8 @@ try {
         $conn->commit();
     }
 
-    logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections using {$groupingMode}, {$maxStudents} students per section; {$moved} student record(s) updated.");
+    markSharedDataChanged($conn);
+    logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections using {$groupingMode}, target {$maxStudents} students per folder; {$moved} student record(s) updated.");
 
     echo json_encode([
         'success' => true,

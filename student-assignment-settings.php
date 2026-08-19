@@ -24,6 +24,8 @@ $openRotcLevels = getOpenRotcMsLevels($conn);
 $scanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
 $sectionMax = getAutoSectionMaxStudents($conn, $managedComponent);
 $sectionGrouping = getAutoSectionGroupingMode($conn, $managedComponent);
+$collegeOptions = autoSectionCollegeOptions();
+$collegeGroups = getAutoSectionCollegeGroups($conn, $managedComponent);
 $enabledSectionComponents = getEnabledAutoSectionComponents($conn);
 $selectedComponentCount = 0;
 
@@ -70,13 +72,14 @@ if ($isSuperAdmin) {
         .sectioning-card .card-body{padding:18px}.sectioning-scope{display:flex;align-items:flex-start;gap:12px;margin:0 0 18px;padding:13px 15px;border:1px solid #cce8d6;border-radius:10px;background:#eff9f3;color:#285b3f}.sectioning-scope>i{margin-top:2px;font-size:1.05rem}.sectioning-scope strong{display:block;font-size:.92rem}.sectioning-scope small{display:block;margin-top:2px;color:#5f7567}
         .sectioning-label{display:block;margin:0 0 9px;font-size:.78rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#5e6c64}.sectioning-components{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}.sectioning-component{position:relative;margin:0;padding:0}.sectioning-component .custom-control-label{display:flex;align-items:center;min-height:54px;padding:10px 12px 10px 42px;border:1px solid #d9e2dc;border-radius:9px;background:#fff;cursor:pointer;transition:border-color .18s,background .18s,box-shadow .18s}.sectioning-component .custom-control-label:before,.sectioning-component .custom-control-label:after{left:14px;top:50%;transform:translateY(-50%)}.sectioning-component .custom-control-input:checked~.custom-control-label{border-color:#198754;background:#f1faf5;box-shadow:0 0 0 2px rgba(25,135,84,.08);color:#146c43}.sectioning-component-name{font-weight:700}.sectioning-component small{display:block;font-weight:400;color:#7a8880}
         .sectioning-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.72fr);gap:12px;padding:16px;border:1px solid #e0e6e2;border-radius:10px;background:#fafcfb}.sectioning-field{min-width:0}.sectioning-field label{margin-bottom:6px;font-size:.88rem;color:#344b3d}.sectioning-field label i{width:18px;color:#198754}.sectioning-field .form-control{height:42px;border-color:#cfdad3;border-radius:7px}.sectioning-field small{display:block;margin-top:5px;color:#7a8780}
+        .college-grouping-panel{margin-top:12px;padding:15px;border:1px solid #d7e6dc;border-radius:10px;background:#f7fbf8}.college-grouping-heading{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}.college-grouping-heading>i{margin-top:3px;color:#198754}.college-grouping-heading strong{display:block;color:#285b3f}.college-grouping-heading small{display:block;color:#718078}.college-grouping-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.college-group-row{display:grid;grid-template-columns:minmax(0,1fr) 130px;align-items:center;gap:10px;padding:9px 10px;border:1px solid #e1e8e3;border-radius:8px;background:#fff}.college-group-row strong{display:block;font-size:.82rem;color:#344b3d}.college-group-row small{display:block;color:#7a8780}.college-group-row .form-control{height:36px;padding:5px 8px;font-size:.82rem}
         .sectioning-guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.sectioning-step{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;background:#f3f6f4;color:#5f6d64;font-size:.78rem;line-height:1.25}.sectioning-step span{display:inline-flex;align-items:center;justify-content:center;flex:0 0 23px;width:23px;height:23px;border-radius:50%;background:#dbe9e0;color:#146c43;font-weight:700}
         .sectioning-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid #e4e9e6}.sectioning-actions .btn{min-height:42px;margin:0!important;padding:9px 16px;border-radius:8px;font-weight:600}.sectioning-actions .btn-primary{background:#198754;border-color:#198754}.sectioning-actions .btn-primary:hover{background:#146c43;border-color:#146c43}.sectioning-actions .btn-outline-primary{color:#146c43;border-color:#198754}.sectioning-actions .btn-outline-primary:hover{color:#fff;background:#198754}
         .student-assignment-page .main-footer{min-height:0;padding:8px 14px!important;font-size:.76rem}.student-assignment-page .main-footer.super-admin-footer{padding:0!important}
         .student-assignment-page .super-admin-footer__inner{min-height:46px;padding:6px 14px;gap:12px;flex-wrap:wrap}.student-assignment-page .super-admin-footer__brand{flex:1 1 280px}.student-assignment-page .super-admin-footer__meta{flex-wrap:wrap}
         .student-assignment-page .main-footer.super-admin-footer .super-admin-footer__identity strong{color:#143d2a!important}.student-assignment-page .main-footer.super-admin-footer .super-admin-footer__identity>span,.student-assignment-page .main-footer.super-admin-footer .super-admin-footer__copyright{color:#708078!important}.student-assignment-page .main-footer.super-admin-footer .super-admin-footer__portal{color:#146c43!important}
         @media(max-width:991.98px){.assignment-grid{grid-template-columns:1fr}.component-panel,.scan-panel,.sectioning-panel{grid-column:1;grid-row:auto}}
-        @media(max-width:767.98px){.sectioning-components,.sectioning-guide{grid-template-columns:1fr}.sectioning-controls{grid-template-columns:1fr}.sectioning-actions{align-items:stretch;flex-direction:column-reverse}.sectioning-actions .btn{width:100%}}
+        @media(max-width:767.98px){.sectioning-components,.sectioning-guide,.college-grouping-grid{grid-template-columns:1fr}.sectioning-controls{grid-template-columns:1fr}.sectioning-actions{align-items:stretch;flex-direction:column-reverse}.sectioning-actions .btn{width:100%}}
         @media(max-width:575.98px){.setting-summary{align-items:flex-start;flex-wrap:wrap}.sectioning-card .card-header,.sectioning-card .card-body{padding:13px}.sectioning-card .card-title{font-size:1rem}.sectioning-scope{padding:11px 12px}.student-assignment-page .super-admin-footer__brand,.student-assignment-page .super-admin-footer__meta{flex-basis:100%;width:100%;justify-content:flex-start}}
     </style>
 </head>
@@ -125,13 +128,22 @@ if ($isSuperAdmin) {
                     <span class="sectioning-label">2. Set the section rules</span>
                     <div class="sectioning-controls">
                         <div class="sectioning-field"><label for="groupingMode"><i class="fas fa-layer-group"></i> Group students by</label><select class="form-control" name="grouping_mode" id="groupingMode"><?php foreach(autoSectionGroupingOptions() as $value=>$label):?><option value="<?php echo $value;?>" <?php echo $sectionGrouping===$value?'selected':'';?>><?php echo htmlspecialchars($label);?></option><?php endforeach;?></select><small>Students are grouped using this category first.</small></div>
-                        <div class="sectioning-field"><label for="sectionMax"><i class="fas fa-users"></i> Maximum students per section</label><select class="form-control" name="max_students" id="sectionMax"><?php foreach(autoSectionMaxOptions() as $max):?><option value="<?php echo $max;?>" <?php echo $sectionMax===$max?'selected':'';?>><?php echo $max;?> students</option><?php endforeach;?></select><small>Sections are divided as evenly as possible.</small></div>
+                        <div class="sectioning-field"><label for="sectionMax"><i class="fas fa-users"></i> Target students per folder</label><select class="form-control" name="max_students" id="sectionMax"><?php foreach(autoSectionMaxOptions() as $max):?><option value="<?php echo $max;?>" <?php echo $sectionMax===$max?'selected':'';?>><?php echo $max;?> students</option><?php endforeach;?></select><small>Each folder is filled to this number first; only the final remainder may be smaller.</small></div>
+                    </div>
+
+                    <div class="college-grouping-panel" id="collegeGroupingPanel">
+                        <div class="college-grouping-heading"><i class="fas fa-building-columns"></i><div><strong>Choose which colleges may share a folder</strong><small>Colleges assigned to the same mixing group may combine students from different courses. “Solo” keeps that college separate.</small></div></div>
+                        <div class="college-grouping-grid">
+                            <?php foreach($collegeOptions as $collegeCode=>$collegeName): $savedGroup=$collegeGroups[$collegeCode]??$collegeCode; ?>
+                            <label class="college-group-row" for="collegeGroup<?php echo htmlspecialchars($collegeCode);?>"><span><strong><?php echo htmlspecialchars($collegeCode);?></strong><small><?php echo htmlspecialchars($collegeName);?></small></span><select class="form-control" name="college_groups[<?php echo htmlspecialchars($collegeCode);?>]" id="collegeGroup<?php echo htmlspecialchars($collegeCode);?>"><option value="solo" <?php echo $savedGroup===$collegeCode?'selected':'';?>>Solo</option><?php foreach(['A','B','C','D','E','F'] as $mixingGroup):?><option value="<?php echo $mixingGroup;?>" <?php echo $savedGroup===$mixingGroup?'selected':'';?>>Mix Group <?php echo $mixingGroup;?></option><?php endforeach;?></select></label>
+                            <?php endforeach;?>
+                        </div>
                     </div>
 
                     <div class="sectioning-guide" aria-label="Sectioning process">
                         <div class="sectioning-step"><span>1</span>Separate by NSTP component</div>
-                        <div class="sectioning-step"><span>2</span>Apply the selected grouping</div>
-                        <div class="sectioning-step"><span>3</span>Balance section sizes evenly</div>
+                        <div class="sectioning-step"><span>2</span>Apply college mixing rules</div>
+                        <div class="sectioning-step"><span>3</span>Fill each folder to the target</div>
                     </div>
 
                     <div class="sectioning-actions"><button class="btn btn-outline-primary" type="button" id="rebuildSections"><i class="fas fa-sync-alt mr-1"></i>Rebuild Existing Sections</button><button class="btn btn-primary" id="saveSectioning"><i class="fas fa-save mr-1"></i>Save Settings</button></div>
@@ -145,6 +157,8 @@ if ($isSuperAdmin) {
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script><script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(function(){
+ const toggleCollegeGrouping=()=>$('#collegeGroupingPanel').toggle($('#groupingMode').val()==='college_course');
+ $('#groupingMode').on('change',toggleCollegeGrouping);toggleCollegeGrouping();
  const request=(toggle,url,data,done,message)=>$.ajax({url:url,method:'POST',data:data,dataType:'json'}).done(r=>{if(r.success){done(r)}else{toggle.prop('checked',!toggle.is(':checked'));Swal.fire('Error',r.message||message,'error')}}).fail(()=>{toggle.prop('checked',!toggle.is(':checked'));Swal.fire('Error',message,'error')});
  $('#componentChangeToggle').on('change',function(){const t=$(this);request(t,'endpoint/toggle-student-component-change.php',{enabled:t.is(':checked')?1:0},r=>{$('#componentChangeLabel').text(r.enabled?'Enabled':'Disabled')},'Unable to update component changes.')});
  const sync=r=>{const components=r.open_components||[],levels=r.open_rotc_ms_levels||[];$('.component-toggle').each(function(){const open=components.includes($(this).data('component'));$(this).prop('checked',open).next().text(open?'Open':'Closed')});$('.rotc-toggle').each(function(){const open=levels.includes($(this).data('level'));$(this).prop('checked',open).next().text(open?'Open':'Closed')});$('#componentStatus').text(components.length+' component(s) open.')};
@@ -156,4 +170,5 @@ $(function(){
  $('#rebuildSections').on('click',function(){const b=$(this),html=b.html(),components=$('[name="section_components[]"]:checked').map(function(){return this.value}).get().join(', ')||'none';Swal.fire({icon:'question',title:'Rebuild sections?',text:'Selected components: '+components+'. Existing manual assignments will be recalculated.',showCancelButton:true,confirmButtonText:'Rebuild'}).then(x=>{if(!x.isConfirmed)return;b.prop('disabled',true).html('Rebuilding...');$.ajax({url:'endpoint/rebuild-auto-section-folders.php',method:'POST',data:$('#sectioningForm').serialize(),dataType:'json'}).done(r=>Swal.fire(r.success?'Done':'Unable to rebuild',r.message,r.success?'success':'error')).fail(()=>Swal.fire('Error','Unable to rebuild sections.','error')).always(()=>b.prop('disabled',false).html(html))})});
 });
 </script>
+<?php include './include/shared-data-sync.php'; ?>
 </body></html>

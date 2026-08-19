@@ -30,9 +30,11 @@ try {
 
     $maxStudents = (int) ($_POST['max_students'] ?? 40);
     $groupingMode = (string) ($_POST['grouping_mode'] ?? 'college_course');
+    $collegeGroups = normalizeAutoSectionCollegeGroups((array) ($_POST['college_groups'] ?? []));
     $requestedComponents = array_values(array_filter(array_map('normalizeProgram', (array) ($_POST['section_components'] ?? []))));
     saveAutoSectionMaxStudents($conn, $maxStudents, $component);
     saveAutoSectionGroupingMode($conn, $groupingMode, $component);
+    saveAutoSectionCollegeGroups($conn, $collegeGroups, $component);
     if ($component) {
         saveAutoSectionEnabled($conn, $component, in_array($component, $requestedComponents, true));
     } else {
@@ -42,18 +44,21 @@ try {
             if ($isSelected) {
                 saveAutoSectionMaxStudents($conn, $maxStudents, $sectionComponent);
                 saveAutoSectionGroupingMode($conn, $groupingMode, $sectionComponent);
+                saveAutoSectionCollegeGroups($conn, $collegeGroups, $sectionComponent);
             }
         }
     }
 
     $scope = $component ?: 'default';
-    logSystemEvent($conn, 'auto_section_settings_updated', "Set {$scope} automatic sectioning to {$groupingMode}, {$maxStudents} students per section.");
+    markSharedDataChanged($conn);
+    logSystemEvent($conn, 'auto_section_settings_updated', "Set {$scope} automatic sectioning to {$groupingMode}, target {$maxStudents} students per folder.");
 
     echo json_encode([
         'success' => true,
         'message' => 'Automatic sectioning setting saved.',
         'max_students' => $maxStudents,
         'grouping_mode' => $groupingMode,
+        'college_groups' => $collegeGroups,
         'enabled_components' => getEnabledAutoSectionComponents($conn),
     ]);
 } catch (Throwable $error) {
