@@ -326,7 +326,7 @@ function autoSectionFolderNumber($component, $folderName) {
 
 function autoSectionFolderStats(PDO $conn, $component, $createdBy = null) {
     $prefix = autoSectionFolderPrefix($component);
-    $whereCreatedBy = $createdBy === null ? 's.created_by IS NULL' : 's.created_by = ?';
+    $whereCreatedBy = $createdBy === null ? '1 = 1' : 's.created_by = ?';
     $params = [$prefix . ' %'];
     if ($createdBy !== null) {
         array_unshift($params, (int) $createdBy);
@@ -353,6 +353,25 @@ function autoSectionFolderStats(PDO $conn, $component, $createdBy = null) {
             'folder' => $row['course_section'],
             'count' => (int) $row['student_count'],
         ];
+    }
+
+    ksort($stats);
+    return $stats;
+}
+
+function autoSectionProtectedFolderStats(PDO $conn, $component) {
+    $prefix = autoSectionFolderPrefix($component);
+    $stmt = $conn->prepare("\n        SELECT s.course_section, COUNT(*) AS student_count\n        FROM tbl_student s\n        WHERE s.created_by IS NOT NULL\n          AND s.course_section LIKE ?\n        GROUP BY s.course_section\n        ORDER BY s.course_section ASC\n    ");
+    $stmt->execute([$prefix . ' %']);
+
+    $stats = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $number = autoSectionFolderNumber($component, $row['course_section']);
+        if ($number === null) {
+            continue;
+        }
+
+        $stats[$number] = (int) $row['student_count'];
     }
 
     ksort($stats);
@@ -517,6 +536,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         }));
         $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
         $sectionBatches = [];
+        $sectionFolderNumbers = [];
 
         if (autoSectionUsesSequentialCourseFill($currentComponent)) {
             $collegeOrder = [];
@@ -593,7 +613,23 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
 
                 return ((int) ($left['tbl_student_id'] ?? 0)) <=> ((int) ($right['tbl_student_id'] ?? 0));
             });
-            $sectionBatches = array_chunk($students, $maxStudents);
+            // Students already assigned to a facilitator stay in place and count
+            // toward the configured section limit. Only the remaining seats are
+            // filled by the automatic queue, preventing a 40-student section
+            // from receiving another 40 students during a rebuild.
+            $protectedFolderCounts = autoSectionProtectedFolderStats($conn, $currentComponent);
+            $studentOffset = 0;
+            $folderNumber = 1;
+            $studentCount = count($students);
+            while ($studentOffset < $studentCount) {
+                $availableSeats = max(0, $maxStudents - ($protectedFolderCounts[$folderNumber] ?? 0));
+                if ($availableSeats > 0) {
+                    $sectionBatches[] = array_slice($students, $studentOffset, $availableSeats);
+                    $sectionFolderNumbers[] = $folderNumber;
+                    $studentOffset += $availableSeats;
+                }
+                $folderNumber++;
+            }
         } else {
             $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
             $minStudents = getAutoSectionMinStudents($conn, $currentComponent);
@@ -611,14 +647,15 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 $studentOffset = 0;
                 foreach ($balancedSizes as $balancedSize) {
                     $sectionBatches[] = array_slice($groupStudents, $studentOffset, $balancedSize);
+                    $sectionFolderNumbers[] = count($sectionFolderNumbers) + 1;
                     $studentOffset += $balancedSize;
                 }
             }
         }
 
-        $folderNumber = 1;
-        foreach ($sectionBatches as $sectionStudents) {
-            $folder = autoSectionFolderName($currentComponent, $folderNumber++);
+        foreach ($sectionBatches as $batchIndex => $sectionStudents) {
+            $folderNumber = $sectionFolderNumbers[$batchIndex] ?? ($batchIndex + 1);
+            $folder = autoSectionFolderName($currentComponent, $folderNumber);
             createSectionFolder($conn, $currentComponent, $folder);
 
             foreach ($sectionStudents as $student) {
