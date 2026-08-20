@@ -534,12 +534,14 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         $stmt->execute([$currentComponent, $currentComponent, $currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $students = array_values(array_filter($students, static function ($student) use ($currentComponent) {
-            $resolvedComponent = (($student['creator_role'] ?? '') === 'facilitator'
+            // Match the dashboard's authoritative order: student account,
+            // latest registration, legacy folder, then facilitator program.
+            $resolvedComponent = normalizeProgram($student['user_program'] ?? null)
+                ?: normalizeProgram($student['reg_component'] ?? null)
+                ?: inferProgramFromText($student['course_section'] ?? '')
+                ?: (($student['creator_role'] ?? '') === 'facilitator'
                     ? normalizeProgram($student['creator_program'] ?? null)
                     : null)
-                ?: inferProgramFromText($student['course_section'] ?? '')
-                ?: normalizeProgram($student['reg_component'] ?? null)
-                ?: normalizeProgram($student['user_program'] ?? null)
                 ?: 'PUBLIC';
 
             return $resolvedComponent === $currentComponent;

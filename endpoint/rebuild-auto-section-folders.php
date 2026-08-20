@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
 require_once '../include/automatic-sectioning.php';
+require_once '../include/student-account-automation.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator'], true)) {
@@ -54,6 +55,15 @@ try {
         }
     }
 
+    $syncComponents = $component ? [$component] : $requestedComponents;
+    $syncComponents = array_values(array_filter($syncComponents, static function ($sectionComponent) use ($conn) {
+        return isAutoSectionEnabled($conn, $sectionComponent);
+    }));
+    $createdMasterlistRecords = 0;
+    foreach ($syncComponents as $syncComponent) {
+        $createdMasterlistRecords += syncStudentMasterlistRecordsForComponent($conn, $syncComponent);
+    }
+
     $conn->beginTransaction();
     $moved = rebuildAutoSectionFolders($conn, $component);
     if ($conn->inTransaction()) {
@@ -66,11 +76,12 @@ try {
     $ruleDescription = $sequentialComponents
         ? 'sequential College-Course-Year/Section order with up to ' . $maxStudents . ' students per folder'
         : "{$groupingMode}, minimum {$minStudents} and target {$maxStudents} students per folder";
-    logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections using {$ruleDescription}; {$moved} student record(s) updated.");
+    logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections using {$ruleDescription}; {$createdMasterlistRecords} missing master-list record(s) created and {$moved} student record(s) updated.");
 
     echo json_encode([
         'success' => true,
-        'message' => "Automatic folders rebuilt. CWTS/LTS sections were filled sequentially by College, Course, and Year/Section. {$moved} student record(s) updated.",
+        'message' => "Automatic folders rebuilt. {$createdMasterlistRecords} missing master-list record(s) were created, then CWTS/LTS sections were filled sequentially by College, Course, and Year/Section. {$moved} student record(s) updated.",
+        'created_masterlist_records' => $createdMasterlistRecords,
         'updated' => $moved,
     ]);
 } catch (Throwable $error) {

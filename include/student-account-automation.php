@@ -247,6 +247,42 @@ function ensureStudentQrRecordForAccount(PDO $conn, $studentNumber, $userId = nu
     return (int) $conn->lastInsertId();
 }
 
+function syncStudentMasterlistRecordsForComponent(PDO $conn, $component) {
+    $component = normalizeProgram($component);
+    if (!$component) {
+        return 0;
+    }
+
+    ensureStudentNumberColumn($conn);
+    $beforeStmt = $conn->query("SELECT COUNT(*) FROM tbl_student");
+    $beforeCount = (int) $beforeStmt->fetchColumn();
+
+    // Sync the latest active registration for every valid student number.
+    // Older registrations may appear in dashboard totals even when their
+    // master-list/QR row was never created by the original registration flow.
+    $registrationStmt = $conn->prepare("\n        SELECT r.*\n        FROM tbl_public_student_registrations r\n        INNER JOIN (\n            SELECT student_number, MAX(registration_id) AS registration_id\n            FROM tbl_public_student_registrations\n            WHERE registrant_role = 'student'\n              AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')\n              AND NULLIF(TRIM(student_number), '') IS NOT NULL\n            GROUP BY student_number\n        ) latest ON latest.registration_id = r.registration_id\n        WHERE r.component = ?\n    ");
+    $registrationStmt->execute([$component]);
+    foreach ($registrationStmt->fetchAll(PDO::FETCH_ASSOC) as $registration) {
+        ensureStudentQrRecordForAccount(
+            $conn,
+            $registration['student_number'] ?? '',
+            !empty($registration['user_id']) ? (int) $registration['user_id'] : null,
+            $registration
+        );
+    }
+
+    // Also cover component-selected student accounts that have no public
+    // registration but still belong in the dashboard and master list.
+    $accountStmt = $conn->prepare("\n        SELECT u.user_id, u.username\n        FROM tbl_users u\n        WHERE u.role = 'student'\n          AND u.program = ?\n          AND NULLIF(TRIM(u.username), '') IS NOT NULL\n    ");
+    $accountStmt->execute([$component]);
+    foreach ($accountStmt->fetchAll(PDO::FETCH_ASSOC) as $account) {
+        ensureStudentQrRecordForAccount($conn, $account['username'], (int) $account['user_id']);
+    }
+
+    $afterStmt = $conn->query("SELECT COUNT(*) FROM tbl_student");
+    return max(0, (int) $afterStmt->fetchColumn() - $beforeCount);
+}
+
 function sendStudentAccountEmail(PDO $conn, array $registration, $studentNumber, $password) {
     $email = trim((string) ($registration['email'] ?? ''));
     if ($email === '' || isPlaceholderEmail($email)) {
