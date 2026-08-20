@@ -1083,6 +1083,36 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                 <?php if (!$isGraphsPage): ?>
                 <div class="row">
                     <div class="col-12 mb-3">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-student-masterlist.php">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-users mr-2"></i>Student Masterlist</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="studentMasterlistFolder">Facilitator / Section</label>
+                                    <select class="form-control" id="studentMasterlistFolder" name="student_folder">
+                                        <option value="">All Accessible Students</option>
+                                        <?php foreach ($gradeExportFolders as $folder): ?>
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                            <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <p class="muted-note">Downloads an Excel masterlist with student names, student numbers, original and assigned sections, assigned facilitators, and NSTP components.</p>
+                                <button type="submit" class="btn btn-success btn-block">
+                                    <i class="fas fa-file-excel mr-1"></i> Download Student Masterlist
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-attendance-excel.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>Attendance Report</h3>
