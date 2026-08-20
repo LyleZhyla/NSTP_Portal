@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/user-permissions.php';
+require_once __DIR__ . '/college-courses.php';
 
 function ensureDataEditRequestsTable(PDO $conn) {
     $conn->exec("
@@ -214,6 +215,19 @@ function submitRegistrationDataEditRequest(PDO $conn, array $user, array $regist
         }
     }
 
+    $academicData = canonicalizeAcademicData(
+        $newData['college'] ?? '',
+        $newData['course'] ?? '',
+        $newData['major'] ?? 'N/A',
+        $newData['year_section'] ?? ''
+    );
+    if (!$academicData['resolved']) {
+        throw new InvalidArgumentException('Please select a valid College, Course, Major, and Year/Section combination.');
+    }
+    foreach (['college', 'course', 'major', 'year_section'] as $academicField) {
+        $newData[$academicField] = $academicData[$academicField];
+    }
+
     $newData['shirt_size'] = strtoupper(dataEditRequestClean($newData['shirt_size'] ?? '', 30));
     if ($newData['shirt_size'] === '') {
         throw new InvalidArgumentException('Please enter a shirt size.');
@@ -355,6 +369,19 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
             $registrationId = (int) ($newData['_registration_id'] ?? 0);
             if ($registrationId <= 0) {
                 throw new RuntimeException('Registration record not found.');
+            }
+
+            $academicData = canonicalizeAcademicData(
+                $newData['college'] ?? '',
+                $newData['course'] ?? '',
+                $newData['major'] ?? 'N/A',
+                $newData['year_section'] ?? ''
+            );
+            if (!$academicData['resolved']) {
+                throw new RuntimeException('The requested College, Course, Major, and Year/Section combination is invalid.');
+            }
+            foreach (['college', 'course', 'major', 'year_section'] as $academicField) {
+                $newData[$academicField] = $academicData[$academicField];
             }
 
             $fields = registrationEditRequestFields();

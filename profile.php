@@ -176,6 +176,7 @@ $pendingDataEditRequest = $user ? dataEditRequestPendingForUser($conn, $user_id)
 $showRegistrationEditForm = isset($_GET['request_component_change']);
 
 $isStudent = $user && ($user['role'] ?? '') === 'student';
+$profileCollegeCourseData = getCollegeCourseData();
 $studentRecord = null;
 $studentRegistrationSections = [];
 $studentAttendanceCount = 0;
@@ -1245,7 +1246,32 @@ if (!empty($user['full_name'])) {
                                                                     <div class="col-md-6">
                                                                         <div class="form-group">
                                                                             <label for="registration_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo htmlspecialchars($registrationEditFields[$fieldKey]); ?></label>
-                                                                            <?php if ($fieldKey === 'shirt_size'): ?>
+                                                                            <?php if ($fieldKey === 'college'): ?>
+                                                                            <select class="form-control" id="registration_college" name="registration[college]" required>
+                                                                                <option value="">Select College</option>
+                                                                                <?php foreach ($profileCollegeCourseData as $collegeItem): ?>
+                                                                                <option value="<?php echo htmlspecialchars($collegeItem['college']); ?>" <?php echo (string) $fieldValue === (string) $collegeItem['college'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($collegeItem['college']); ?></option>
+                                                                                <?php endforeach; ?>
+                                                                            </select>
+                                                                            <?php elseif ($fieldKey === 'course'): ?>
+                                                                            <select class="form-control" id="registration_course" name="registration[course]" data-current="<?php echo htmlspecialchars($fieldValue ?? ''); ?>" required>
+                                                                                <option value="">Select Course</option>
+                                                                            </select>
+                                                                            <?php elseif ($fieldKey === 'major'): ?>
+                                                                            <select class="form-control" id="registration_major" name="registration[major]" data-current="<?php echo htmlspecialchars($fieldValue ?? 'N/A'); ?>" required>
+                                                                                <option value="">Select Major</option>
+                                                                            </select>
+                                                                            <?php elseif ($fieldKey === 'year_section'): ?>
+                                                                            <select class="form-control" id="registration_year_section" name="registration[year_section]" required>
+                                                                                <option value="">Select Year and Section</option>
+                                                                                <?php for ($year = 1; $year <= 4; $year++): ?>
+                                                                                    <?php foreach (['A', 'B', 'C', 'D', 'E', 'F'] as $sectionLetter): ?>
+                                                                                        <?php $yearSectionOption = $year . $sectionLetter; ?>
+                                                                                        <option value="<?php echo $yearSectionOption; ?>" <?php echo normalizeAcademicYearSection($fieldValue) === $yearSectionOption ? 'selected' : ''; ?>><?php echo $yearSectionOption; ?></option>
+                                                                                    <?php endforeach; ?>
+                                                                                <?php endfor; ?>
+                                                                            </select>
+                                                                            <?php elseif ($fieldKey === 'shirt_size'): ?>
                                                                             <input type="text" class="form-control" id="registration_shirt_size" name="registration[shirt_size]"
                                                                                    value="<?php echo htmlspecialchars($fieldValue ?? ''); ?>" maxlength="30" required>
                                                                             <?php else: ?>
@@ -1601,6 +1627,52 @@ if (!empty($user['full_name'])) {
                     .attr('aria-expanded', 'false')
                     .html('<i class="fas fa-edit mr-2"></i>Request Changes');
             });
+
+            const profileCollegeCourseData = <?php echo json_encode($profileCollegeCourseData, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+            const registrationCollege = document.getElementById('registration_college');
+            const registrationCourse = document.getElementById('registration_course');
+            const registrationMajor = document.getElementById('registration_major');
+
+            function populateRegistrationMajors(preserveCurrent = false) {
+                if (!registrationCollege || !registrationCourse || !registrationMajor) return;
+                const currentMajor = preserveCurrent ? registrationMajor.dataset.current : registrationMajor.value;
+                registrationMajor.innerHTML = '<option value="">Select Major</option>';
+                const college = profileCollegeCourseData.find(item => item.college === registrationCollege.value);
+                const course = college?.courses.find(item => item.name === registrationCourse.value);
+                if (!course) return;
+
+                const majors = course.majors.length ? [...course.majors, 'N/A'] : ['N/A'];
+                majors.forEach(major => {
+                    const option = document.createElement('option');
+                    option.value = major;
+                    option.textContent = major;
+                    option.selected = major === currentMajor;
+                    registrationMajor.appendChild(option);
+                });
+            }
+
+            function populateRegistrationCourses(preserveCurrent = false) {
+                if (!registrationCollege || !registrationCourse) return;
+                const currentCourse = preserveCurrent ? registrationCourse.dataset.current : '';
+                registrationCourse.innerHTML = '<option value="">Select Course</option>';
+                const college = profileCollegeCourseData.find(item => item.college === registrationCollege.value);
+                if (college) {
+                    college.courses.forEach(course => {
+                        const option = document.createElement('option');
+                        option.value = course.name;
+                        option.textContent = course.name;
+                        option.selected = course.name === currentCourse;
+                        registrationCourse.appendChild(option);
+                    });
+                }
+                populateRegistrationMajors(preserveCurrent);
+            }
+
+            if (registrationCollege && registrationCourse && registrationMajor) {
+                registrationCollege.addEventListener('change', () => populateRegistrationCourses(false));
+                registrationCourse.addEventListener('change', () => populateRegistrationMajors(false));
+                populateRegistrationCourses(true);
+            }
             
             // Password strength checker
             $('#new_password').on('keyup', function() {

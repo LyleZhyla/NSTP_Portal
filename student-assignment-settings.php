@@ -151,7 +151,11 @@ if ($isSuperAdmin) {
                         <div class="sectioning-step"><span>3</span>Fill each folder before opening the next</div>
                     </div>
 
-                    <div class="sectioning-actions"><button class="btn btn-outline-primary" type="button" id="rebuildSections"><i class="fas fa-sync-alt mr-1"></i>Rebuild Existing Sections</button><button class="btn btn-primary" id="saveSectioning"><i class="fas fa-save mr-1"></i>Save Settings</button></div>
+                    <div class="sectioning-actions">
+                        <?php if($isSuperAdmin):?><button class="btn btn-outline-success" type="button" id="normalizeAcademicData"><i class="fas fa-spell-check mr-1"></i>Fix College/Course Names</button><?php endif;?>
+                        <button class="btn btn-outline-primary" type="button" id="rebuildSections"><i class="fas fa-sync-alt mr-1"></i>Rebuild Existing Sections</button>
+                        <button class="btn btn-primary" id="saveSectioning"><i class="fas fa-save mr-1"></i>Save Settings</button>
+                    </div>
                 </div></form>
             </div></div>
             <?php endif; ?>
@@ -173,6 +177,7 @@ $(function(){
  const nextCollegeGroupToken=()=>{const used=new Set(Object.values(collegeGroupState));for(let i=1;i<=Object.keys(collegeLabels).length;i++){const token='G'+i;if(!used.has(token))return token}return 'G'+Date.now()};
  $('#createCollegeGroup').on('click',function(){const selected=$('.college-group-choice:checked').map(function(){return this.value}).get();if(selected.length<2){Swal.fire('Select colleges','Choose at least two colleges to create a group.','info');return}const token=nextCollegeGroupToken();selected.forEach(code=>collegeGroupState[code]=token);$('.college-group-choice').prop('checked',false);renderCollegeGroups()});
  $(document).on('click','.dissolve-college-group',function(){const group=$(this).data('group');Object.keys(collegeGroupState).forEach(code=>{if(collegeGroupState[code]===group)collegeGroupState[code]=code});renderCollegeGroups()});
+ $('#normalizeAcademicData').on('click',function(){const button=$(this),original=button.html();Swal.fire({icon:'question',title:'Fix academic names?',text:'Common abbreviations, variants, and safe misspellings will be converted to the official College, Course, Major, and Year/Section names. Automatic CWTS/LTS sections will then be recalculated.',showCancelButton:true,confirmButtonText:'Fix Records'}).then(result=>{if(!result.isConfirmed)return;button.prop('disabled',true).html('<i class="fas fa-spinner fa-spin mr-1"></i>Fixing');$.ajax({url:'endpoint/normalize-academic-data.php',method:'POST',dataType:'json',success:response=>Swal.fire(response.success?'Done':'Unable to fix',response.message||'Please try again.',response.success?'success':'error'),error:()=>Swal.fire('Request failed','The server did not return a valid response.','error'),complete:()=>button.prop('disabled',false).html(original)})})});
  renderCollegeGroups();
  const request=(toggle,url,data,done,message)=>$.ajax({url:url,method:'POST',data:data,dataType:'json'}).done(r=>{if(r.success){done(r)}else{toggle.prop('checked',!toggle.is(':checked'));Swal.fire('Error',r.message||message,'error')}}).fail(()=>{toggle.prop('checked',!toggle.is(':checked'));Swal.fire('Error',message,'error')});
  $('#componentChangeToggle').on('change',function(){const t=$(this);request(t,'endpoint/toggle-student-component-change.php',{enabled:t.is(':checked')?1:0},r=>{$('#componentChangeLabel').text(r.enabled?'Enabled':'Disabled')},'Unable to update component changes.')});
