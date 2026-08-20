@@ -381,25 +381,6 @@ function autoSectionFolderStats(PDO $conn, $component, $createdBy = null) {
     return $stats;
 }
 
-function autoSectionProtectedFolderStats(PDO $conn, $component) {
-    $prefix = autoSectionFolderPrefix($component);
-    $stmt = $conn->prepare("\n        SELECT s.course_section, COUNT(*) AS student_count\n        FROM tbl_student s\n        WHERE s.created_by IS NOT NULL\n          AND s.course_section LIKE ?\n        GROUP BY s.course_section\n        ORDER BY s.course_section ASC\n    ");
-    $stmt->execute([$prefix . ' %']);
-
-    $stats = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $number = autoSectionFolderNumber($component, $row['course_section']);
-        if ($number === null) {
-            continue;
-        }
-
-        $stats[$number] = (int) $row['student_count'];
-    }
-
-    ksort($stats);
-    return $stats;
-}
-
 function autoSectionFindFolderForGroup(PDO $conn, $component, $college, $course, $createdBy = null) {
     $component = autoSectionComponent($component);
     $maxStudents = getAutoSectionMaxStudents($conn, $component);
@@ -519,13 +500,17 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 s.student_name,
                 s.original_section,
                 s.course_section,
+                s.created_by,
                 r.college AS reg_college,
                 r.course AS reg_course,
                 r.year_section AS reg_year_section,
                 r.component AS reg_component,
-                u.program AS user_program
+                u.program AS user_program,
+                creator.role AS creator_role,
+                creator.program AS creator_program
             FROM tbl_student s
             LEFT JOIN tbl_users u ON s.user_id = u.user_id
+            LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
             LEFT JOIN tbl_public_student_registrations r
               ON r.student_number = s.student_number
              AND r.registration_id = (
@@ -533,10 +518,10 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 FROM tbl_public_student_registrations r2
                 WHERE r2.student_number = s.student_number
              )
-            WHERE s.created_by IS NULL
-              AND (
+            WHERE (
                 COALESCE(r.component, '') = ?
                 OR COALESCE(u.program, '') = ?
+                OR (creator.role = 'facilitator' AND COALESCE(creator.program, '') = ?)
                 OR s.course_section = ?
                 OR s.course_section LIKE ?
               )
@@ -546,12 +531,15 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 s.student_name ASC,
                 s.tbl_student_id ASC
         ");
-        $stmt->execute([$currentComponent, $currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
+        $stmt->execute([$currentComponent, $currentComponent, $currentComponent, $currentComponent, autoSectionFolderPrefix($currentComponent) . ' %']);
         $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $students = array_values(array_filter($students, static function ($student) use ($currentComponent) {
-            $resolvedComponent = normalizeProgram($student['reg_component'] ?? null)
-                ?: normalizeProgram($student['user_program'] ?? null)
+            $resolvedComponent = (($student['creator_role'] ?? '') === 'facilitator'
+                    ? normalizeProgram($student['creator_program'] ?? null)
+                    : null)
                 ?: inferProgramFromText($student['course_section'] ?? '')
+                ?: normalizeProgram($student['reg_component'] ?? null)
+                ?: normalizeProgram($student['user_program'] ?? null)
                 ?: 'PUBLIC';
 
             return $resolvedComponent === $currentComponent;
@@ -635,25 +623,14 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
 
                 return ((int) ($left['tbl_student_id'] ?? 0)) <=> ((int) ($right['tbl_student_id'] ?? 0));
             });
-            // Students already assigned to a facilitator stay in place and count
-            // toward the configured section limit. Only the remaining seats are
-            // filled by the automatic queue. Earlier folders remain full while
-            // the final two folders receive an almost equal number of students.
-            $protectedFolderCounts = autoSectionProtectedFolderStats($conn, $currentComponent);
-            $totalStudentCount = count($students) + array_sum($protectedFolderCounts);
-            $targetFolderSizes = autoSectionSequentialSizes($totalStudentCount, $maxStudents);
+            // Use the same complete component population counted by the graph.
+            // Earlier folders remain full and the final two are almost equal.
+            $targetFolderSizes = autoSectionSequentialSizes(count($students), $maxStudents);
             $studentOffset = 0;
-            $folderNumber = 1;
-            $studentCount = count($students);
-            while ($studentOffset < $studentCount) {
-                $targetSize = $targetFolderSizes[$folderNumber - 1] ?? $maxStudents;
-                $availableSeats = max(0, $targetSize - ($protectedFolderCounts[$folderNumber] ?? 0));
-                if ($availableSeats > 0) {
-                    $sectionBatches[] = array_slice($students, $studentOffset, $availableSeats);
-                    $sectionFolderNumbers[] = $folderNumber;
-                    $studentOffset += $availableSeats;
-                }
-                $folderNumber++;
+            foreach ($targetFolderSizes as $folderIndex => $targetSize) {
+                $sectionBatches[] = array_slice($students, $studentOffset, $targetSize);
+                $sectionFolderNumbers[] = $folderIndex + 1;
+                $studentOffset += $targetSize;
             }
         } else {
             $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
@@ -678,10 +655,18 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
             }
         }
 
+        $facilitatorStmt = $conn->prepare("\n            SELECT ads.course_section, ads.user_id\n            FROM tbl_admin_sections ads\n            INNER JOIN tbl_users facilitator ON facilitator.user_id = ads.user_id\n            WHERE facilitator.role = 'facilitator'\n              AND facilitator.program = ?\n        ");
+        $facilitatorStmt->execute([$currentComponent]);
+        $folderFacilitators = [];
+        foreach ($facilitatorStmt->fetchAll(PDO::FETCH_ASSOC) as $assignment) {
+            $folderFacilitators[(string) $assignment['course_section']] = (int) $assignment['user_id'];
+        }
+
         foreach ($sectionBatches as $batchIndex => $sectionStudents) {
             $folderNumber = $sectionFolderNumbers[$batchIndex] ?? ($batchIndex + 1);
             $folder = autoSectionFolderName($currentComponent, $folderNumber);
             createSectionFolder($conn, $currentComponent, $folder);
+            $assignedFacilitatorId = $folderFacilitators[$folder] ?? null;
 
             foreach ($sectionStudents as $student) {
                 $originalSection = autoSectionOriginalSection(
@@ -690,13 +675,15 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                     $student['original_section'] ?? ''
                 );
 
-                if ($student['course_section'] !== $folder || ($student['original_section'] ?? '') !== $originalSection) {
+                if ($student['course_section'] !== $folder
+                    || ($student['original_section'] ?? '') !== $originalSection
+                    || (int) ($student['created_by'] ?? 0) !== (int) ($assignedFacilitatorId ?? 0)) {
                     $updateStmt = $conn->prepare("
                         UPDATE tbl_student
-                        SET course_section = ?, original_section = ?
+                        SET course_section = ?, original_section = ?, created_by = ?
                         WHERE tbl_student_id = ?
                     ");
-                    $updateStmt->execute([$folder, $originalSection, $student['tbl_student_id']]);
+                    $updateStmt->execute([$folder, $originalSection, $assignedFacilitatorId, $student['tbl_student_id']]);
                     $moved++;
                 }
             }
