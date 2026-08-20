@@ -325,10 +325,17 @@ if ($user_role === 'facilitator' && $isRotcFacilitator && empty($assignedSection
 
 // SUPER ADMIN - Get all data with folder organization
 if ($user_role === 'coordinator') {
-    $total_students = count($coordinatorPendingStudents);
-    foreach ($coordinatorFolderCards as $folderCard) {
-        $total_students += (int) ($folderCard['count'] ?? 0);
-    }
+    // Count every student in the coordinator's component, including students
+    // in generated folders that do not have a facilitator yet. The previous
+    // total only added the plain component bucket and facilitator-assigned
+    // folders, which made CWTS Student Management appear incomplete.
+    $coordinatorTotalStmt = $conn->prepare("\n        SELECT COUNT(DISTINCT s.tbl_student_id)\n        FROM tbl_student s\n        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by\n        WHERE (creator.role = 'facilitator' AND creator.program = ?)\n           OR s.course_section = ?\n           OR s.course_section LIKE ?\n    ");
+    $coordinatorTotalStmt->execute([
+        $coordinatorProgram,
+        $coordinatorProgram,
+        autoSectionFolderPrefix($coordinatorProgram) . ' %',
+    ]);
+    $total_students = (int) $coordinatorTotalStmt->fetchColumn();
     $my_students_count = $total_students;
 } elseif ($user_role === 'super_admin') {
     $stmt = $conn->prepare("
