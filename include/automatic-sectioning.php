@@ -274,6 +274,77 @@ function autoSectionSequentialSizes($studentCount, $maxStudents) {
     return $sizes;
 }
 
+function autoSectionSequentialBatchesWithLockedStudents(array $students, array $lockedFolderCounts, $maxStudents) {
+    $maxStudents = max(1, (int) $maxStudents);
+    $lockedFolderCounts = array_filter(
+        array_map('intval', $lockedFolderCounts),
+        static fn($count) => $count > 0
+    );
+    ksort($lockedFolderCounts);
+
+    $batches = [];
+    $folderNumbers = [];
+    $studentOffset = 0;
+    $studentCount = count($students);
+    $highestLockedFolder = $lockedFolderCounts ? max(array_keys($lockedFolderCounts)) : 0;
+
+    // Preserve every facilitator-assigned student. Fill earlier folders first,
+    // then distribute additions across the final two locked folders so those
+    // sections stay as even as possible without moving anyone already locked.
+    $tailStartFolder = max(1, $highestLockedFolder - 1);
+    for ($folderNumber = 1; $folderNumber < $tailStartFolder && $studentOffset < $studentCount; $folderNumber++) {
+        $availableSlots = max(0, $maxStudents - ($lockedFolderCounts[$folderNumber] ?? 0));
+        if ($availableSlots === 0) {
+            continue;
+        }
+
+        $batchSize = min($availableSlots, $studentCount - $studentOffset);
+        $batches[] = array_slice($students, $studentOffset, $batchSize);
+        $folderNumbers[] = $folderNumber;
+        $studentOffset += $batchSize;
+    }
+
+    $tailAssignments = [];
+    $tailTotals = [];
+    for ($folderNumber = $tailStartFolder; $folderNumber <= $highestLockedFolder; $folderNumber++) {
+        $tailTotals[$folderNumber] = $lockedFolderCounts[$folderNumber] ?? 0;
+    }
+    while ($studentOffset < $studentCount && $tailTotals) {
+        $candidateFolder = null;
+        $candidateCount = null;
+        foreach ($tailTotals as $folderNumber => $currentCount) {
+            if ($currentCount >= $maxStudents) {
+                continue;
+            }
+            if ($candidateFolder === null || $currentCount < $candidateCount) {
+                $candidateFolder = $folderNumber;
+                $candidateCount = $currentCount;
+            }
+        }
+        if ($candidateFolder === null) {
+            break;
+        }
+
+        $tailAssignments[$candidateFolder][] = $students[$studentOffset];
+        $tailTotals[$candidateFolder]++;
+        $studentOffset++;
+    }
+    ksort($tailAssignments);
+    foreach ($tailAssignments as $folderNumber => $folderStudents) {
+        $batches[] = $folderStudents;
+        $folderNumbers[] = $folderNumber;
+    }
+
+    $remainingCount = $studentCount - $studentOffset;
+    foreach (autoSectionSequentialSizes($remainingCount, $maxStudents) as $folderIndex => $batchSize) {
+        $batches[] = array_slice($students, $studentOffset, $batchSize);
+        $folderNumbers[] = $highestLockedFolder + $folderIndex + 1;
+        $studentOffset += $batchSize;
+    }
+
+    return [$batches, $folderNumbers];
+}
+
 function autoSectionOriginalSection($course, $yearSection, $fallback = '') {
     $course = autoSectionCleanPart($course);
     $yearSection = autoSectionCleanPart($yearSection);
@@ -550,6 +621,21 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
         $sectionBatches = [];
         $sectionFolderNumbers = [];
+        $movableStudents = [];
+        $lockedFolderCounts = [];
+        foreach ($students as $student) {
+            $isFacilitatorAssigned = !empty($student['created_by'])
+                && ($student['creator_role'] ?? '') === 'facilitator';
+            if (!$isFacilitatorAssigned) {
+                $movableStudents[] = $student;
+                continue;
+            }
+
+            $lockedFolderNumber = autoSectionFolderNumber($currentComponent, $student['course_section'] ?? '');
+            if ($lockedFolderNumber !== null) {
+                $lockedFolderCounts[$lockedFolderNumber] = ($lockedFolderCounts[$lockedFolderNumber] ?? 0) + 1;
+            }
+        }
 
         if (autoSectionUsesSequentialCourseFill($currentComponent)) {
             $collegeOrder = [];
@@ -563,7 +649,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                 }
             }
 
-            foreach ($students as &$student) {
+            foreach ($movableStudents as &$student) {
                 $courseMatch = canonicalAcademicCourse($student['reg_course'] ?? '');
                 $canonicalCollege = $courseMatch['college']
                     ?? canonicalAcademicCollege($student['reg_college'] ?? '')
@@ -582,7 +668,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
             }
             unset($student);
 
-            usort($students, static function ($left, $right) {
+            usort($movableStudents, static function ($left, $right) {
                 $collegeRankComparison = ((int) ($left['_section_sort_college_rank'] ?? PHP_INT_MAX))
                     <=> ((int) ($right['_section_sort_college_rank'] ?? PHP_INT_MAX));
                 if ($collegeRankComparison !== 0) {
@@ -626,33 +712,30 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
 
                 return ((int) ($left['tbl_student_id'] ?? 0)) <=> ((int) ($right['tbl_student_id'] ?? 0));
             });
-            // Use the same complete component population counted by the graph.
-            // Earlier folders remain full and the final two are almost equal.
-            $targetFolderSizes = autoSectionSequentialSizes(count($students), $maxStudents);
-            $studentOffset = 0;
-            foreach ($targetFolderSizes as $folderIndex => $targetSize) {
-                $sectionBatches[] = array_slice($students, $studentOffset, $targetSize);
-                $sectionFolderNumbers[] = $folderIndex + 1;
-                $studentOffset += $targetSize;
-            }
+            [$sectionBatches, $sectionFolderNumbers] = autoSectionSequentialBatchesWithLockedStudents(
+                $movableStudents,
+                $lockedFolderCounts,
+                $maxStudents
+            );
         } else {
             $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
             $minStudents = getAutoSectionMinStudents($conn, $currentComponent);
             $collegeGroups = getAutoSectionCollegeGroups($conn, $currentComponent);
             $groupedStudents = [];
-            foreach ($students as $student) {
+            foreach ($movableStudents as $student) {
                 $groupCourse = autoSectionCleanPart($student['reg_course'] ?? '') ?: autoSectionCleanPart($student['original_section'] ?? '');
                 $groupKey = autoSectionGroupKey($groupingMode, $student['reg_college'] ?? '', $groupCourse, $collegeGroups);
                 $groupedStudents[$groupKey][] = $student;
             }
             ksort($groupedStudents, SORT_NATURAL | SORT_FLAG_CASE);
 
+            $nextFolderNumber = $lockedFolderCounts ? max(array_keys($lockedFolderCounts)) + 1 : 1;
             foreach ($groupedStudents as $groupStudents) {
                 $balancedSizes = autoSectionBalancedSizes(count($groupStudents), $maxStudents, $minStudents);
                 $studentOffset = 0;
                 foreach ($balancedSizes as $balancedSize) {
                     $sectionBatches[] = array_slice($groupStudents, $studentOffset, $balancedSize);
-                    $sectionFolderNumbers[] = count($sectionFolderNumbers) + 1;
+                    $sectionFolderNumbers[] = $nextFolderNumber++;
                     $studentOffset += $balancedSize;
                 }
             }
