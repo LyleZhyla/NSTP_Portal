@@ -239,6 +239,18 @@ function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabe
     ]);
     $sheet->getStyle('A2:F4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     $sheet->getStyle('A2:F3')->getFont()->setBold(true);
+    $sheet->getStyle('A3:F3')->applyFromArray([
+        'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => '7F6000']],
+        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF2CC']],
+        'borders' => [
+            'outline' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => 'D6B656']],
+        ],
+        'alignment' => [
+            'horizontal' => Alignment::HORIZONTAL_CENTER,
+            'vertical' => Alignment::VERTICAL_CENTER,
+        ],
+    ]);
+    $sheet->getRowDimension(3)->setRowHeight(22);
     $sheet->getStyle('A6:F6')->applyFromArray([
         'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
