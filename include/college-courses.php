@@ -95,6 +95,9 @@ function academicCollegeAliases() {
     return [
         'caf' => 'College of Agriculture and Forestry',
         'agriculture and forestry' => 'College of Agriculture and Forestry',
+        'animal science' => 'College of Agriculture and Forestry',
+        'college of animal science' => 'College of Agriculture and Forestry',
+        'colleg of animal science' => 'College of Agriculture and Forestry',
         'cas' => 'College of Arts and Sciences',
         'arts and sciences' => 'College of Arts and Sciences',
         'cbm' => 'College of Business and Management',
