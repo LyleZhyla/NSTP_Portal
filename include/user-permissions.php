@@ -130,9 +130,9 @@ function rotcStudentMsLevelSqlExpression($studentAlias = 's') {
     return "COALESCE(
         (
             SELECT CASE
-                WHEN UPPER(REPLACE(REPLACE(latest_rotc_registration.rotc_ms_level, ' ', '-'), '_', '-')) IN ('MS1', 'MS-1') THEN 'MS-1'
-                WHEN UPPER(REPLACE(REPLACE(latest_rotc_registration.rotc_ms_level, ' ', '-'), '_', '-')) IN ('MS31', 'MS-31') THEN 'MS-31'
-                WHEN UPPER(REPLACE(REPLACE(latest_rotc_registration.rotc_ms_level, ' ', '-'), '_', '-')) IN ('MS41', 'MS-41') THEN 'MS-41'
+                WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(latest_rotc_registration.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS1' THEN 'MS-1'
+                WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(latest_rotc_registration.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS31' THEN 'MS-31'
+                WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(latest_rotc_registration.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS41' THEN 'MS-41'
                 ELSE NULL
             END
             FROM tbl_public_student_registrations latest_rotc_registration
@@ -149,26 +149,15 @@ function rotcStudentMsLevelSqlExpression($studentAlias = 's') {
             LIMIT 1
         ),
         CASE
-            WHEN UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS-31%'
-              OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS 31%'
-              OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS31%' THEN 'MS-31'
-            WHEN UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS-41%'
-              OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS 41%'
-              OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS41%' THEN 'MS-41'
-            WHEN UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS-1%'
-              OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS 1%'
-              OR UPPER(COALESCE({$studentAlias}.course_section, '')) LIKE '%MS1%' THEN 'MS-1'
-            WHEN UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS-31%'
-              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS 31%'
-              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS31%' THEN 'MS-31'
-            WHEN UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS-41%'
-              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS 41%'
-              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS41%' THEN 'MS-41'
-            WHEN UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS-1%'
-              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS 1%'
-              OR UPPER(COALESCE({$studentAlias}.original_section, '')) LIKE '%MS1%' THEN 'MS-1'
+            WHEN UPPER(REPLACE(REPLACE(REPLACE(COALESCE({$studentAlias}.course_section, ''), ' ', ''), '-', ''), '_', '')) LIKE '%MS31%' THEN 'MS-31'
+            WHEN UPPER(REPLACE(REPLACE(REPLACE(COALESCE({$studentAlias}.course_section, ''), ' ', ''), '-', ''), '_', '')) LIKE '%MS41%' THEN 'MS-41'
+            WHEN UPPER(REPLACE(REPLACE(REPLACE(COALESCE({$studentAlias}.course_section, ''), ' ', ''), '-', ''), '_', '')) LIKE '%MS1%' THEN 'MS-1'
+            WHEN UPPER(REPLACE(REPLACE(REPLACE(COALESCE({$studentAlias}.original_section, ''), ' ', ''), '-', ''), '_', '')) LIKE '%MS31%' THEN 'MS-31'
+            WHEN UPPER(REPLACE(REPLACE(REPLACE(COALESCE({$studentAlias}.original_section, ''), ' ', ''), '-', ''), '_', '')) LIKE '%MS41%' THEN 'MS-41'
+            WHEN UPPER(REPLACE(REPLACE(REPLACE(COALESCE({$studentAlias}.original_section, ''), ' ', ''), '-', ''), '_', '')) LIKE '%MS1%' THEN 'MS-1'
             ELSE NULL
-        END
+        END,
+        'MS-1'
     )";
 }
 
