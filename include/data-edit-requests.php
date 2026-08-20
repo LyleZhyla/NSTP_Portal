@@ -3,6 +3,7 @@
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/user-permissions.php';
 require_once __DIR__ . '/college-courses.php';
+require_once __DIR__ . '/automatic-sectioning.php';
 
 function ensureDataEditRequestsTable(PDO $conn) {
     $conn->exec("
@@ -362,6 +363,7 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
     $newData = dataEditRequestDecode($request['requested_data'] ?? '');
     $status = $action === 'approve' ? 'approved' : 'rejected';
     $note = dataEditRequestClean($note, 2000);
+    $approvedRegistrationComponent = null;
 
     $conn->beginTransaction();
     try {
@@ -421,11 +423,20 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
 
             if ($fullName !== '') {
                 $studentNumber = $request['user_username'] ?? '';
-                dataEditRequestSyncStudentName($conn, (int) $request['user_id'], $studentNumber, $fullName, $newData['year_section'] ?? '');
+                $originalSection = autoSectionOriginalSection(
+                    $newData['course'] ?? '',
+                    $newData['year_section'] ?? '',
+                    $newData['year_section'] ?? ''
+                );
+                dataEditRequestSyncStudentName($conn, (int) $request['user_id'], $studentNumber, $fullName, $originalSection);
 
                 $userUpdateStmt = $conn->prepare("UPDATE tbl_users SET full_name = ? WHERE user_id = ? AND role = 'student'");
                 $userUpdateStmt->execute([$fullName, (int) $request['user_id']]);
             }
+
+            $componentStmt = $conn->prepare("SELECT component FROM tbl_public_student_registrations WHERE registration_id = ?");
+            $componentStmt->execute([$registrationId]);
+            $approvedRegistrationComponent = normalizeProgram($componentStmt->fetchColumn());
 
             if (($currentData['shirt_size'] ?? '') !== ($newData['shirt_size'] ?? '')) {
                 $shirtUpdateStmt = $conn->prepare("UPDATE tbl_users SET shirt_size = ? WHERE user_id = ? AND role = 'student'");
@@ -483,6 +494,16 @@ function dataEditRequestReview(PDO $conn, $requestId, array $reviewer, $action, 
             $conn->rollBack();
         }
         throw $error;
+    }
+
+    if ($approvedRegistrationComponent
+        && isAutoSectionEnabled($conn, $approvedRegistrationComponent)
+        && autoSectionUsesSequentialCourseFill($approvedRegistrationComponent)) {
+        try {
+            rebuildAutoSectionFolders($conn, $approvedRegistrationComponent);
+        } catch (Throwable $sectioningError) {
+            error_log('Unable to refresh automatic sections after profile approval: ' . $sectioningError->getMessage());
+        }
     }
 
     logSystemEvent($conn, 'data_edit_request_' . $status, 'Request #' . $requestId . ' was ' . $status);

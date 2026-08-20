@@ -64,13 +64,13 @@ try {
     $rebuiltComponents = $component ? [$component] : $requestedComponents;
     $sequentialComponents = array_values(array_intersect($rebuiltComponents, ['CWTS', 'LTS']));
     $ruleDescription = $sequentialComponents
-        ? 'sequential Course-Year/Section order with up to ' . $maxStudents . ' students per folder'
+        ? 'sequential College-Course-Year/Section order with up to ' . $maxStudents . ' students per folder'
         : "{$groupingMode}, minimum {$minStudents} and target {$maxStudents} students per folder";
     logSystemEvent($conn, 'auto_section_folders_rebuilt', "Rebuilt automatic folder sections using {$ruleDescription}; {$moved} student record(s) updated.");
 
     echo json_encode([
         'success' => true,
-        'message' => "Automatic folders rebuilt. CWTS/LTS sections were filled sequentially by Course and Year/Section. {$moved} student record(s) updated.",
+        'message' => "Automatic folders rebuilt. CWTS/LTS sections were filled sequentially by College, Course, and Year/Section. {$moved} student record(s) updated.",
         'updated' => $moved,
     ]);
 } catch (Throwable $error) {

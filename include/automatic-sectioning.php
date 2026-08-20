@@ -519,17 +519,69 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         $sectionBatches = [];
 
         if (autoSectionUsesSequentialCourseFill($currentComponent)) {
+            $collegeOrder = [];
+            $courseOrder = [];
+            foreach (getCollegeCourseData() as $collegeIndex => $collegeItem) {
+                $canonicalCollege = (string) ($collegeItem['college'] ?? '');
+                $collegeOrder[academicLookupKey($canonicalCollege)] = $collegeIndex;
+                foreach (($collegeItem['courses'] ?? []) as $courseIndex => $courseItem) {
+                    $canonicalCourse = (string) ($courseItem['name'] ?? '');
+                    $courseOrder[academicLookupKey($canonicalCollege)][academicLookupKey($canonicalCourse)] = $courseIndex;
+                }
+            }
+
+            foreach ($students as &$student) {
+                $courseMatch = canonicalAcademicCourse($student['reg_course'] ?? '');
+                $canonicalCollege = $courseMatch['college']
+                    ?? canonicalAcademicCollege($student['reg_college'] ?? '')
+                    ?? autoSectionCleanPart($student['reg_college'] ?? '');
+                $canonicalCourse = ($courseMatch['course']
+                    ?? autoSectionCleanPart($student['reg_course'] ?? ''))
+                    ?: autoSectionCleanPart($student['original_section'] ?? '');
+                $collegeKey = academicLookupKey($canonicalCollege);
+                $courseKey = academicLookupKey($canonicalCourse);
+
+                $student['_section_sort_college_rank'] = $collegeOrder[$collegeKey] ?? PHP_INT_MAX;
+                $student['_section_sort_college'] = $canonicalCollege;
+                $student['_section_sort_course_rank'] = $courseOrder[$collegeKey][$courseKey] ?? PHP_INT_MAX;
+                $student['_section_sort_course'] = $canonicalCourse;
+                $student['_section_sort_year'] = autoSectionCleanPart($student['reg_year_section'] ?? '') ?: autoSectionCleanPart($student['original_section'] ?? '');
+            }
+            unset($student);
+
             usort($students, static function ($left, $right) {
-                $leftCourse = autoSectionCleanPart($left['reg_course'] ?? '') ?: autoSectionCleanPart($left['original_section'] ?? '');
-                $rightCourse = autoSectionCleanPart($right['reg_course'] ?? '') ?: autoSectionCleanPart($right['original_section'] ?? '');
-                $courseComparison = strnatcasecmp($leftCourse, $rightCourse);
+                $collegeRankComparison = ((int) ($left['_section_sort_college_rank'] ?? PHP_INT_MAX))
+                    <=> ((int) ($right['_section_sort_college_rank'] ?? PHP_INT_MAX));
+                if ($collegeRankComparison !== 0) {
+                    return $collegeRankComparison;
+                }
+
+                $collegeComparison = strnatcasecmp(
+                    (string) ($left['_section_sort_college'] ?? ''),
+                    (string) ($right['_section_sort_college'] ?? '')
+                );
+                if ($collegeComparison !== 0) {
+                    return $collegeComparison;
+                }
+
+                $courseRankComparison = ((int) ($left['_section_sort_course_rank'] ?? PHP_INT_MAX))
+                    <=> ((int) ($right['_section_sort_course_rank'] ?? PHP_INT_MAX));
+                if ($courseRankComparison !== 0) {
+                    return $courseRankComparison;
+                }
+
+                $courseComparison = strnatcasecmp(
+                    (string) ($left['_section_sort_course'] ?? ''),
+                    (string) ($right['_section_sort_course'] ?? '')
+                );
                 if ($courseComparison !== 0) {
                     return $courseComparison;
                 }
 
-                $leftYearSection = autoSectionCleanPart($left['reg_year_section'] ?? '') ?: autoSectionCleanPart($left['original_section'] ?? '');
-                $rightYearSection = autoSectionCleanPart($right['reg_year_section'] ?? '') ?: autoSectionCleanPart($right['original_section'] ?? '');
-                $yearSectionComparison = strnatcasecmp($leftYearSection, $rightYearSection);
+                $yearSectionComparison = strnatcasecmp(
+                    (string) ($left['_section_sort_year'] ?? ''),
+                    (string) ($right['_section_sort_year'] ?? '')
+                );
                 if ($yearSectionComparison !== 0) {
                     return $yearSectionComparison;
                 }

@@ -473,7 +473,7 @@ date_default_timezone_set('Asia/Manila');
                                         </div>
                                     </div>
                                     <p class="text-muted small mb-0 mt-3">
-                                        CWTS and LTS are sorted by Course then Year/Section and each section is filled to the selected limit before the next section is opened; only the final section may be below the limit. ROTC continues to use the selected grouping method.
+                                        CWTS and LTS follow CAF, CAS, CBM, CED, CET, then CVM; within each college they are sorted by Course then Year/Section. Each section is filled to the selected limit before the next section is opened, so only the final section may be below the limit. ROTC continues to use the selected grouping method.
                                         Components are always separated first, so only students from the same NSTP component can share a section.
                                         <?php echo $autoSectionComponent ? 'This setting applies to your component only.' : 'This is the default setting for automatic folders.'; ?>
                                         You may still edit a student's assigned section manually after rebuilding; a future rebuild will calculate the assignments again.
@@ -952,7 +952,7 @@ $(function() {
         Swal.fire({
             icon: 'question',
             title: 'Rebuild automatic folders?',
-            text: `Components: ${componentSummary}. CWTS/LTS will be sorted by Course and Year/Section, then filled sequentially with up to ${maxStudents} students per section. ROTC will use ${groupingLabel}. Existing manual assignments in selected components will be recalculated.`,
+            text: `Components: ${componentSummary}. CWTS/LTS will be sorted by College (CAF to CVM), Course, and Year/Section, then filled sequentially with up to ${maxStudents} students per section. ROTC will use ${groupingLabel}. Existing manual assignments in selected components will be recalculated.`,
             showCancelButton: true,
             confirmButtonText: 'Rebuild',
             cancelButtonText: 'Cancel'

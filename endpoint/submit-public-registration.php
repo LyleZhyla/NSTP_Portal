@@ -855,9 +855,16 @@ try {
         ]);
 
         $conn->commit();
-        $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
+    $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
+    if (isAutoSectionEnabled($conn, $component) && autoSectionUsesSequentialCourseFill($component)) {
+        try {
+            rebuildAutoSectionFolders($conn, $component);
+        } catch (Throwable $sectioningError) {
+            error_log('Unable to refresh automatic sections after registration: ' . $sectioningError->getMessage());
+        }
+    }
 
-        $response['success'] = true;
+    $response['success'] = true;
         if (!empty($accountResult['created'])) {
             $response['message'] = !empty($accountResult['email_sent'])
                 ? 'Registration saved successfully. Your student account was created and login credentials were sent to your registered email.'
@@ -1076,6 +1083,13 @@ try {
     $studentRegistrationLockAcquired = false;
 
     $accountResult = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
+    if (isAutoSectionEnabled($conn, $component) && autoSectionUsesSequentialCourseFill($component)) {
+        try {
+            rebuildAutoSectionFolders($conn, $component);
+        } catch (Throwable $sectioningError) {
+            error_log('Unable to refresh automatic sections after registration: ' . $sectioningError->getMessage());
+        }
+    }
 
     $response['success'] = true;
     if (!empty($accountResult['created'])) {
