@@ -129,7 +129,7 @@ $detailColumns = [
     'emergency_contact_number' => 'Emergency Contact',
     'emergency_address' => 'Emergency Address',
     'college' => 'College',
-    'course' => 'Program',
+    'course' => 'Course',
     'major' => 'Major',
     'year_section' => 'Year/Section',
     'component' => 'Component',
@@ -1737,7 +1737,7 @@ if ($user_role === 'super_admin') {
                                     </button>
                                     <div>
                                         <button type="button" class="btn btn-xs btn-outline-primary" id="coordinatorShowAllColumns">Show All</button>
-                                        <button type="button" class="btn btn-xs btn-outline-secondary" id="coordinatorHideOptionalColumns">Basic Only</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary" id="coordinatorHideOptionalColumns">Name / Course / Yr Section</button>
                                     </div>
                                 </div>
                                 <div class="collapse mt-3" id="coordinatorVisibleDetailsPanel">
@@ -3226,8 +3226,9 @@ $(document).ready(function() {
     // Initialize tooltips
     $('[data-toggle="tooltip"]').tooltip();
 
-    const coordinatorBasicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'component', 'rotc_ms_level', 'course_section', 'generated_code']);
+    const coordinatorBasicColumns = new Set(['student_name', 'course', 'year_section']);
     let coordinatorPendingStudentsTable = null;
+    let studentFoldersDataTable = null;
     const coordinatorColumnIndexes = {};
 
     function setCoordinatorColumnVisible(columnKey, visible) {
@@ -3607,6 +3608,9 @@ $(document).ready(function() {
     // Expand All button
     $('[data-filter="expanded"]').on('click', function() {
         $('#searchStudent').val('');
+        if (studentFoldersDataTable) {
+            studentFoldersDataTable.search('').draw();
+        }
         $('.student-row, .folder-summary-row, .folder-box, .admin-folder, .section-folder, .nested-section-folder').show();
         $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideDown(300);
         $('.admin-folder-header, .section-folder-header, .nested-section-header').removeClass('collapsed');
@@ -3618,6 +3622,9 @@ $(document).ready(function() {
     // Collapse All button
     $('[data-filter="collapsed"]').on('click', function() {
         $('#searchStudent').val('');
+        if (studentFoldersDataTable) {
+            studentFoldersDataTable.search('').draw();
+        }
         $('.student-row, .folder-summary-row, .folder-box, .admin-folder, .section-folder, .nested-section-folder').show();
         $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideUp(300);
         $('.admin-folder-header, .section-folder-header, .nested-section-header').addClass('collapsed');
@@ -3629,6 +3636,9 @@ $(document).ready(function() {
     // All Folders button
     $('[data-filter="all"]').on('click', function() {
         $('#searchStudent').val('');
+        if (studentFoldersDataTable) {
+            studentFoldersDataTable.search('').draw();
+        }
         $('.student-row, .folder-summary-row, .folder-box, .admin-folder, .section-folder, .nested-section-folder').show();
         $('.admin-folder-body, .section-folder-body, .nested-section-folder .section-folder-body').slideUp(300);
         $('.admin-folder-header, .section-folder-header, .nested-section-header').addClass('collapsed');
@@ -3645,6 +3655,9 @@ $(document).ready(function() {
         const searchTerm = $(this).val().toLowerCase().trim();
         
         if (searchTerm === '') {
+            if (studentFoldersDataTable) {
+                studentFoldersDataTable.search('').draw();
+            }
             // Reset view - collapse everything
             $('.student-row').show();
             $('.folder-summary-row').show();
@@ -3670,7 +3683,11 @@ $(document).ready(function() {
         } else {
             // Hide all rows first
             $('.student-row').hide();
-            $('.folder-summary-row').hide();
+            if (studentFoldersDataTable) {
+                studentFoldersDataTable.search(searchTerm).draw();
+            } else {
+                $('.folder-summary-row').hide();
+            }
             $('.folder-box').hide();
             
             // Show matching rows without relying on CSS attribute selectors.
@@ -3685,17 +3702,19 @@ $(document).ready(function() {
                 row.toggle(searchableText.includes(searchTerm));
             });
 
-            $('.folder-summary-row').each(function() {
-                const row = $(this);
-                const searchableText = [
-                    row.data('folder-name') || '',
-                    row.data('folder-program') || '',
-                    row.data('folder-facilitator') || '',
-                    row.text() || ''
-                ].join(' ').toLowerCase();
+            if (!studentFoldersDataTable) {
+                $('.folder-summary-row').each(function() {
+                    const row = $(this);
+                    const searchableText = [
+                        row.data('folder-name') || '',
+                        row.data('folder-program') || '',
+                        row.data('folder-facilitator') || '',
+                        row.text() || ''
+                    ].join(' ').toLowerCase();
 
-                row.toggle(searchableText.includes(searchTerm));
-            });
+                    row.toggle(searchableText.includes(searchTerm));
+                });
+            }
 
             $('.folder-box').each(function() {
                 const box = $(this);
@@ -3757,7 +3776,7 @@ $(document).ready(function() {
     
     // Initialize DataTable for regular admin with single section
     if ($('#studentFoldersTable').length) {
-        $('#studentFoldersTable').DataTable({
+        studentFoldersDataTable = $('#studentFoldersTable').DataTable({
             "pageLength": 10,
             "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
             "responsive": true,
@@ -3767,8 +3786,8 @@ $(document).ready(function() {
     }
 
     if ($('#coordinatorPendingStudentsTable').length) {
-        $('#coordinatorPendingStudentsTable thead th[data-column]').each(function(index) {
-            coordinatorColumnIndexes[$(this).data('column')] = index;
+        $('#coordinatorPendingStudentsTable thead th[data-column]').each(function() {
+            coordinatorColumnIndexes[$(this).data('column')] = $(this).index();
         });
 
         coordinatorPendingStudentsTable = $('#coordinatorPendingStudentsTable').DataTable({
@@ -3790,6 +3809,8 @@ $(document).ready(function() {
     $('#studentTable').DataTable({
         "pageLength": 10,
         "responsive": true,
+        "ordering": true,
+        "order": [[1, 'asc']],
         "language": {
             "emptyTable": "No students found. Add your first student!"
         }
@@ -3803,7 +3824,9 @@ $(document).ready(function() {
             $(this).DataTable({
                 "pageLength": 5,
                 "lengthMenu": [[5, 10, 25, -1], [5, 10, 25, "All"]],
-                "responsive": true
+                "responsive": true,
+                "ordering": true,
+                "order": [[1, 'asc']]
             });
         }
     });
@@ -3817,7 +3840,8 @@ $(document).ready(function() {
                 "pageLength": 5,
                 "lengthMenu": [[5, 10, 25, -1], [5, 10, 25, "All"]],
                 "responsive": true,
-                "ordering": true
+                "ordering": true,
+                "order": [[1, 'asc']]
             });
         }
     });

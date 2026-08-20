@@ -398,7 +398,7 @@ $detailColumns = [
     'emergency_contact_number' => 'Emergency Contact',
     'emergency_address' => 'Emergency Address',
     'college' => 'College',
-    'course' => 'Program',
+    'course' => 'Course',
     'major' => 'Major',
     'year_section' => 'Year/Section',
     'component' => 'Component',
@@ -658,7 +658,7 @@ $detailColumns = [
                                     </button>
                                     <div>
                                         <button type="button" class="btn btn-xs btn-outline-primary" id="showAllColumns">Show All</button>
-                                        <button type="button" class="btn btn-xs btn-outline-secondary" id="hideOptionalColumns">Basic Only</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary" id="hideOptionalColumns">Name / Course / Yr Section</button>
                                     </div>
                                 </div>
                                 <div class="collapse mt-3" id="visibleDetailsPanel">
@@ -784,7 +784,7 @@ $detailColumns = [
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
 $(function() {
-    const basicColumns = new Set(['student_name', 'student_number', 'formal_picture', 'component', 'rotc_ms_level', 'course_section', 'generated_code']);
+    const basicColumns = new Set(['student_name', 'course', 'year_section']);
     const studentDetailTable = $('.student-detail-table').length
         ? $('.student-detail-table').DataTable({
             paging: true,
@@ -810,12 +810,19 @@ $(function() {
             }
         })
         : null;
+    const detailColumnIndexes = {};
+    $('.student-detail-table thead th[data-column]').each(function() {
+        detailColumnIndexes[$(this).data('column')] = $(this).index();
+    });
 
     function setColumnVisible(columnKey, visible) {
-        $('.detail-col-' + columnKey).toggle(visible);
-        if (studentDetailTable) {
-            studentDetailTable.columns.adjust();
+        if (studentDetailTable && Object.prototype.hasOwnProperty.call(detailColumnIndexes, columnKey)) {
+            studentDetailTable.column(detailColumnIndexes[columnKey]).visible(visible, false);
+            studentDetailTable.columns.adjust().draw(false);
+            return;
         }
+
+        $('.detail-col-' + columnKey).toggle(visible);
     }
 
     $('.detail-column-toggle').on('change', function() {
