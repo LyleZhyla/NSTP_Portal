@@ -12,6 +12,7 @@ use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 if (!isset($_SESSION['user_id'])) {
@@ -175,74 +176,118 @@ $studentStmt = $conn->prepare($studentSql);
 $studentStmt->execute($studentParams);
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$spreadsheet = new Spreadsheet();
-$sheet = $spreadsheet->getActiveSheet();
-$sheet->setTitle('Student Masterlist');
-$sheet->mergeCells('A1:G1');
-$sheet->setCellValue('A1', 'STUDENT MASTERLIST');
-$sheet->mergeCells('A2:G2');
-$scopeLabel = $selectedSection !== ''
+function masterlistSafeSheetTitle($title, array &$usedTitles) {
+    $title = trim(str_replace(['\\', '/', '?', '*', '[', ']', ':'], '-', (string) $title), " \t\n\r\0\x0B'");
+    $title = $title !== '' ? $title : 'Unassigned';
+    $baseTitle = substr($title, 0, 31);
+    $sheetTitle = $baseTitle;
+    $suffixNumber = 2;
+
+    while (isset($usedTitles[strtolower($sheetTitle)])) {
+        $suffix = ' (' . $suffixNumber . ')';
+        $sheetTitle = substr($baseTitle, 0, 31 - strlen($suffix)) . $suffix;
+        $suffixNumber++;
+    }
+
+    $usedTitles[strtolower($sheetTitle)] = true;
+    return $sheetTitle;
+}
+
+function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabel) {
+    $sheet->mergeCells('A1:G1');
+    $sheet->setCellValue('A1', 'STUDENT MASTERLIST');
+    $sheet->mergeCells('A2:G2');
+    $sheet->setCellValue('A2', $scopeLabel);
+    $sheet->mergeCells('A3:G3');
+    $sheet->setCellValue('A3', 'Generated: ' . date('F j, Y g:i A') . ' | Total Students: ' . count($sheetStudents));
+
+    $headers = ['No.', 'Student Number', 'Student Name', 'Original Section', 'Assigned Section', 'Assigned Facilitator', 'Component'];
+    foreach ($headers as $index => $header) {
+        $sheet->setCellValue([$index + 1, 5], $header);
+    }
+
+    $rowNumber = 6;
+    foreach ($sheetStudents as $index => $student) {
+        $sheet->setCellValue([1, $rowNumber], $index + 1);
+        $sheet->setCellValueExplicit([2, $rowNumber], (string) ($student['student_number'] ?? ''), DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit([3, $rowNumber], (string) ($student['student_name'] ?? ''), DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit([4, $rowNumber], (string) ($student['original_section'] ?? 'N/A'), DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit([5, $rowNumber], (string) ($student['course_section'] ?? 'Unassigned'), DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit([6, $rowNumber], (string) ($student['facilitator_name'] ?? 'Unassigned'), DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit([7, $rowNumber], (string) ($student['component'] ?? 'N/A'), DataType::TYPE_STRING);
+        $rowNumber++;
+    }
+
+    $lastDataRow = max(5, $rowNumber - 1);
+    $sheet->getStyle('A1:G1')->applyFromArray([
+        'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
+        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4E78']],
+        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+    ]);
+    $sheet->getStyle('A2:G3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+    $sheet->getStyle('A2:G2')->getFont()->setBold(true);
+    $sheet->getStyle('A5:G5')->applyFromArray([
+        'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
+        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+    ]);
+    $sheet->getStyle("A5:G{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B7B7B7');
+    if ($rowNumber > 6) {
+        $sheet->getStyle("A6:B{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("D6:G{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+    }
+    $sheet->getStyle("A5:G{$lastDataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+
+    $sheet->getColumnDimension('A')->setWidth(7);
+    $sheet->getColumnDimension('B')->setWidth(19);
+    $sheet->getColumnDimension('C')->setWidth(34);
+    $sheet->getColumnDimension('D')->setWidth(22);
+    $sheet->getColumnDimension('E')->setWidth(22);
+    $sheet->getColumnDimension('F')->setWidth(30);
+    $sheet->getColumnDimension('G')->setWidth(13);
+    $sheet->getRowDimension(1)->setRowHeight(25);
+    $sheet->freezePane('A6');
+    $sheet->setAutoFilter("A5:G{$lastDataRow}");
+    $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
+    $sheet->getPageSetup()->setFitToWidth(1)->setFitToHeight(0);
+    $sheet->getPageMargins()->setTop(0.4)->setRight(0.3)->setLeft(0.3)->setBottom(0.4);
+    $sheet->getHeaderFooter()->setOddFooter('&LGenerated by QR Attendance System&RPage &P of &N');
+    $sheet->getPageSetup()->setPrintArea("A1:G{$lastDataRow}");
+}
+
+$baseScopeLabel = $selectedSection !== ''
     ? 'Facilitator: ' . $selectedFacilitatorName . ' | Section: ' . $selectedSection
     : ($role === 'super_admin' ? 'All Students' : 'All Accessible Students');
 if ($selectedComponent) {
-    $scopeLabel .= ' | Component: ' . $selectedComponent;
-}
-$sheet->setCellValue('A2', $scopeLabel);
-$sheet->mergeCells('A3:G3');
-$sheet->setCellValue('A3', 'Generated: ' . date('F j, Y g:i A') . ' | Total Students: ' . count($students));
-
-$headers = ['No.', 'Student Number', 'Student Name', 'Original Section', 'Assigned Section', 'Assigned Facilitator', 'Component'];
-foreach ($headers as $index => $header) {
-    $sheet->setCellValue([$index + 1, 5], $header);
+    $baseScopeLabel .= ' | Component: ' . $selectedComponent;
 }
 
-$rowNumber = 6;
-foreach ($students as $index => $student) {
-    $sheet->setCellValue([1, $rowNumber], $index + 1);
-    $sheet->setCellValueExplicit([2, $rowNumber], (string) ($student['student_number'] ?? ''), DataType::TYPE_STRING);
-    $sheet->setCellValueExplicit([3, $rowNumber], (string) ($student['student_name'] ?? ''), DataType::TYPE_STRING);
-    $sheet->setCellValueExplicit([4, $rowNumber], (string) ($student['original_section'] ?? 'N/A'), DataType::TYPE_STRING);
-    $sheet->setCellValueExplicit([5, $rowNumber], (string) ($student['course_section'] ?? 'Unassigned'), DataType::TYPE_STRING);
-    $sheet->setCellValueExplicit([6, $rowNumber], (string) ($student['facilitator_name'] ?? 'Unassigned'), DataType::TYPE_STRING);
-    $sheet->setCellValueExplicit([7, $rowNumber], (string) ($student['component'] ?? 'N/A'), DataType::TYPE_STRING);
-    $rowNumber++;
+$separateBySection = in_array($selectedComponent, ['CWTS', 'LTS'], true);
+$studentSheetGroups = [];
+if ($separateBySection) {
+    foreach ($students as $student) {
+        $sectionName = trim((string) ($student['course_section'] ?? '')) ?: 'Unassigned';
+        $studentSheetGroups[$sectionName][] = $student;
+    }
+}
+if (!$studentSheetGroups) {
+    $studentSheetGroups['Student Masterlist'] = $students;
 }
 
-$lastDataRow = max(5, $rowNumber - 1);
-$sheet->getStyle('A1:G1')->applyFromArray([
-    'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
-    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4E78']],
-    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-]);
-$sheet->getStyle('A2:G3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-$sheet->getStyle('A2:G2')->getFont()->setBold(true);
-$sheet->getStyle('A5:G5')->applyFromArray([
-    'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
-    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
-]);
-$sheet->getStyle("A5:G{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B7B7B7');
-if ($rowNumber > 6) {
-    $sheet->getStyle("A6:B{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-    $sheet->getStyle("D6:G{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+$spreadsheet = new Spreadsheet();
+$usedSheetTitles = [];
+$sheetIndex = 0;
+foreach ($studentSheetGroups as $sectionName => $sheetStudents) {
+    $sheet = $sheetIndex === 0 ? $spreadsheet->getActiveSheet() : $spreadsheet->createSheet();
+    $sheet->setTitle(masterlistSafeSheetTitle($separateBySection ? $sectionName : 'Student Masterlist', $usedSheetTitles));
+    $sheetScopeLabel = $baseScopeLabel;
+    if ($separateBySection && $selectedSection === '') {
+        $sheetScopeLabel .= ' | Section: ' . $sectionName;
+    }
+    masterlistBuildSheet($sheet, $sheetStudents, $sheetScopeLabel);
+    $sheetIndex++;
 }
-$sheet->getStyle("A5:G{$lastDataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
-
-$sheet->getColumnDimension('A')->setWidth(7);
-$sheet->getColumnDimension('B')->setWidth(19);
-$sheet->getColumnDimension('C')->setWidth(34);
-$sheet->getColumnDimension('D')->setWidth(22);
-$sheet->getColumnDimension('E')->setWidth(22);
-$sheet->getColumnDimension('F')->setWidth(30);
-$sheet->getColumnDimension('G')->setWidth(13);
-$sheet->getRowDimension(1)->setRowHeight(25);
-$sheet->freezePane('A6');
-$sheet->setAutoFilter("A5:G{$lastDataRow}");
-$sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
-$sheet->getPageSetup()->setFitToWidth(1)->setFitToHeight(0);
-$sheet->getPageMargins()->setTop(0.4)->setRight(0.3)->setLeft(0.3)->setBottom(0.4);
-$sheet->getHeaderFooter()->setOddFooter('&LGenerated by QR Attendance System&RPage &P of &N');
-$sheet->getPageSetup()->setPrintArea("A1:G{$lastDataRow}");
+$spreadsheet->setActiveSheetIndex(0);
 
 $filenameParts = ['student-masterlist'];
 if ($selectedComponent) {

@@ -1195,7 +1195,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <p class="muted-note">Downloads an Excel masterlist with student names, student numbers, original and assigned sections, assigned facilitators, and NSTP components.</p>
+                                <p class="muted-note">Downloads an Excel masterlist with student names, sections, assigned facilitators, and components. CWTS and LTS exports place each assigned section in a separate sheet.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-file-excel mr-1"></i> Download Student Masterlist
                                 </button>
