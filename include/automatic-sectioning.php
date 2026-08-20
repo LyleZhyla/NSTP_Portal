@@ -496,6 +496,7 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
         $stmt = $conn->prepare("
             SELECT
                 s.tbl_student_id,
+                s.user_id,
                 s.student_number,
                 s.student_name,
                 s.original_section,
@@ -664,6 +665,9 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
             $folderFacilitators[(string) $assignment['course_section']] = (int) $assignment['user_id'];
         }
 
+        $accountProgramStmt = $conn->prepare("\n            UPDATE tbl_users\n            SET program = ?\n            WHERE user_id = ?\n              AND role = 'student'\n              AND COALESCE(program, '') <> ?\n        ");
+        $registrationComponentStmt = $conn->prepare("\n            UPDATE tbl_public_student_registrations\n            SET component = ?\n            WHERE registration_id = (\n                SELECT registration_id\n                FROM (\n                    SELECT registration_id\n                    FROM tbl_public_student_registrations\n                    WHERE registrant_role = 'student'\n                      AND student_number = ?\n                      AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')\n                    ORDER BY registration_id DESC\n                    LIMIT 1\n                ) latest_registration\n            )\n        ");
+
         foreach ($sectionBatches as $batchIndex => $sectionStudents) {
             $folderNumber = $sectionFolderNumbers[$batchIndex] ?? ($batchIndex + 1);
             $folder = autoSectionFolderName($currentComponent, $folderNumber);
@@ -687,6 +691,16 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
                     ");
                     $updateStmt->execute([$folder, $originalSection, $assignedFacilitatorId, $student['tbl_student_id']]);
                     $moved++;
+                }
+
+                // Keep the student-facing account and its latest active
+                // registration aligned even when the folder name did not change.
+                if (!empty($student['user_id'])) {
+                    $accountProgramStmt->execute([$currentComponent, (int) $student['user_id'], $currentComponent]);
+                }
+                $studentNumber = trim((string) ($student['student_number'] ?? ''));
+                if ($studentNumber !== '') {
+                    $registrationComponentStmt->execute([$currentComponent, $studentNumber]);
                 }
             }
         }
