@@ -125,10 +125,9 @@ $studentSql = "
         s.tbl_student_id,
         s.student_number,
         s.student_name,
-        COALESCE(NULLIF(s.original_section, ''), 'N/A') AS original_section,
         COALESCE(NULLIF(s.course_section, ''), 'Unassigned') AS course_section,
         {$facilitatorNameExpression} AS facilitator_name,
-        COALESCE({$componentExpression}, 'N/A') AS component
+        COALESCE({$componentExpression}, 'N/A') AS program
     FROM tbl_student s
     LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
 ";
@@ -206,16 +205,16 @@ function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabe
         ? implode(', ', array_values($facilitatorNames))
         : 'Unassigned';
 
-    $sheet->mergeCells('A1:F1');
+    $sheet->mergeCells('A1:E1');
     $sheet->setCellValue('A1', 'STUDENT MASTERLIST');
-    $sheet->mergeCells('A2:F2');
+    $sheet->mergeCells('A2:E2');
     $sheet->setCellValue('A2', $scopeLabel);
-    $sheet->mergeCells('A3:F3');
+    $sheet->mergeCells('A3:E3');
     $sheet->setCellValue('A3', 'Facilitator: ' . $facilitatorLabel);
-    $sheet->mergeCells('A4:F4');
+    $sheet->mergeCells('A4:E4');
     $sheet->setCellValue('A4', 'Generated: ' . date('F j, Y g:i A') . ' | Total Students: ' . count($sheetStudents));
 
-    $headers = ['No.', 'Student Number', 'Student Name', 'Original Section', 'Assigned Section', 'Component'];
+    $headers = ['No.', 'Student Number', 'Student Name', 'Program', 'Assigned Section'];
     foreach ($headers as $index => $header) {
         $sheet->setCellValue([$index + 1, 6], $header);
     }
@@ -225,21 +224,20 @@ function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabe
         $sheet->setCellValue([1, $rowNumber], $index + 1);
         $sheet->setCellValueExplicit([2, $rowNumber], (string) ($student['student_number'] ?? ''), DataType::TYPE_STRING);
         $sheet->setCellValueExplicit([3, $rowNumber], (string) ($student['student_name'] ?? ''), DataType::TYPE_STRING);
-        $sheet->setCellValueExplicit([4, $rowNumber], (string) ($student['original_section'] ?? 'N/A'), DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit([4, $rowNumber], (string) ($student['program'] ?? 'N/A'), DataType::TYPE_STRING);
         $sheet->setCellValueExplicit([5, $rowNumber], (string) ($student['course_section'] ?? 'Unassigned'), DataType::TYPE_STRING);
-        $sheet->setCellValueExplicit([6, $rowNumber], (string) ($student['component'] ?? 'N/A'), DataType::TYPE_STRING);
         $rowNumber++;
     }
 
     $lastDataRow = max(6, $rowNumber - 1);
-    $sheet->getStyle('A1:F1')->applyFromArray([
+    $sheet->getStyle('A1:E1')->applyFromArray([
         'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4E78']],
         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
     ]);
-    $sheet->getStyle('A2:F4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-    $sheet->getStyle('A2:F3')->getFont()->setBold(true);
-    $sheet->getStyle('A3:F3')->applyFromArray([
+    $sheet->getStyle('A2:E4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+    $sheet->getStyle('A2:E3')->getFont()->setBold(true);
+    $sheet->getStyle('A3:E3')->applyFromArray([
         'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => '7F6000']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF2CC']],
         'borders' => [
@@ -251,39 +249,38 @@ function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabe
         ],
     ]);
     $sheet->getRowDimension(3)->setRowHeight(22);
-    $sheet->getStyle('A6:F6')->applyFromArray([
+    $sheet->getStyle('A6:E6')->applyFromArray([
         'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
     ]);
-    $sheet->getStyle("A6:F{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B7B7B7');
+    $sheet->getStyle("A6:E{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B7B7B7');
     if ($rowNumber > 7) {
         $sheet->getStyle("A7:B{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("D7:F{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("D7:E{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     }
-    $sheet->getStyle("A6:F{$lastDataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+    $sheet->getStyle("A6:E{$lastDataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
 
     $sheet->getColumnDimension('A')->setWidth(7);
     $sheet->getColumnDimension('B')->setWidth(19);
     $sheet->getColumnDimension('C')->setWidth(34);
-    $sheet->getColumnDimension('D')->setWidth(22);
+    $sheet->getColumnDimension('D')->setWidth(13);
     $sheet->getColumnDimension('E')->setWidth(22);
-    $sheet->getColumnDimension('F')->setWidth(13);
     $sheet->getRowDimension(1)->setRowHeight(25);
     $sheet->freezePane('A7');
-    $sheet->setAutoFilter("A6:F{$lastDataRow}");
+    $sheet->setAutoFilter("A6:E{$lastDataRow}");
     $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
     $sheet->getPageSetup()->setFitToWidth(1)->setFitToHeight(0);
     $sheet->getPageMargins()->setTop(0.4)->setRight(0.3)->setLeft(0.3)->setBottom(0.4);
     $sheet->getHeaderFooter()->setOddFooter('&LGenerated by QR Attendance System&RPage &P of &N');
-    $sheet->getPageSetup()->setPrintArea("A1:F{$lastDataRow}");
+    $sheet->getPageSetup()->setPrintArea("A1:E{$lastDataRow}");
 }
 
 $baseScopeLabel = $selectedSection !== ''
     ? 'Section: ' . $selectedSection
     : ($role === 'super_admin' ? 'All Students' : 'All Accessible Students');
 if ($selectedComponent) {
-    $baseScopeLabel .= ' | Component: ' . $selectedComponent;
+    $baseScopeLabel .= ' | Program: ' . $selectedComponent;
 }
 
 $separateBySection = in_array($selectedComponent, ['CWTS', 'LTS'], true);
