@@ -128,9 +128,9 @@ if ($isSuperAdmin) {
 
                     <span class="sectioning-label">2. Set the section rules</span>
                     <div class="sectioning-controls">
-                        <div class="sectioning-field"><label for="groupingMode"><i class="fas fa-layer-group"></i> Group students by</label><select class="form-control" name="grouping_mode" id="groupingMode"><?php foreach(autoSectionGroupingOptions() as $value=>$label):?><option value="<?php echo $value;?>" <?php echo $sectionGrouping===$value?'selected':'';?>><?php echo htmlspecialchars($label);?></option><?php endforeach;?></select><small>Students are grouped using this category first.</small></div>
-                        <div class="sectioning-field"><label for="sectionMin"><i class="fas fa-user-check"></i> Minimum students per folder</label><select class="form-control" name="min_students" id="sectionMin"><?php foreach(autoSectionMinOptions() as $min):?><option value="<?php echo $min;?>" <?php echo $sectionMin===$min?'selected':'';?>><?php echo $min;?> students</option><?php endforeach;?></select><small>A completed folder should not fall below this number when enough students are available.</small></div>
-                        <div class="sectioning-field"><label for="sectionMax"><i class="fas fa-users"></i> Target students per folder</label><select class="form-control" name="max_students" id="sectionMax"><?php foreach(autoSectionMaxOptions() as $max):?><option value="<?php echo $max;?>" <?php echo $sectionMax===$max?'selected':'';?>><?php echo $max;?> students</option><?php endforeach;?></select><small>Folders fill toward this target; a small remainder is redistributed to satisfy the minimum.</small></div>
+                        <div class="sectioning-field"><label for="groupingMode"><i class="fas fa-layer-group"></i> ROTC grouping method</label><select class="form-control" name="grouping_mode" id="groupingMode"><?php foreach(autoSectionGroupingOptions() as $value=>$label):?><option value="<?php echo $value;?>" <?php echo $sectionGrouping===$value?'selected':'';?>><?php echo htmlspecialchars($label);?></option><?php endforeach;?></select><small>CWTS/LTS always follow Course then Year/Section order.</small></div>
+                        <div class="sectioning-field"><label for="sectionMin"><i class="fas fa-user-check"></i> ROTC minimum per folder</label><select class="form-control" name="min_students" id="sectionMin"><?php foreach(autoSectionMinOptions() as $min):?><option value="<?php echo $min;?>" <?php echo $sectionMin===$min?'selected':'';?>><?php echo $min;?> students</option><?php endforeach;?></select><small>For CWTS/LTS, only the final section may be below the target.</small></div>
+                        <div class="sectioning-field"><label for="sectionMax"><i class="fas fa-users"></i> Students per folder</label><select class="form-control" name="max_students" id="sectionMax"><?php foreach(autoSectionMaxOptions() as $max):?><option value="<?php echo $max;?>" <?php echo $sectionMax===$max?'selected':'';?>><?php echo $max;?> students</option><?php endforeach;?></select><small>CWTS/LTS fill each folder completely before opening the next.</small></div>
                     </div>
 
                     <div class="college-grouping-panel" id="collegeGroupingPanel">
@@ -147,8 +147,8 @@ if ($isSuperAdmin) {
 
                     <div class="sectioning-guide" aria-label="Sectioning process">
                         <div class="sectioning-step"><span>1</span>Separate by NSTP component</div>
-                        <div class="sectioning-step"><span>2</span>Apply college mixing rules</div>
-                        <div class="sectioning-step"><span>3</span>Fill each folder to the target</div>
+                        <div class="sectioning-step"><span>2</span>Sort CWTS/LTS by Course and Year/Section</div>
+                        <div class="sectioning-step"><span>3</span>Fill each folder before opening the next</div>
                     </div>
 
                     <div class="sectioning-actions"><button class="btn btn-outline-primary" type="button" id="rebuildSections"><i class="fas fa-sync-alt mr-1"></i>Rebuild Existing Sections</button><button class="btn btn-primary" id="saveSectioning"><i class="fas fa-save mr-1"></i>Save Settings</button></div>

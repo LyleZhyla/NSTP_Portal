@@ -24,6 +24,10 @@ function autoSectionComponentOptions() {
     return ['CWTS', 'LTS', 'ROTC'];
 }
 
+function autoSectionUsesSequentialCourseFill($component) {
+    return in_array(autoSectionComponent($component), ['CWTS', 'LTS'], true);
+}
+
 function autoSectionEnabledSettingKey($component) {
     $component = normalizeProgram($component);
     return $component ? 'auto_section_enabled_' . strtolower($component) : '';
@@ -358,10 +362,29 @@ function autoSectionFolderStats(PDO $conn, $component, $createdBy = null) {
 function autoSectionFindFolderForGroup(PDO $conn, $component, $college, $course, $createdBy = null) {
     $component = autoSectionComponent($component);
     $maxStudents = getAutoSectionMaxStudents($conn, $component);
+    $stats = autoSectionFolderStats($conn, $component, $createdBy);
+
+    // CWTS and LTS use one continuous queue. Fill the earliest section to
+    // capacity before opening the next so only the final section is partial.
+    if (autoSectionUsesSequentialCourseFill($component)) {
+        foreach ($stats as $info) {
+            if ($info['count'] >= $maxStudents) {
+                continue;
+            }
+
+            createSectionFolder($conn, $component, $info['folder']);
+            return $info['folder'];
+        }
+
+        $nextNumber = empty($stats) ? 1 : (max(array_keys($stats)) + 1);
+        $folderName = autoSectionFolderName($component, $nextNumber);
+        createSectionFolder($conn, $component, $folderName);
+        return $folderName;
+    }
+
     $groupingMode = getAutoSectionGroupingMode($conn, $component);
     $collegeGroups = getAutoSectionCollegeGroups($conn, $component);
     $targetGroupKey = autoSectionGroupKey($groupingMode, $college, $course, $collegeGroups);
-    $stats = autoSectionFolderStats($conn, $component, $createdBy);
 
     $createdClause = $createdBy === null ? 's.created_by IS NULL' : 's.created_by = ?';
     $params = $createdBy === null ? [] : [(int) $createdBy];
@@ -492,44 +515,75 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
 
             return $resolvedComponent === $currentComponent;
         }));
-        $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
         $maxStudents = getAutoSectionMaxStudents($conn, $currentComponent);
-        $minStudents = getAutoSectionMinStudents($conn, $currentComponent);
-        $collegeGroups = getAutoSectionCollegeGroups($conn, $currentComponent);
-        $groupedStudents = [];
-        foreach ($students as $student) {
-            $groupCourse = autoSectionCleanPart($student['reg_course'] ?? '') ?: autoSectionCleanPart($student['original_section'] ?? '');
-            $groupKey = autoSectionGroupKey($groupingMode, $student['reg_college'] ?? '', $groupCourse, $collegeGroups);
-            $groupedStudents[$groupKey][] = $student;
+        $sectionBatches = [];
+
+        if (autoSectionUsesSequentialCourseFill($currentComponent)) {
+            usort($students, static function ($left, $right) {
+                $leftCourse = autoSectionCleanPart($left['reg_course'] ?? '') ?: autoSectionCleanPart($left['original_section'] ?? '');
+                $rightCourse = autoSectionCleanPart($right['reg_course'] ?? '') ?: autoSectionCleanPart($right['original_section'] ?? '');
+                $courseComparison = strnatcasecmp($leftCourse, $rightCourse);
+                if ($courseComparison !== 0) {
+                    return $courseComparison;
+                }
+
+                $leftYearSection = autoSectionCleanPart($left['reg_year_section'] ?? '') ?: autoSectionCleanPart($left['original_section'] ?? '');
+                $rightYearSection = autoSectionCleanPart($right['reg_year_section'] ?? '') ?: autoSectionCleanPart($right['original_section'] ?? '');
+                $yearSectionComparison = strnatcasecmp($leftYearSection, $rightYearSection);
+                if ($yearSectionComparison !== 0) {
+                    return $yearSectionComparison;
+                }
+
+                $nameComparison = strnatcasecmp((string) ($left['student_name'] ?? ''), (string) ($right['student_name'] ?? ''));
+                if ($nameComparison !== 0) {
+                    return $nameComparison;
+                }
+
+                return ((int) ($left['tbl_student_id'] ?? 0)) <=> ((int) ($right['tbl_student_id'] ?? 0));
+            });
+            $sectionBatches = array_chunk($students, $maxStudents);
+        } else {
+            $groupingMode = getAutoSectionGroupingMode($conn, $currentComponent);
+            $minStudents = getAutoSectionMinStudents($conn, $currentComponent);
+            $collegeGroups = getAutoSectionCollegeGroups($conn, $currentComponent);
+            $groupedStudents = [];
+            foreach ($students as $student) {
+                $groupCourse = autoSectionCleanPart($student['reg_course'] ?? '') ?: autoSectionCleanPart($student['original_section'] ?? '');
+                $groupKey = autoSectionGroupKey($groupingMode, $student['reg_college'] ?? '', $groupCourse, $collegeGroups);
+                $groupedStudents[$groupKey][] = $student;
+            }
+            ksort($groupedStudents, SORT_NATURAL | SORT_FLAG_CASE);
+
+            foreach ($groupedStudents as $groupStudents) {
+                $balancedSizes = autoSectionBalancedSizes(count($groupStudents), $maxStudents, $minStudents);
+                $studentOffset = 0;
+                foreach ($balancedSizes as $balancedSize) {
+                    $sectionBatches[] = array_slice($groupStudents, $studentOffset, $balancedSize);
+                    $studentOffset += $balancedSize;
+                }
+            }
         }
-        ksort($groupedStudents, SORT_NATURAL | SORT_FLAG_CASE);
 
         $folderNumber = 1;
-        foreach ($groupedStudents as $groupStudents) {
-            $balancedSizes = autoSectionBalancedSizes(count($groupStudents), $maxStudents, $minStudents);
-            $studentOffset = 0;
-            foreach ($balancedSizes as $balancedSize) {
-                $folder = autoSectionFolderName($currentComponent, $folderNumber++);
-                createSectionFolder($conn, $currentComponent, $folder);
-                $sectionStudents = array_slice($groupStudents, $studentOffset, $balancedSize);
-                $studentOffset += $balancedSize;
+        foreach ($sectionBatches as $sectionStudents) {
+            $folder = autoSectionFolderName($currentComponent, $folderNumber++);
+            createSectionFolder($conn, $currentComponent, $folder);
 
-                foreach ($sectionStudents as $student) {
-                    $originalSection = autoSectionOriginalSection(
-                        $student['reg_course'] ?? '',
-                        $student['reg_year_section'] ?? '',
-                        $student['original_section'] ?? ''
-                    );
+            foreach ($sectionStudents as $student) {
+                $originalSection = autoSectionOriginalSection(
+                    $student['reg_course'] ?? '',
+                    $student['reg_year_section'] ?? '',
+                    $student['original_section'] ?? ''
+                );
 
-                    if ($student['course_section'] !== $folder || ($student['original_section'] ?? '') !== $originalSection) {
-                        $updateStmt = $conn->prepare("
-                            UPDATE tbl_student
-                            SET course_section = ?, original_section = ?
-                            WHERE tbl_student_id = ?
-                        ");
-                        $updateStmt->execute([$folder, $originalSection, $student['tbl_student_id']]);
-                        $moved++;
-                    }
+                if ($student['course_section'] !== $folder || ($student['original_section'] ?? '') !== $originalSection) {
+                    $updateStmt = $conn->prepare("
+                        UPDATE tbl_student
+                        SET course_section = ?, original_section = ?
+                        WHERE tbl_student_id = ?
+                    ");
+                    $updateStmt->execute([$folder, $originalSection, $student['tbl_student_id']]);
+                    $moved++;
                 }
             }
         }
