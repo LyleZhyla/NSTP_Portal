@@ -525,6 +525,21 @@ if ($user_role === 'super_admin') {
     $total_students = $total_stmt->fetchColumn();
     $my_students_count = $total_students;
 }
+
+$showRotcMsSummary = $user_role === 'super_admin'
+    || ($user_role === 'coordinator' && $coordinatorProgram === 'ROTC');
+$rotcMsCounts = ['MS-1' => 0, 'MS-31' => 0, 'MS-41' => 0];
+if ($showRotcMsSummary) {
+    $rotcCondition = rotcStudentSqlCondition('s');
+    $rotcMsExpression = rotcStudentMsLevelSqlExpression('s');
+    $rotcMsCountStmt = $conn->prepare("\n        SELECT classified.ms_level, COUNT(*) AS student_count\n        FROM (\n            SELECT DISTINCT s.tbl_student_id, {$rotcMsExpression} AS ms_level\n            FROM tbl_student s\n            WHERE {$rotcCondition}\n        ) classified\n        GROUP BY classified.ms_level\n    ");
+    $rotcMsCountStmt->execute();
+    foreach ($rotcMsCountStmt->fetchAll(PDO::FETCH_ASSOC) as $rotcMsRow) {
+        $msLevel = normalizeRotcMsLevel($rotcMsRow['ms_level'] ?? null) ?: 'MS-1';
+        $rotcMsCounts[$msLevel] = (int) $rotcMsRow['student_count'];
+    }
+}
+$rotcMsTotal = array_sum($rotcMsCounts);
 ?>
 
 <!DOCTYPE html>
@@ -1484,6 +1499,41 @@ if ($user_role === 'super_admin') {
                     </div>
                     <?php endif; ?>
                 </div>
+
+                <?php if ($showRotcMsSummary): ?>
+                <div class="card card-outline card-success mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title font-weight-bold">
+                            <i class="fas fa-shield-halved mr-2"></i>ROTC Students by MS Level
+                        </h3>
+                        <div class="card-tools">
+                            <span class="badge badge-success px-3 py-2">Total ROTC: <?php echo number_format($rotcMsTotal); ?></span>
+                        </div>
+                    </div>
+                    <div class="card-body pb-2">
+                        <div class="row">
+                            <?php
+                            $rotcMsCardStyles = [
+                                'MS-1' => ['class' => 'bg-primary', 'icon' => 'fa-user-shield'],
+                                'MS-31' => ['class' => 'bg-warning', 'icon' => 'fa-medal'],
+                                'MS-41' => ['class' => 'bg-danger', 'icon' => 'fa-ranking-star'],
+                            ];
+                            foreach ($rotcMsCardStyles as $msLevel => $cardStyle):
+                            ?>
+                            <div class="col-lg-4 col-md-4 col-12">
+                                <div class="small-box <?php echo $cardStyle['class']; ?>">
+                                    <div class="inner">
+                                        <h3><?php echo number_format($rotcMsCounts[$msLevel]); ?></h3>
+                                        <p>ROTC <?php echo htmlspecialchars($msLevel); ?> Students</p>
+                                    </div>
+                                    <div class="icon"><i class="fas <?php echo $cardStyle['icon']; ?>"></i></div>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <!-- Section Information for Regular Admins -->
                 <?php if ($user_role === 'facilitator' && $sections_count <= 1): ?>
