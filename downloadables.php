@@ -39,58 +39,132 @@ function downloadablesColumnExists(PDO $conn, $tableName, $columnName) {
     }
 }
 
-function downloadablesPublicScope(array $currentUser, $program) {
+function downloadablesStudentGraphFromSql() {
+    return "
+        FROM tbl_student s
+        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
+        LEFT JOIN tbl_users student_owner ON student_owner.user_id = s.user_id
+        LEFT JOIN (
+            SELECT student_number, MAX(registration_id) AS latest_registration_id
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+            GROUP BY student_number
+        ) latest_registration
+          ON latest_registration.student_number = s.student_number
+         AND NULLIF(TRIM(s.student_number), '') IS NOT NULL
+        LEFT JOIN tbl_public_student_registrations r
+          ON r.registration_id = latest_registration.latest_registration_id
+    ";
+}
+
+function downloadablesStudentComponentExpression() {
+    return "
+        CASE
+            WHEN creator.role = 'facilitator' AND creator.program IN ('CWTS', 'LTS', 'ROTC')
+                THEN creator.program
+            WHEN UPPER(COALESCE(s.course_section, '')) = 'CWTS'
+              OR UPPER(COALESCE(s.course_section, '')) LIKE 'CWTS %'
+                THEN 'CWTS'
+            WHEN UPPER(COALESCE(s.course_section, '')) = 'LTS'
+              OR UPPER(COALESCE(s.course_section, '')) LIKE 'LTS %'
+                THEN 'LTS'
+            WHEN UPPER(COALESCE(s.course_section, '')) LIKE '%ROTC%'
+              OR UPPER(COALESCE(s.course_section, '')) LIKE '%ALPHA%'
+              OR UPPER(COALESCE(s.course_section, '')) LIKE '%PLATOON%'
+              OR student_owner.program = 'ROTC'
+              OR r.component = 'ROTC'
+                THEN 'ROTC'
+            WHEN r.component IN ('CWTS', 'LTS', 'ROTC')
+                THEN r.component
+            ELSE 'N/A'
+        END
+    ";
+}
+
+function downloadablesStudentScope(PDO $conn, array $currentUser, $program) {
     $role = $currentUser['role'] ?? '';
-    $where = ["r.registrant_role = 'student'"];
+    $where = ['1 = 1'];
     $params = [];
 
     if ($role === 'coordinator') {
-        $where[] = 'r.component = ?';
-        $params[] = $program;
-    } elseif ($role === 'facilitator') {
         $where[] = "
-            EXISTS (
-                SELECT 1
-                FROM tbl_student s
-                LEFT JOIN tbl_admin_sections ads
-                    ON ads.course_section = s.course_section
-                   AND ads.user_id = ?
-                WHERE s.student_number = r.student_number
-                  AND (s.created_by = ? OR ads.admin_section_id IS NOT NULL)
+            (
+                (
+                    s.course_section = ?
+                    AND (
+                        s.created_by IS NULL
+                        OR creator.role <> 'facilitator'
+                        OR creator.program <> ?
+                    )
+                )
+                OR (
+                    creator.role = 'facilitator'
+                    AND creator.program = ?
+                    AND EXISTS (
+                        SELECT 1
+                        FROM tbl_admin_sections coordinator_assignment
+                        WHERE coordinator_assignment.user_id = s.created_by
+                          AND coordinator_assignment.course_section = s.course_section
+                    )
+                )
             )
         ";
-        $params[] = (int) $currentUser['user_id'];
-        $params[] = (int) $currentUser['user_id'];
+        $params[] = $program;
+        $params[] = $program;
+        $params[] = $program;
+    } elseif ($role === 'facilitator') {
+        $userId = (int) $currentUser['user_id'];
+        $assignedStmt = $conn->prepare('SELECT COUNT(*) FROM tbl_admin_sections WHERE user_id = ?');
+        $assignedStmt->execute([$userId]);
+        $hasAssignedSections = (int) $assignedStmt->fetchColumn() > 0;
+
+        if (!$hasAssignedSections && $program === 'ROTC') {
+            $where[] = rotcMs1StudentSqlCondition('s');
+        } elseif ($hasAssignedSections) {
+            $where[] = "
+                s.created_by = ?
+                AND EXISTS (
+                    SELECT 1
+                    FROM tbl_admin_sections facilitator_assignment
+                    WHERE facilitator_assignment.user_id = ?
+                      AND facilitator_assignment.course_section = s.course_section
+                )
+            ";
+            $params[] = $userId;
+            $params[] = $userId;
+        } else {
+            $where[] = '1 = 0';
+        }
     }
 
     return [$where, $params];
 }
 
-function downloadablesApplyPublicFilters(array $baseWhere, array $baseParams, array $filters, array $filterColumns) {
+function downloadablesApplyStudentFilters(array $baseWhere, array $baseParams, array $filters, array $filterExpressions, $componentExpression) {
     $where = $baseWhere;
     $params = $baseParams;
 
     if (!empty($filters['component'])) {
-        $where[] = 'r.component = ?';
+        $where[] = "($componentExpression) = ?";
         $params[] = $filters['component'];
     }
 
-    foreach ($filterColumns as $filterKey => $columnName) {
-        if (!$columnName || empty($filters[$filterKey])) {
+    foreach ($filterExpressions as $filterKey => $expression) {
+        if (!$expression || empty($filters[$filterKey])) {
             continue;
         }
 
-        $where[] = "r.$columnName = ?";
+        $where[] = "$expression = ?";
         $params[] = $filters[$filterKey];
     }
 
     return [$where, $params];
 }
 
-function downloadablesGroupedData(PDO $conn, $expression, array $where, array $params, $limit = 12) {
+function downloadablesGroupedData(PDO $conn, $fromSql, $expression, array $where, array $params, $limit = 12) {
     $stmt = $conn->prepare("
         SELECT COALESCE(NULLIF(TRIM($expression), ''), 'N/A') AS label, COUNT(*) AS total
-        FROM tbl_public_student_registrations r
+        $fromSql
         WHERE " . implode(' AND ', $where) . "
         GROUP BY label
         ORDER BY total DESC, label ASC
@@ -100,17 +174,17 @@ function downloadablesGroupedData(PDO $conn, $expression, array $where, array $p
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function downloadablesFilterOptions(PDO $conn, $columnName, array $where, array $params) {
-    if (!$columnName) {
+function downloadablesFilterOptions(PDO $conn, $fromSql, $expression, array $where, array $params) {
+    if (!$expression) {
         return [];
     }
 
     $stmt = $conn->prepare("
-        SELECT DISTINCT TRIM(r.$columnName) AS option_value
-        FROM tbl_public_student_registrations r
+        SELECT DISTINCT TRIM($expression) AS option_value
+        $fromSql
         WHERE " . implode(' AND ', $where) . "
-          AND r.$columnName IS NOT NULL
-          AND TRIM(r.$columnName) <> ''
+          AND $expression IS NOT NULL
+          AND TRIM($expression) <> ''
         ORDER BY option_value ASC
     ");
     $stmt->execute($params);
@@ -118,11 +192,11 @@ function downloadablesFilterOptions(PDO $conn, $columnName, array $where, array 
 }
 
 $hasGenderColumn = downloadablesColumnExists($conn, 'tbl_public_student_registrations', 'gender');
-$filterColumns = [
-    'gender' => $hasGenderColumn ? 'gender' : null,
-    'course' => 'course',
-    'college' => 'college',
-    'province' => 'province',
+$filterExpressions = [
+    'gender' => $hasGenderColumn ? 'r.gender' : null,
+    'course' => 'r.course',
+    'college' => 'r.college',
+    'province' => 'r.province',
 ];
 
 $selectedFilters = [
@@ -155,23 +229,25 @@ if ($role === 'facilitator' && $program && $selectedFilters['component'] && $sel
     $selectedFilters['component'] = null;
 }
 
-[$publicScopeWhere, $publicScopeParams] = downloadablesPublicScope($currentUser, $program);
-[$chartWhere, $chartParams] = downloadablesApplyPublicFilters($publicScopeWhere, $publicScopeParams, $selectedFilters, $filterColumns);
+$studentGraphFromSql = downloadablesStudentGraphFromSql();
+$studentComponentExpression = downloadablesStudentComponentExpression();
+[$studentScopeWhere, $studentScopeParams] = downloadablesStudentScope($conn, $currentUser, $program);
+[$chartWhere, $chartParams] = downloadablesApplyStudentFilters($studentScopeWhere, $studentScopeParams, $selectedFilters, $filterExpressions, $studentComponentExpression);
 
 $totalEnrollmentStmt = $conn->prepare("
     SELECT COUNT(*)
-    FROM tbl_public_student_registrations r
+    $studentGraphFromSql
     WHERE " . implode(' AND ', $chartWhere)
 );
 $totalEnrollmentStmt->execute($chartParams);
 $filteredEnrollmentTotal = (int) $totalEnrollmentStmt->fetchColumn();
 
 $chartData = [
-    'components' => downloadablesGroupedData($conn, 'r.component', $chartWhere, $chartParams),
-    'gender' => $hasGenderColumn ? downloadablesGroupedData($conn, 'r.gender', $chartWhere, $chartParams) : [],
-    'course' => downloadablesGroupedData($conn, 'r.course', $chartWhere, $chartParams),
-    'college' => downloadablesGroupedData($conn, 'r.college', $chartWhere, $chartParams),
-    'province' => downloadablesGroupedData($conn, 'r.province', $chartWhere, $chartParams),
+    'components' => downloadablesGroupedData($conn, $studentGraphFromSql, $studentComponentExpression, $chartWhere, $chartParams),
+    'gender' => $hasGenderColumn ? downloadablesGroupedData($conn, $studentGraphFromSql, 'r.gender', $chartWhere, $chartParams) : [],
+    'course' => downloadablesGroupedData($conn, $studentGraphFromSql, 'r.course', $chartWhere, $chartParams),
+    'college' => downloadablesGroupedData($conn, $studentGraphFromSql, 'r.college', $chartWhere, $chartParams),
+    'province' => downloadablesGroupedData($conn, $studentGraphFromSql, 'r.province', $chartWhere, $chartParams),
 ];
 $selectedChartDataKey = $selectedGraph === 'component' ? 'components' : $selectedGraph;
 $selectedChartRows = $chartData[$selectedChartDataKey] ?? [];
@@ -187,11 +263,11 @@ foreach (['gender' => 'Gender', 'college' => 'College', 'course' => 'Course', 'p
 }
 
 $filterOptions = [
-    'components' => downloadablesFilterOptions($conn, 'component', $publicScopeWhere, $publicScopeParams),
-    'gender' => downloadablesFilterOptions($conn, $filterColumns['gender'], $publicScopeWhere, $publicScopeParams),
-    'course' => downloadablesFilterOptions($conn, $filterColumns['course'], $publicScopeWhere, $publicScopeParams),
-    'college' => downloadablesFilterOptions($conn, $filterColumns['college'], $publicScopeWhere, $publicScopeParams),
-    'province' => downloadablesFilterOptions($conn, $filterColumns['province'], $publicScopeWhere, $publicScopeParams),
+    'components' => downloadablesFilterOptions($conn, $studentGraphFromSql, $studentComponentExpression, $studentScopeWhere, $studentScopeParams),
+    'gender' => downloadablesFilterOptions($conn, $studentGraphFromSql, $filterExpressions['gender'], $studentScopeWhere, $studentScopeParams),
+    'course' => downloadablesFilterOptions($conn, $studentGraphFromSql, $filterExpressions['course'], $studentScopeWhere, $studentScopeParams),
+    'college' => downloadablesFilterOptions($conn, $studentGraphFromSql, $filterExpressions['college'], $studentScopeWhere, $studentScopeParams),
+    'province' => downloadablesFilterOptions($conn, $studentGraphFromSql, $filterExpressions['province'], $studentScopeWhere, $studentScopeParams),
 ];
 
 $formsStmt = $conn->prepare("
@@ -913,14 +989,14 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                 <a href="graphs.php" class="btn btn-outline-secondary">
                                     <i class="fas fa-rotate-left mr-1"></i> Reset
                                 </a>
-                                <span class="muted-note ml-auto"><?php echo number_format($filteredEnrollmentTotal); ?> enrollment record(s) found</span>
+                                <span class="muted-note ml-auto"><?php echo number_format($filteredEnrollmentTotal); ?> student record(s) found</span>
                             </div>
                         </form>
 
                         <div class="graph-summary">
                             <div class="graph-summary-item">
                                 <span>Total in Current View</span>
-                                <strong><?php echo number_format($filteredEnrollmentTotal); ?> enrollees</strong>
+                                <strong><?php echo number_format($filteredEnrollmentTotal); ?> students</strong>
                             </div>
                             <div class="graph-summary-item">
                                 <span>Highest Group</span>
