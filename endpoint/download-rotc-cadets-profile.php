@@ -8,10 +8,11 @@ require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
+use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 
 if (!isset($_SESSION['user_id'])) {
     die('Unauthorized access');
@@ -56,36 +57,6 @@ function rotcCleanValue($value) {
     return strtoupper($value) === 'N/A' ? '' : $value;
 }
 
-function rotcFullName(array $row) {
-    $lastName = rotcCleanValue($row['last_name'] ?? '');
-    $firstName = rotcCleanValue($row['first_name'] ?? '');
-    $middleInitial = rotcMiddleInitial($row['middle_name'] ?? '');
-    $extensionName = rotcCleanValue($row['extension_name'] ?? '');
-
-    if ($lastName === '' && $firstName === '') {
-        return trim((string) ($row['student_name'] ?? ''));
-    }
-
-    $firstNameParts = array_values(array_filter([$firstName, $middleInitial, $extensionName], fn($part) => $part !== ''));
-    $name = $lastName !== ''
-        ? $lastName . ', ' . implode(' ', $firstNameParts)
-        : implode(' ', $firstNameParts);
-
-    return trim($name, ' ,') ?: trim((string) ($row['student_name'] ?? ''));
-}
-
-function rotcCompleteAddress(array $row) {
-    $parts = [
-        rotcCleanValue($row['house_no'] ?? ''),
-        rotcCleanValue($row['street'] ?? ''),
-        rotcCleanValue($row['barangay'] ?? ''),
-        rotcCleanValue($row['city_municipality'] ?? ''),
-        rotcCleanValue($row['province'] ?? ''),
-    ];
-    $parts = array_values(array_filter($parts, fn($part) => $part !== ''));
-    return implode(', ', $parts);
-}
-
 function rotcMunicipalityProvince(array $row) {
     $parts = [
         rotcCleanValue($row['city_municipality'] ?? ''),
@@ -100,65 +71,18 @@ function rotcMiddleInitial($middleName) {
     return $middleName !== '' ? strtoupper(substr($middleName, 0, 1)) . '.' : '';
 }
 
-function rotcAge($dateOfBirth) {
-    if (!$dateOfBirth || !strtotime($dateOfBirth) || $dateOfBirth === '1900-01-01') {
-        return '';
+function rotcTemplateGender($value) {
+    $gender = strtoupper(trim((string) $value));
+    if (in_array($gender, ['M', 'MALE'], true)) {
+        return 'MALE';
     }
-    $birthDate = new DateTime(date('Y-m-d', strtotime($dateOfBirth)));
-    return $birthDate->diff(new DateTime('today'))->y;
+    if (in_array($gender, ['F', 'FEMALE'], true)) {
+        return 'FEMALE';
+    }
+    return 'UNSPECIFIED';
 }
 
-$availableColumns = [
-    'number' => 'NR',
-    'student_number' => 'Student Number',
-    'full_name' => 'Full Name',
-    'last_name' => 'LAST NAME',
-    'first_name' => 'FIRST NAME',
-    'middle_initial' => 'M.I',
-    'middle_name' => 'Middle Name',
-    'extension_name' => 'Extension Name',
-    'gender' => 'GENDER',
-    'date_of_birth' => 'DOB',
-    'age' => 'Age',
-    'place_of_birth' => 'Place of Birth',
-    'blood_type' => 'BT',
-    'religion' => 'RELIGION',
-    'contact_number' => 'CP NR',
-    'email' => 'Email',
-    'complete_address' => 'Complete Address',
-    'address' => 'ADDRESS',
-    'province' => 'Province',
-    'city_municipality' => 'City/Municipality',
-    'barangay' => 'Barangay',
-    'street' => 'Street',
-    'house_no' => 'House No.',
-    'college' => 'College',
-    'course' => 'COURSE',
-    'major' => 'Major',
-    'year_section' => 'Year/Section',
-    'folder' => 'ROTC Folder',
-    'facilitator' => 'Facilitator',
-    'height' => 'HEIGHT',
-    'rotc_ms_level' => 'MS Level',
-    'rotc_completion_proof' => 'Completion Proof',
-    'beneficiary' => 'BENEFICIARY',
-    'emergency_name' => 'Emergency Contact Name',
-    'emergency_relationship' => 'Emergency Relationship',
-    'emergency_contact_number' => 'Emergency Contact Number',
-    'emergency_address' => 'Emergency Address',
-    'formal_picture' => 'Formal Picture Path',
-    'status' => 'Registration Status',
-    'created_at' => 'Registered At',
-];
-$defaultColumns = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'rotc_ms_level', 'contact_number', 'beneficiary'];
-$requestedColumns = $_GET['columns'] ?? $defaultColumns;
-if (!is_array($requestedColumns)) {
-    $requestedColumns = [$requestedColumns];
-}
-$selectedColumns = array_values(array_intersect($requestedColumns, array_keys($availableColumns)));
-if (empty($selectedColumns)) {
-    $selectedColumns = $defaultColumns;
-}
+$templateHeaders = ['NR', 'LAST NAME', 'FIRST NAME', 'M.I', 'GENDER', 'DOB', 'COURSE', 'ADDRESS', 'RELIGION', 'BT', 'HEIGHT', 'CP NR', 'BENEFICIARY'];
 
 $registrationFields = [
     'registration_id', 'student_number', 'last_name', 'extension_name', 'first_name', 'middle_name',
@@ -188,7 +112,7 @@ if ($folderFilter !== '') {
     }
 }
 
-$where = ["r.registrant_role = 'student'", "r.component = 'ROTC'"];
+$where = ["r.registrant_role = 'student'", "r.component = 'ROTC'", "COALESCE(r.status, 'submitted') <> 'account_deleted'"];
 $params = [];
 
 if ($folderFacilitatorId && $folderName !== '') {
@@ -228,113 +152,188 @@ $stmt = $conn->prepare($query);
 $stmt->execute($params);
 $cadets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$profileGroups = [];
+foreach (['MS-41', 'MS-31', 'MS-1'] as $msLevel) {
+    foreach (['MALE', 'FEMALE'] as $gender) {
+        $profileGroups[$msLevel . ' ' . $gender] = [];
+    }
+}
+
+foreach ($cadets as $cadet) {
+    $msLevel = normalizeRotcMsLevel($cadet['rotc_ms_level'] ?? null)
+        ?: normalizeRotcMsLevel($cadet['folder'] ?? null)
+        ?: 'MS-1';
+    $gender = rotcTemplateGender($cadet['gender'] ?? '');
+    $groupLabel = $msLevel . ' ' . $gender;
+    if (!isset($profileGroups[$groupLabel])) {
+        $profileGroups[$groupLabel] = [];
+    }
+    $profileGroups[$groupLabel][] = $cadet;
+}
+
+foreach ($profileGroups as &$groupCadets) {
+    usort($groupCadets, static function ($left, $right) {
+        $lastNameComparison = strnatcasecmp((string) ($left['last_name'] ?? ''), (string) ($right['last_name'] ?? ''));
+        if ($lastNameComparison !== 0) {
+            return $lastNameComparison;
+        }
+        $firstNameComparison = strnatcasecmp((string) ($left['first_name'] ?? ''), (string) ($right['first_name'] ?? ''));
+        if ($firstNameComparison !== 0) {
+            return $firstNameComparison;
+        }
+        return strnatcasecmp((string) ($left['student_number'] ?? ''), (string) ($right['student_number'] ?? ''));
+    });
+}
+unset($groupCadets);
+
 $spreadsheet = new Spreadsheet();
 $sheet = $spreadsheet->getActiveSheet();
-$sheet->setTitle('ROTC Cadets Profile');
+$sheet->setTitle('Cadets Profile');
+$sheet->setShowGridlines(false);
+$sheet->getDefaultStyle()->getFont()->setName('Arial Narrow')->setSize(8);
 
-$columnCount = count($selectedColumns);
-$lastColumn = Coordinate::stringFromColumnIndex($columnCount);
-$rowNumber = 1;
+$sheet->mergeCells('C1:K1');
+$sheet->setCellValue('C1', "H E A D Q U A R T E R S\nTARLAC AGRICULTURAL UNIVERSITY ROTC UNIT\n302nd (TLC) Community Defense Center, 3RCDG, RESCOM, PA\nBrgy Malacampa, Camiling, Tarlac");
+$sheet->getStyle('C1:K1')->getAlignment()
+    ->setHorizontal(Alignment::HORIZONTAL_CENTER)
+    ->setVertical(Alignment::VERTICAL_CENTER)
+    ->setWrapText(true);
+$sheet->getStyle('C1:K1')->getFont()->setName('Arial Narrow')->setSize(9);
+$sheet->getRowDimension(1)->setRowHeight(58);
 
-$sheet->mergeCells("A{$rowNumber}:{$lastColumn}{$rowNumber}");
-$sheet->setCellValue("A{$rowNumber}", "ROTC CADETS' PROFILE");
-$sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
-    'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
-    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '198754']],
-]);
-$rowNumber++;
-
-$sheet->mergeCells("A{$rowNumber}:{$lastColumn}{$rowNumber}");
-$folderLabel = $folderName !== '' ? $folderName : 'All Accessible ROTC Folders';
-$statusLabel = $statusFilter !== '' ? $statusFilter : 'all statuses';
-$sheet->setCellValue("A{$rowNumber}", 'Folder: ' . $folderLabel . ' | Status: ' . strtoupper($statusLabel));
-$sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
-    'font' => ['bold' => true],
-    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E3F2FD']],
-]);
-$rowNumber += 2;
-
-foreach ($selectedColumns as $index => $columnKey) {
-    $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . $rowNumber, $availableColumns[$columnKey]);
+$leftLogoPath = dirname(__DIR__) . '/include/logos/nstp.png';
+if (is_file($leftLogoPath)) {
+    $leftLogo = new Drawing();
+    $leftLogo->setName('TAU NSTP Logo');
+    $leftLogo->setPath($leftLogoPath);
+    $leftLogo->setHeight(55);
+    $leftLogo->setCoordinates('A1');
+    $leftLogo->setOffsetX(8);
+    $leftLogo->setOffsetY(2);
+    $leftLogo->setWorksheet($sheet);
 }
-$sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->applyFromArray([
-    'font' => ['bold' => true],
-    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F2F2F2']],
-    'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
-]);
-$rowNumber++;
+$rightLogoPath = dirname(__DIR__) . '/include/logos/rotc.png';
+if (is_file($rightLogoPath)) {
+    $rightLogo = new Drawing();
+    $rightLogo->setName('TAU ROTC Logo');
+    $rightLogo->setPath($rightLogoPath);
+    $rightLogo->setHeight(55);
+    $rightLogo->setCoordinates('L1');
+    $rightLogo->setOffsetX(8);
+    $rightLogo->setOffsetY(2);
+    $rightLogo->setWorksheet($sheet);
+}
 
-foreach ($cadets as $index => $cadet) {
-    $dateOfBirth = '';
-    if (!empty($cadet['date_of_birth']) && strtotime($cadet['date_of_birth']) && $cadet['date_of_birth'] !== '1900-01-01') {
-        $dateOfBirth = date('m/d/Y', strtotime($cadet['date_of_birth']));
+$sheet->mergeCells('A2:M2');
+$sheet->setCellValue('A2', 'CADETS PROFILE');
+$sheet->getStyle('A2:M2')->getFont()->setName('Arial Narrow')->setBold(true)->setSize(10);
+$sheet->getStyle('A2:M2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+$sheet->getRowDimension(2)->setRowHeight(18);
+
+$rowNumber = 4;
+foreach ($profileGroups as $groupLabel => $groupCadets) {
+    $sheet->mergeCells("A{$rowNumber}:M" . ($rowNumber + 1));
+    $sheet->setCellValue("A{$rowNumber}", $groupLabel);
+    $sheet->getStyle("A{$rowNumber}:M" . ($rowNumber + 1))->applyFromArray([
+        'font' => ['name' => 'Arial Narrow', 'bold' => true, 'size' => 9],
+        'alignment' => [
+            'horizontal' => Alignment::HORIZONTAL_CENTER,
+            'vertical' => Alignment::VERTICAL_CENTER,
+        ],
+        'borders' => ['outline' => ['borderStyle' => Border::BORDER_THIN]],
+    ]);
+    $sheet->getRowDimension($rowNumber)->setRowHeight(9);
+    $sheet->getRowDimension($rowNumber + 1)->setRowHeight(9);
+    $rowNumber += 2;
+
+    foreach ($templateHeaders as $columnIndex => $header) {
+        $sheet->setCellValue([$columnIndex + 1, $rowNumber], $header);
     }
-
-    $createdAt = '';
-    if (!empty($cadet['created_at']) && strtotime($cadet['created_at'])) {
-        $createdAt = date('m/d/Y h:i A', strtotime($cadet['created_at']));
-    }
-
-    $values = [
-        'number' => $index + 1,
-        'student_number' => $cadet['student_number'] ?? '',
-        'full_name' => rotcFullName($cadet),
-        'last_name' => rotcCleanValue($cadet['last_name'] ?? ''),
-        'first_name' => rotcCleanValue($cadet['first_name'] ?? ''),
-        'middle_initial' => rotcMiddleInitial($cadet['middle_name'] ?? ''),
-        'middle_name' => rotcCleanValue($cadet['middle_name'] ?? ''),
-        'extension_name' => rotcCleanValue($cadet['extension_name'] ?? ''),
-        'gender' => rotcCleanValue($cadet['gender'] ?? ''),
-        'date_of_birth' => $dateOfBirth,
-        'age' => rotcAge($cadet['date_of_birth'] ?? ''),
-        'place_of_birth' => rotcCleanValue($cadet['place_of_birth'] ?? ''),
-        'blood_type' => rotcCleanValue($cadet['blood_type'] ?? ''),
-        'religion' => rotcCleanValue($cadet['religion'] ?? ''),
-        'contact_number' => rotcCleanValue($cadet['contact_number'] ?? ''),
-        'email' => rotcCleanValue($cadet['email'] ?? ''),
-        'complete_address' => rotcCompleteAddress($cadet),
-        'address' => rotcMunicipalityProvince($cadet),
-        'province' => rotcCleanValue($cadet['province'] ?? ''),
-        'city_municipality' => rotcCleanValue($cadet['city_municipality'] ?? ''),
-        'barangay' => rotcCleanValue($cadet['barangay'] ?? ''),
-        'street' => rotcCleanValue($cadet['street'] ?? ''),
-        'house_no' => rotcCleanValue($cadet['house_no'] ?? ''),
-        'college' => rotcCleanValue($cadet['college'] ?? ''),
-        'course' => rotcCleanValue($cadet['course'] ?? ''),
-        'major' => rotcCleanValue($cadet['major'] ?? ''),
-        'year_section' => rotcCleanValue($cadet['year_section'] ?? ''),
-        'folder' => rotcCleanValue($cadet['folder'] ?? ''),
-        'facilitator' => rotcCleanValue($cadet['facilitator'] ?? ''),
-        'height' => rotcCleanValue($cadet['height'] ?? ''),
-        'rotc_ms_level' => rotcCleanValue($cadet['rotc_ms_level'] ?? ''),
-        'rotc_completion_proof' => rotcCleanValue($cadet['rotc_completion_proof'] ?? ''),
-        'beneficiary' => rotcCleanValue($cadet['emergency_name'] ?? ''),
-        'emergency_name' => rotcCleanValue($cadet['emergency_name'] ?? ''),
-        'emergency_relationship' => rotcCleanValue($cadet['emergency_relationship'] ?? ''),
-        'emergency_contact_number' => rotcCleanValue($cadet['emergency_contact_number'] ?? ''),
-        'emergency_address' => rotcCleanValue($cadet['emergency_address'] ?? ''),
-        'formal_picture' => rotcCleanValue($cadet['formal_picture'] ?? ''),
-        'status' => rotcCleanValue($cadet['status'] ?? ''),
-        'created_at' => $createdAt,
-    ];
-
-    foreach ($selectedColumns as $columnIndex => $columnKey) {
-        $sheet->setCellValue(Coordinate::stringFromColumnIndex($columnIndex + 1) . $rowNumber, $values[$columnKey]);
-    }
+    $sheet->getStyle("A{$rowNumber}:M{$rowNumber}")->applyFromArray([
+        'font' => ['name' => 'Arial Narrow', 'bold' => true, 'size' => 8],
+        'alignment' => [
+            'horizontal' => Alignment::HORIZONTAL_CENTER,
+            'vertical' => Alignment::VERTICAL_CENTER,
+        ],
+        'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+    ]);
+    $sheet->getRowDimension($rowNumber)->setRowHeight(16);
     $rowNumber++;
+
+    $rowsToWrite = $groupCadets ?: [null];
+    foreach ($rowsToWrite as $cadetIndex => $cadet) {
+        $values = array_fill(0, 13, '');
+        if ($cadet !== null) {
+            $dateOfBirth = '';
+            if (!empty($cadet['date_of_birth']) && strtotime($cadet['date_of_birth']) && $cadet['date_of_birth'] !== '1900-01-01') {
+                $dateOfBirth = \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel(new DateTime($cadet['date_of_birth']));
+            }
+            $values = [
+                $cadetIndex + 1,
+                rotcCleanValue($cadet['last_name'] ?? ''),
+                rotcCleanValue($cadet['first_name'] ?? ''),
+                rotcMiddleInitial($cadet['middle_name'] ?? ''),
+                rotcTemplateGender($cadet['gender'] ?? ''),
+                $dateOfBirth,
+                rotcCleanValue($cadet['course'] ?? ''),
+                rotcMunicipalityProvince($cadet),
+                rotcCleanValue($cadet['religion'] ?? ''),
+                rotcCleanValue($cadet['blood_type'] ?? ''),
+                rotcCleanValue($cadet['height'] ?? ''),
+                rotcCleanValue($cadet['contact_number'] ?? ''),
+                rotcCleanValue($cadet['emergency_name'] ?? ''),
+            ];
+        }
+
+        foreach ($values as $columnIndex => $value) {
+            if (in_array($columnIndex, [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12], true)) {
+                $sheet->setCellValueExplicit([$columnIndex + 1, $rowNumber], (string) $value, DataType::TYPE_STRING);
+            } else {
+                $sheet->setCellValue([$columnIndex + 1, $rowNumber], $value);
+            }
+        }
+        if ($cadet !== null && $values[5] !== '') {
+            $sheet->getStyle("F{$rowNumber}")->getNumberFormat()->setFormatCode('dd-mmm-yy');
+        }
+        $sheet->getStyle("A{$rowNumber}:M{$rowNumber}")->applyFromArray([
+            'font' => ['name' => 'Arial Narrow', 'size' => 8],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+        ]);
+        $sheet->getRowDimension($rowNumber)->setRowHeight(16);
+        $rowNumber++;
+    }
 }
 
-if (empty($cadets)) {
-    $sheet->mergeCells("A{$rowNumber}:{$lastColumn}{$rowNumber}");
-    $sheet->setCellValue("A{$rowNumber}", 'No ROTC cadet profiles found for the selected filters.');
-}
+$signatureStartRow = $rowNumber + 2;
+$sheet->setCellValue("B{$signatureStartRow}", 'Prepared By:');
+$sheet->setCellValue("J{$signatureStartRow}", 'CERTIFIED CORRECT BY:');
+$sheet->setCellValue('C' . ($signatureStartRow + 2), 'Ron Ryner B Nesperos');
+$sheet->setCellValue('C' . ($signatureStartRow + 3), 'Sgt                    (Inf) PA');
+$sheet->setCellValue('C' . ($signatureStartRow + 4), 'Admin NCO');
+$sheet->setCellValue('J' . ($signatureStartRow + 2), 'WILLY   P   JAZMIN');
+$sheet->setCellValue('J' . ($signatureStartRow + 3), 'LTC GSC PA (RES)');
+$sheet->setCellValue('J' . ($signatureStartRow + 4), 'Commandant');
+$sheet->getStyle("A{$signatureStartRow}:M" . ($signatureStartRow + 4))->getFont()->setName('Arial Narrow')->setSize(8);
+$sheet->getStyle('C' . ($signatureStartRow + 2) . ':C' . ($signatureStartRow + 4))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+$sheet->getStyle('J' . ($signatureStartRow + 2) . ':J' . ($signatureStartRow + 4))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+$sheet->getStyle('J' . ($signatureStartRow + 2))->getFont()->setBold(true);
 
-$sheet->getStyle("A4:{$lastColumn}" . max($rowNumber, 4))->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
-foreach (range(1, $columnCount) as $columnIndex) {
-    $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
+$columnWidths = ['A' => 5, 'B' => 15, 'C' => 15, 'D' => 6, 'E' => 9, 'F' => 11, 'G' => 18, 'H' => 25, 'I' => 13, 'J' => 6, 'K' => 9, 'L' => 14, 'M' => 22];
+foreach ($columnWidths as $column => $width) {
+    $sheet->getColumnDimension($column)->setWidth($width);
 }
+$sheet->freezePane('A4');
+$sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
+$sheet->getPageSetup()->setPaperSize(PageSetup::PAPERSIZE_A4);
+$sheet->getPageSetup()->setFitToWidth(1)->setFitToHeight(0);
+$sheet->getPageMargins()->setTop(0.3)->setRight(0.25)->setLeft(0.25)->setBottom(0.3);
+$sheet->getPageSetup()->setPrintArea("A1:M" . ($signatureStartRow + 4));
+$sheet->getHeaderFooter()->setOddFooter('&RPage &P of &N');
 
 $filename = 'rotc_cadets_profile_' . date('Y-m-d_H-i-s') . '.xlsx';
 header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -1380,60 +1380,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <option value="attendance_only">Attendance Only</option>
                                     </select>
                                 </div>
-                                <div class="form-group">
-                                    <label>Data to Include</label>
-                                    <div class="row">
-                                        <?php
-                                        $rotcProfileColumns = [
-                                            'number' => 'NR',
-                                            'student_number' => 'Student No.',
-                                            'full_name' => 'Full Name',
-                                            'last_name' => 'LAST NAME',
-                                            'first_name' => 'FIRST NAME',
-                                            'middle_initial' => 'M.I',
-                                            'middle_name' => 'Middle Name',
-                                            'extension_name' => 'Extension',
-                                            'gender' => 'GENDER',
-                                            'date_of_birth' => 'DOB',
-                                            'age' => 'Age',
-                                            'place_of_birth' => 'Birth Place',
-                                            'blood_type' => 'BT',
-                                            'religion' => 'RELIGION',
-                                            'contact_number' => 'CP NR',
-                                            'email' => 'Email',
-                                            'complete_address' => 'Complete Address',
-                                            'address' => 'ADDRESS',
-                                            'college' => 'College',
-                                            'course' => 'COURSE',
-                                            'major' => 'Major',
-                                            'year_section' => 'Year/Section',
-                                            'folder' => 'ROTC Folder',
-                                            'facilitator' => 'Facilitator',
-                                            'height' => 'HEIGHT',
-                                            'rotc_ms_level' => 'MS Level',
-                                            'rotc_completion_proof' => 'Completion Proof',
-                                            'beneficiary' => 'BENEFICIARY',
-                                            'emergency_name' => 'Emergency Name',
-                                            'emergency_relationship' => 'Emergency Relation',
-                                            'emergency_contact_number' => 'Emergency Contact',
-                                            'emergency_address' => 'Emergency Address',
-                                            'formal_picture' => 'Picture Path',
-                                            'status' => 'Status',
-                                            'created_at' => 'Registered At',
-                                        ];
-                                        $rotcProfileDefaults = ['number', 'last_name', 'first_name', 'middle_initial', 'gender', 'date_of_birth', 'course', 'address', 'religion', 'blood_type', 'height', 'rotc_ms_level', 'contact_number', 'beneficiary'];
-                                        foreach ($rotcProfileColumns as $columnKey => $columnLabel):
-                                        ?>
-                                        <div class="col-6">
-                                            <div class="custom-control custom-checkbox">
-                                                <input type="checkbox" class="custom-control-input" id="rotcProfileColumn_<?php echo htmlspecialchars($columnKey); ?>" name="columns[]" value="<?php echo htmlspecialchars($columnKey); ?>" <?php echo in_array($columnKey, $rotcProfileDefaults, true) ? 'checked' : ''; ?>>
-                                                <label class="custom-control-label" for="rotcProfileColumn_<?php echo htmlspecialchars($columnKey); ?>"><?php echo htmlspecialchars($columnLabel); ?></label>
-                                            </div>
-                                        </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                                <p class="muted-note">Downloads selected ROTC cadet profile fields as an Excel .xlsx file.</p>
+                                <p class="muted-note">Uses the official cadets profile layout with headquarters header, logos, signature blocks, and separate MS-41, MS-31, and MS-1 Male/Female sections.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download Cadets' Profile
                                 </button>
