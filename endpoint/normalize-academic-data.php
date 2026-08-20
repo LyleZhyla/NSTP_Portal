@@ -57,14 +57,51 @@ try {
             $registration['major'] ?? 'N/A',
             $registration['year_section'] ?? ''
         );
-        if (!$canonical['resolved']) {
+
+        $normalizedValues = [
+            'college' => trim((string) ($registration['college'] ?? '')),
+            'course' => trim((string) ($registration['course'] ?? '')),
+            'major' => trim((string) ($registration['major'] ?? '')),
+            'year_section' => trim((string) ($registration['year_section'] ?? '')),
+        ];
+        if ($canonical['resolved']) {
+            foreach (['college', 'course', 'major', 'year_section'] as $field) {
+                $normalizedValues[$field] = $canonical[$field];
+            }
+        } else {
+            // Correct every field that can be resolved safely even when a
+            // different field in the same record still needs manual review.
+            $courseMatch = canonicalAcademicCourse($registration['course'] ?? '');
+            $collegeMatch = $courseMatch['college'] ?? canonicalAcademicCollege($registration['college'] ?? '');
+            if ($collegeMatch) {
+                $normalizedValues['college'] = $collegeMatch;
+            }
+            if ($courseMatch) {
+                $normalizedValues['course'] = $courseMatch['course'];
+                $courseItem = findCollegeCourse($courseMatch['college'], $courseMatch['course']);
+                if ($courseItem && empty($courseItem['majors'])) {
+                    $normalizedValues['major'] = 'N/A';
+                } elseif ($courseItem) {
+                    $majorMatch = academicBestCanonicalMatch(
+                        $registration['major'] ?? '',
+                        array_merge($courseItem['majors'], ['N/A']),
+                        academicMajorAliases()
+                    );
+                    if ($majorMatch) {
+                        $normalizedValues['major'] = $majorMatch;
+                    }
+                }
+            }
+            $yearSectionMatch = normalizeAcademicYearSection($registration['year_section'] ?? '');
+            if ($yearSectionMatch) {
+                $normalizedValues['year_section'] = $yearSectionMatch;
+            }
             $unresolved++;
-            continue;
         }
 
         $hasChanges = false;
         foreach (['college', 'course', 'major', 'year_section'] as $field) {
-            if (trim((string) ($registration[$field] ?? '')) !== (string) $canonical[$field]) {
+            if (trim((string) ($registration[$field] ?? '')) !== (string) $normalizedValues[$field]) {
                 $hasChanges = true;
                 break;
             }
@@ -72,10 +109,10 @@ try {
 
         if ($hasChanges) {
             $updateRegistrationStmt->execute([
-                $canonical['college'],
-                $canonical['course'],
-                $canonical['major'],
-                $canonical['year_section'],
+                $normalizedValues['college'],
+                $normalizedValues['course'],
+                $normalizedValues['major'],
+                $normalizedValues['year_section'],
                 (int) $registration['registration_id'],
             ]);
             $corrected++;
@@ -83,7 +120,12 @@ try {
             $unchanged++;
         }
 
-        $originalSection = trim($canonical['course'] . ' ' . $canonical['year_section']);
+        $canonicalYearSection = normalizeAcademicYearSection($normalizedValues['year_section']);
+        $canonicalCourseMatch = canonicalAcademicCourse($normalizedValues['course']);
+        if (!$canonicalYearSection || !$canonicalCourseMatch) {
+            continue;
+        }
+        $originalSection = trim($canonicalCourseMatch['course'] . ' ' . $canonicalYearSection);
         $studentNumber = trim((string) ($registration['student_number'] ?? ''));
         $registrationUserId = (int) ($registration['user_id'] ?? 0);
         if ($studentNumber !== '') {

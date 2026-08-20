@@ -240,12 +240,18 @@ function normalizeAcademicYearSection($value) {
     return null;
 }
 
-function canonicalizeAcademicData($college, $course, $major = 'N/A', $yearSection = '') {
-    $collegeData = getCollegeCourseData();
-    $collegeNames = array_column($collegeData, 'college');
+function canonicalAcademicCollege($college) {
+    return academicBestCanonicalMatch(
+        $college,
+        array_column(getCollegeCourseData(), 'college'),
+        academicCollegeAliases()
+    );
+}
+
+function canonicalAcademicCourse($course) {
     $courseNames = [];
     $courseCollege = [];
-    foreach ($collegeData as $collegeItem) {
+    foreach (getCollegeCourseData() as $collegeItem) {
         foreach ($collegeItem['courses'] as $courseItem) {
             $courseNames[] = $courseItem['name'];
             $courseCollege[$courseItem['name']] = $collegeItem['college'];
@@ -253,9 +259,16 @@ function canonicalizeAcademicData($college, $course, $major = 'N/A', $yearSectio
     }
 
     $canonicalCourse = academicBestCanonicalMatch($course, $courseNames, academicCourseAliases());
-    $canonicalCollege = $canonicalCourse
-        ? ($courseCollege[$canonicalCourse] ?? null)
-        : academicBestCanonicalMatch($college, $collegeNames, academicCollegeAliases());
+    return $canonicalCourse ? [
+        'course' => $canonicalCourse,
+        'college' => $courseCollege[$canonicalCourse] ?? null,
+    ] : null;
+}
+
+function canonicalizeAcademicData($college, $course, $major = 'N/A', $yearSection = '') {
+    $courseMatch = canonicalAcademicCourse($course);
+    $canonicalCourse = $courseMatch['course'] ?? null;
+    $canonicalCollege = $courseMatch['college'] ?? canonicalAcademicCollege($college);
     if (!$canonicalCourse || !$canonicalCollege) {
         return ['resolved' => false, 'college' => null, 'course' => null, 'major' => null, 'year_section' => null];
     }
