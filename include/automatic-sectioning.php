@@ -252,6 +252,28 @@ function autoSectionBalancedSizes($studentCount, $maxStudents, $minStudents = 1)
     return $sizes;
 }
 
+function autoSectionSequentialSizes($studentCount, $maxStudents) {
+    $studentCount = max(0, (int) $studentCount);
+    $maxStudents = max(1, (int) $maxStudents);
+    if ($studentCount === 0) {
+        return [];
+    }
+    if ($studentCount <= $maxStudents) {
+        return [$studentCount];
+    }
+
+    $folderCount = (int) ceil($studentCount / $maxStudents);
+    $fullFolderCount = max(0, $folderCount - 2);
+    $sizes = array_fill(0, $fullFolderCount, $maxStudents);
+    $remaining = $studentCount - ($fullFolderCount * $maxStudents);
+
+    // Keep the earlier folders full, then split the remaining students as
+    // evenly as possible between the final two folders.
+    $sizes[] = (int) ceil($remaining / 2);
+    $sizes[] = (int) floor($remaining / 2);
+    return $sizes;
+}
+
 function autoSectionOriginalSection($course, $yearSection, $fallback = '') {
     $course = autoSectionCleanPart($course);
     $yearSection = autoSectionCleanPart($yearSection);
@@ -615,14 +637,17 @@ function rebuildAutoSectionFolders(PDO $conn, $component = null) {
             });
             // Students already assigned to a facilitator stay in place and count
             // toward the configured section limit. Only the remaining seats are
-            // filled by the automatic queue, preventing a 40-student section
-            // from receiving another 40 students during a rebuild.
+            // filled by the automatic queue. Earlier folders remain full while
+            // the final two folders receive an almost equal number of students.
             $protectedFolderCounts = autoSectionProtectedFolderStats($conn, $currentComponent);
+            $totalStudentCount = count($students) + array_sum($protectedFolderCounts);
+            $targetFolderSizes = autoSectionSequentialSizes($totalStudentCount, $maxStudents);
             $studentOffset = 0;
             $folderNumber = 1;
             $studentCount = count($students);
             while ($studentOffset < $studentCount) {
-                $availableSeats = max(0, $maxStudents - ($protectedFolderCounts[$folderNumber] ?? 0));
+                $targetSize = $targetFolderSizes[$folderNumber - 1] ?? $maxStudents;
+                $availableSeats = max(0, $targetSize - ($protectedFolderCounts[$folderNumber] ?? 0));
                 if ($availableSeats > 0) {
                     $sectionBatches[] = array_slice($students, $studentOffset, $availableSeats);
                     $sectionFolderNumbers[] = $folderNumber;
