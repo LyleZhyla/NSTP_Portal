@@ -330,6 +330,7 @@ foreach ($gradeFolderStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         'key' => $folderKey,
         'label' => trim(($row['program'] ? $row['program'] . ' - ' : '') . ($row['facilitator_name'] ?: 'Facilitator') . ' / ' . $row['course_section']),
         'student_count' => (int) $row['student_count'],
+        'program' => normalizeProgram($row['program'] ?? null),
     ];
 }
 
@@ -1094,11 +1095,25 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                             </div>
                             <div class="card-body">
                                 <div class="form-group">
+                                    <label for="studentMasterlistComponent">Component</label>
+                                    <?php if ($role === 'super_admin'): ?>
+                                    <select class="form-control" id="studentMasterlistComponent" name="component">
+                                        <option value="">All Components</option>
+                                        <option value="CWTS">CWTS</option>
+                                        <option value="LTS">LTS</option>
+                                        <option value="ROTC">ROTC</option>
+                                    </select>
+                                    <?php else: ?>
+                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($program ?: 'N/A'); ?>" disabled>
+                                    <input type="hidden" name="component" value="<?php echo htmlspecialchars($program ?: ''); ?>">
+                                    <?php endif; ?>
+                                </div>
+                                <div class="form-group">
                                     <label for="studentMasterlistFolder">Facilitator / Section</label>
                                     <select class="form-control" id="studentMasterlistFolder" name="student_folder">
                                         <option value="">All Accessible Students</option>
                                         <?php foreach ($gradeExportFolders as $folder): ?>
-                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>" data-component="<?php echo htmlspecialchars($folder['program'] ?? ''); ?>">
                                             <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
                                         </option>
                                         <?php endforeach; ?>
@@ -1495,6 +1510,32 @@ const saturdayAttendanceRange = {
     end: <?php echo json_encode($saturdayEndDate); ?>
 };
 const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5e9aa6', '#b97883', '#78906d', '#9b8a78', '#6f7f98', '#a284a6', '#8793a1'];
+
+const studentMasterlistComponent = document.getElementById('studentMasterlistComponent');
+const studentMasterlistFolder = document.getElementById('studentMasterlistFolder');
+if (studentMasterlistComponent && studentMasterlistFolder) {
+    const filterStudentMasterlistFolders = function() {
+        const component = studentMasterlistComponent.value;
+        Array.from(studentMasterlistFolder.options).forEach(function(option) {
+            if (!option.value) {
+                option.hidden = false;
+                option.disabled = false;
+                return;
+            }
+
+            const isVisible = !component || option.dataset.component === component;
+            option.hidden = !isVisible;
+            option.disabled = !isVisible;
+        });
+
+        if (studentMasterlistFolder.selectedOptions[0]?.disabled) {
+            studentMasterlistFolder.value = '';
+        }
+    };
+
+    studentMasterlistComponent.addEventListener('change', filterStudentMasterlistFolders);
+    filterStudentMasterlistFolders();
+}
 
 document.querySelectorAll('.download-card > .card-header').forEach(function(header) {
     const card = header.closest('.download-card');
