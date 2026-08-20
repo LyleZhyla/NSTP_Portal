@@ -125,9 +125,9 @@ $studentSql = "
         s.tbl_student_id,
         s.student_number,
         s.student_name,
+        COALESCE(NULLIF(s.original_section, ''), 'N/A') AS program,
         COALESCE(NULLIF(s.course_section, ''), 'Unassigned') AS course_section,
-        {$facilitatorNameExpression} AS facilitator_name,
-        COALESCE({$componentExpression}, 'N/A') AS program
+        {$facilitatorNameExpression} AS facilitator_name
     FROM tbl_student s
     LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
 ";
@@ -280,7 +280,7 @@ $baseScopeLabel = $selectedSection !== ''
     ? 'Section: ' . $selectedSection
     : ($role === 'super_admin' ? 'All Students' : 'All Accessible Students');
 if ($selectedComponent) {
-    $baseScopeLabel .= ' | Program: ' . $selectedComponent;
+    $baseScopeLabel .= ' | Component: ' . $selectedComponent;
 }
 
 $separateBySection = in_array($selectedComponent, ['CWTS', 'LTS'], true);
