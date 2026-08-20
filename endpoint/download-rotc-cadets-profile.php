@@ -190,7 +190,7 @@ $spreadsheet = new Spreadsheet();
 $sheet = $spreadsheet->getActiveSheet();
 $sheet->setTitle('Cadets Profile');
 $sheet->setShowGridlines(false);
-$sheet->getDefaultStyle()->getFont()->setName('Arial Narrow')->setSize(8);
+$spreadsheet->getDefaultStyle()->getFont()->setName('Arial Narrow')->setSize(8);
 
 $sheet->mergeCells('C1:K1');
 $sheet->setCellValue('C1', "H E A D Q U A R T E R S\nTARLAC AGRICULTURAL UNIVERSITY ROTC UNIT\n302nd (TLC) Community Defense Center, 3RCDG, RESCOM, PA\nBrgy Malacampa, Camiling, Tarlac");
