@@ -1195,9 +1195,16 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <p class="muted-note">Downloads an Excel masterlist with student names, programs, and assigned sections. Selecting All includes folders without a facilitator. CWTS and LTS use one sheet per section, with the facilitator shown once in the sheet header.</p>
+                                <div class="form-group">
+                                    <label for="studentMasterlistFormat">File Format</label>
+                                    <select class="form-control" id="studentMasterlistFormat" name="format">
+                                        <option value="xlsx">Excel (.xlsx)</option>
+                                        <option value="pdf">PDF per Section</option>
+                                    </select>
+                                </div>
+                                <p class="muted-note">Includes student name, program, and assigned section without the student number. A selected section uses the section name as its filename. PDF with All selected downloads a ZIP containing one PDF per section.</p>
                                 <button type="submit" class="btn btn-success btn-block">
-                                    <i class="fas fa-file-excel mr-1"></i> Download Student Masterlist
+                                    <i class="fas fa-download mr-1"></i> Download Student Masterlist
                                 </button>
                             </div>
                         </form>
