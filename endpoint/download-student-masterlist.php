@@ -302,7 +302,7 @@ function masterlistBuildPdf(array $sheetStudents, $scopeLabel) {
     foreach ($sheetStudents as $index => $student) {
         $rows .= '<tr>'
             . '<td class="number">' . ($index + 1) . '</td>'
-            . '<td>' . masterlistEscape($student['student_name'] ?? '') . '</td>'
+            . '<td class="student-name">' . masterlistEscape($student['student_name'] ?? '') . '</td>'
             . '<td>' . masterlistEscape($student['program'] ?? 'N/A') . '</td>'
             . '<td class="center">' . masterlistEscape($student['course_section'] ?? 'Unassigned') . '</td>'
             . '</tr>';
@@ -322,7 +322,8 @@ function masterlistBuildPdf(array $sheetStudents, $scopeLabel) {
         . 'thead { display: table-header-group; }'
         . 'tr { page-break-inside: avoid; }'
         . 'th { background: #4472C4; color: #fff; font-weight: bold; text-align: center; border: 1px solid #B7B7B7; padding: 3px 2px; }'
-        . 'td { border: 1px solid #B7B7B7; padding: 2px 3px; vertical-align: middle; line-height: 1.15; }'
+        . 'td { border: 1px solid #B7B7B7; padding: 2px 3px; vertical-align: middle; line-height: 1.15; white-space: normal; word-wrap: break-word; overflow-wrap: break-word; }'
+        . 'td.student-name { word-break: break-word; }'
         . '.number { width: 7%; text-align: center; }'
         . '.student { width: 38%; }'
         . '.program { width: 32%; }'
