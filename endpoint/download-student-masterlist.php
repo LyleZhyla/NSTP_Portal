@@ -36,7 +36,9 @@ $format = strtolower(trim((string) ($_GET['format'] ?? 'xlsx')));
 if (!in_array($format, ['xlsx', 'pdf'], true)) {
     $format = 'xlsx';
 }
-$folderKey = trim((string) ($_GET['student_folder'] ?? ''));
+$folderKey = $format === 'pdf'
+    ? ''
+    : trim((string) ($_GET['student_folder'] ?? ''));
 $selectedFacilitatorId = null;
 $selectedSection = '';
 $selectedFacilitatorName = '';
@@ -386,14 +388,6 @@ if ($format === 'pdf') {
     }
     header('Cache-Control: max-age=0');
     header('X-Content-Type-Options: nosniff');
-
-    if (count($pdfFiles) === 1) {
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="' . $pdfFiles[0]['filename'] . '"');
-        header('Content-Length: ' . strlen($pdfFiles[0]['content']));
-        echo $pdfFiles[0]['content'];
-        exit();
-    }
 
     $temporaryZip = tempnam(sys_get_temp_dir(), 'student-masterlists-');
     if ($temporaryZip === false) {
