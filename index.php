@@ -9,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 date_default_timezone_set('Asia/Manila');
 include ('./conn/conn.php');
 require_once './include/user-permissions.php';
+require_once './include/student-component-counts.php';
 
 // ADD THIS LINE TO INCLUDE THE LOGO FUNCTIONS
 include ('./include/logo-functions.php');
@@ -16,19 +17,18 @@ include ('./include/logo-functions.php');
 $today = date('Y-m-d');
 $currentUserID = $_SESSION['user_id'];
 $currentUserRole = $_SESSION['role'] ?? 'facilitator';
+$currentUserRecord = getCurrentUserRecord($conn);
+$currentUserProgram = normalizeProgram($currentUserRecord['program'] ?? ($_SESSION['program'] ?? null));
 
 if (!canAccessStaffTools($currentUserRole)) {
     header("Location: profile.php");
     exit();
 }
+$componentCounts = canonicalStudentComponentCounts($conn);
 
 // Get statistics with role-based filtering
 if ($currentUserRole === 'super_admin') {
     // Super Admin: See all records
-    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_student");
-    $stmt->execute();
-    $totalStudents = $stmt->fetchColumn();
-
     $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_attendance WHERE DATE(time_in) = :today");
     $stmt->execute(['today' => $today]);
     $todayAttendance = $stmt->fetchColumn();
@@ -57,101 +57,15 @@ if ($currentUserRole === 'super_admin') {
     $stmt->execute();
     $recent = $stmt->fetchAll();
 
-    // Build one canonical component count across accounts, registrations, and
-    // legacy master-list rows. Student number is the preferred identity so a
-    // duplicate registration cannot inflate the dashboard totals.
-    $componentCounts = ['CWTS' => 0, 'LTS' => 0, 'ROTC' => 0, 'Unassigned' => 0];
-    $countedStudentKeys = [];
-    $studentIdentityKey = static function ($studentNumber, $userId = null, $fallback = null) {
-        $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
-        if ($studentNumber !== '') {
-            return 'student:' . $studentNumber;
-        }
-        if (!empty($userId)) {
-            return 'user:' . (int) $userId;
-        }
-        return 'record:' . (string) $fallback;
-    };
-    $countStudentOnce = static function ($identityKey, $program) use (&$componentCounts, &$countedStudentKeys) {
-        if (isset($countedStudentKeys[$identityKey])) {
-            return;
-        }
-        $countedStudentKeys[$identityKey] = true;
-        $program = normalizeProgram($program);
-        $componentCounts[$program ?: 'Unassigned']++;
-    };
-
-    // Accounts are authoritative. If an older account has no saved program,
-    // use its latest active public registration before marking it unmatched.
-    $stmt = $conn->query("
-        SELECT u.user_id, u.username AS student_number, u.program,
-               (
-                   SELECT r.component
-                   FROM tbl_public_student_registrations r
-                   WHERE r.registrant_role = 'student'
-                     AND COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
-                     AND (r.user_id = u.user_id OR r.student_number = u.username)
-                   ORDER BY r.registration_id DESC
-                   LIMIT 1
-               ) AS registration_component
-        FROM tbl_users u
-        WHERE u.role = 'student'
-    ");
-    foreach ($stmt->fetchAll() as $row) {
-        $program = normalizeProgram($row['program'] ?? null)
-            ?: normalizeProgram($row['registration_component'] ?? null);
-        $countStudentOnce(
-            $studentIdentityKey($row['student_number'] ?? '', $row['user_id'] ?? null, 'account-' . ($row['user_id'] ?? '')),
-            $program
-        );
-    }
-
-    // Add registrations that do not have an account yet. Latest rows are read
-    // first, and the identity map suppresses duplicate submissions.
-    $stmt = $conn->query("
-        SELECT registration_id, user_id, student_number, component
-        FROM tbl_public_student_registrations
-        WHERE registrant_role = 'student'
-          AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
-        ORDER BY registration_id DESC
-    ");
-    foreach ($stmt->fetchAll() as $row) {
-        $countStudentOnce(
-            $studentIdentityKey($row['student_number'] ?? '', $row['user_id'] ?? null, 'registration-' . $row['registration_id']),
-            $row['component'] ?? null
-        );
-    }
-
-    // Finally include legacy/master-list students that have neither an account
-    // nor a public registration. Infer their component from the folder name.
-    $stmt = $conn->query("
-        SELECT s.tbl_student_id, s.user_id, s.student_number, s.course_section,
-               u.program AS account_program
-        FROM tbl_student s
-        LEFT JOIN tbl_users u ON u.user_id = s.user_id AND u.role = 'student'
-        ORDER BY s.tbl_student_id DESC
-    ");
-    foreach ($stmt->fetchAll() as $row) {
-        $program = normalizeProgram($row['account_program'] ?? null)
-            ?: inferProgramFromText($row['course_section'] ?? '');
-        $countStudentOnce(
-            $studentIdentityKey($row['student_number'] ?? '', $row['user_id'] ?? null, 'masterlist-' . $row['tbl_student_id']),
-            $program
-        );
-    }
-
     $totalStudents = array_sum($componentCounts);
 } else {
     // Regular Admin: See only records they created
     
-    // Count students created by this admin
-    $stmt = $conn->prepare("
-        SELECT COUNT(DISTINCT s.tbl_student_id) as total 
-        FROM tbl_student s
-        WHERE s.created_by = :user_id
-    ");
-    $stmt->execute(['user_id' => $currentUserID]);
-    $totalStudents = $stmt->fetchColumn();
+    // Coordinators and facilitators see the same unique component total shown
+    // to the super admin, instead of only students created by their account.
+    $totalStudents = $currentUserProgram
+        ? (int) ($componentCounts[$currentUserProgram] ?? 0)
+        : 0;
 
     // Today's attendance for students created by this admin
     $stmt = $conn->prepare("
@@ -195,7 +109,6 @@ if ($currentUserRole === 'super_admin') {
     ");
     $stmt->execute(['user_id' => $currentUserID]);
     $recent = $stmt->fetchAll();
-    $componentCounts = [];
 }
 ?>
 
@@ -643,7 +556,7 @@ if ($currentUserRole === 'super_admin') {
                                     <?php if ($currentUserRole === 'super_admin'): ?>
                                         Total Students
                                     <?php else: ?>
-                                        My Students
+                                        <?php echo htmlspecialchars(($currentUserProgram ?: 'My') . ' Students'); ?>
                                     <?php endif; ?>
                                 </p>
                             </div>
@@ -653,7 +566,7 @@ if ($currentUserRole === 'super_admin') {
                             <?php if ($currentUserRole === 'super_admin'): ?>
                                 <a href="masterlist.php" class="small-box-footer">View All Students <i class="fas fa-arrow-circle-right"></i></a>
                             <?php else: ?>
-                                <a href="masterlist.php" class="small-box-footer">View My Students <i class="fas fa-arrow-circle-right"></i></a>
+                                <a href="masterlist.php" class="small-box-footer">View <?php echo htmlspecialchars($currentUserProgram ?: 'My'); ?> Students <i class="fas fa-arrow-circle-right"></i></a>
                             <?php endif; ?>
                         </div>
                     </div>

@@ -11,6 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 date_default_timezone_set('Asia/Manila');
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
+require_once './include/student-component-counts.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator', 'facilitator'], true)) {
@@ -81,60 +82,16 @@ function downloadablesStudentComponentExpression() {
     ";
 }
 
-function downloadablesStudentScope(PDO $conn, array $currentUser, $program) {
+function downloadablesStudentScope(PDO $conn, array $currentUser, $program, $componentExpression) {
     $role = $currentUser['role'] ?? '';
     $where = ['1 = 1'];
     $params = [];
 
-    if ($role === 'coordinator') {
-        $where[] = "
-            (
-                (
-                    s.course_section = ?
-                    AND (
-                        s.created_by IS NULL
-                        OR creator.role <> 'facilitator'
-                        OR creator.program <> ?
-                    )
-                )
-                OR (
-                    creator.role = 'facilitator'
-                    AND creator.program = ?
-                    AND EXISTS (
-                        SELECT 1
-                        FROM tbl_admin_sections coordinator_assignment
-                        WHERE coordinator_assignment.user_id = s.created_by
-                          AND coordinator_assignment.course_section = s.course_section
-                    )
-                )
-            )
-        ";
+    if (in_array($role, ['coordinator', 'facilitator'], true) && $program) {
+        // Use the same component population used by the super admin graph.
+        // Staff access limits the component, not the creator of the record.
+        $where[] = "($componentExpression) = ?";
         $params[] = $program;
-        $params[] = $program;
-        $params[] = $program;
-    } elseif ($role === 'facilitator') {
-        $userId = (int) $currentUser['user_id'];
-        $assignedStmt = $conn->prepare('SELECT COUNT(*) FROM tbl_admin_sections WHERE user_id = ?');
-        $assignedStmt->execute([$userId]);
-        $hasAssignedSections = (int) $assignedStmt->fetchColumn() > 0;
-
-        if (!$hasAssignedSections && $program === 'ROTC') {
-            $where[] = rotcMs1StudentSqlCondition('s');
-        } elseif ($hasAssignedSections) {
-            $where[] = "
-                s.created_by = ?
-                AND EXISTS (
-                    SELECT 1
-                    FROM tbl_admin_sections facilitator_assignment
-                    WHERE facilitator_assignment.user_id = ?
-                      AND facilitator_assignment.course_section = s.course_section
-                )
-            ";
-            $params[] = $userId;
-            $params[] = $userId;
-        } else {
-            $where[] = '1 = 0';
-        }
     }
 
     return [$where, $params];
@@ -231,7 +188,12 @@ if ($role === 'facilitator' && $program && $selectedFilters['component'] && $sel
 
 $studentGraphFromSql = downloadablesStudentGraphFromSql();
 $studentComponentExpression = downloadablesStudentComponentExpression();
-[$studentScopeWhere, $studentScopeParams] = downloadablesStudentScope($conn, $currentUser, $program);
+[$studentScopeWhere, $studentScopeParams] = downloadablesStudentScope(
+    $conn,
+    $currentUser,
+    $program,
+    $studentComponentExpression
+);
 [$chartWhere, $chartParams] = downloadablesApplyStudentFilters($studentScopeWhere, $studentScopeParams, $selectedFilters, $filterExpressions, $studentComponentExpression);
 
 $totalEnrollmentStmt = $conn->prepare("
@@ -481,22 +443,15 @@ $downloadStats = [
     'archived' => 0,
     'public_registrations' => 0,
 ];
+$canonicalComponentCounts = canonicalStudentComponentCounts($conn);
 
 if ($role === 'super_admin') {
-    $downloadStats['students'] = (int) $conn->query("SELECT COUNT(*) FROM tbl_student")->fetchColumn();
+    $downloadStats['students'] = array_sum($canonicalComponentCounts);
     $downloadStats['attendance'] = (int) $conn->query("SELECT COUNT(*) FROM tbl_attendance")->fetchColumn();
     $downloadStats['archived'] = (int) $conn->query("SELECT COUNT(*) FROM tbl_attendance_archive")->fetchColumn();
     $downloadStats['public_registrations'] = (int) $conn->query("SELECT COUNT(*) FROM tbl_public_student_registrations WHERE registrant_role = 'student'")->fetchColumn();
 } elseif ($role === 'coordinator') {
-    $statsStmt = $conn->prepare("
-        SELECT COUNT(DISTINCT s.tbl_student_id)
-        FROM tbl_student s
-        LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-        WHERE (creator.role = 'facilitator' AND creator.program = ?)
-           OR s.course_section = ?
-    ");
-    $statsStmt->execute([$program, $program]);
-    $downloadStats['students'] = (int) $statsStmt->fetchColumn();
+    $downloadStats['students'] = (int) ($canonicalComponentCounts[$program] ?? 0);
 
     $statsStmt = $conn->prepare("
         SELECT COUNT(*)
@@ -528,9 +483,7 @@ if ($role === 'super_admin') {
     $statsStmt->execute([$program]);
     $downloadStats['public_registrations'] = (int) $statsStmt->fetchColumn();
 } else {
-    $statsStmt = $conn->prepare("SELECT COUNT(DISTINCT tbl_student_id) FROM tbl_student WHERE created_by = ?");
-    $statsStmt->execute([(int) $currentUser['user_id']]);
-    $downloadStats['students'] = (int) $statsStmt->fetchColumn();
+    $downloadStats['students'] = (int) ($canonicalComponentCounts[$program] ?? 0);
 
     $statsStmt = $conn->prepare("
         SELECT COUNT(*)

@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
+require_once './include/student-component-counts.php';
 require_once './include/automatic-sectioning.php';
 require_once './include/section-folders.php';
 
@@ -21,6 +22,7 @@ if (!$user_program) {
     $programStmt->execute([$user_id]);
     $user_program = normalizeProgram($programStmt->fetchColumn());
 }
+$canonicalComponentCounts = canonicalStudentComponentCounts($conn);
 $isRotcFacilitator = $user_role === 'facilitator' && $user_program === 'ROTC';
 ensureRotcAttendanceSchema($conn);
 
@@ -325,17 +327,7 @@ if ($user_role === 'facilitator' && $isRotcFacilitator && empty($assignedSection
 
 // SUPER ADMIN - Get all data with folder organization
 if ($user_role === 'coordinator') {
-    // Count every student in the coordinator's component, including students
-    // in generated folders that do not have a facilitator yet. The previous
-    // total only added the plain component bucket and facilitator-assigned
-    // folders, which made CWTS Student Management appear incomplete.
-    $coordinatorTotalStmt = $conn->prepare("\n        SELECT COUNT(DISTINCT s.tbl_student_id)\n        FROM tbl_student s\n        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by\n        WHERE (creator.role = 'facilitator' AND creator.program = ?)\n           OR s.course_section = ?\n           OR s.course_section LIKE ?\n    ");
-    $coordinatorTotalStmt->execute([
-        $coordinatorProgram,
-        $coordinatorProgram,
-        autoSectionFolderPrefix($coordinatorProgram) . ' %',
-    ]);
-    $total_students = (int) $coordinatorTotalStmt->fetchColumn();
+    $total_students = (int) ($canonicalComponentCounts[$coordinatorProgram] ?? 0);
     $my_students_count = $total_students;
 } elseif ($user_role === 'super_admin') {
     $stmt = $conn->prepare("
@@ -348,36 +340,12 @@ if ($user_role === 'coordinator') {
     $folderAssignableFacilitators = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach (['CWTS', 'LTS', 'ROTC'] as $componentName) {
-        if ($componentName === 'ROTC') {
-            $rotcCondition = rotcStudentSqlCondition('s');
-            $stmt = $conn->prepare("
-                SELECT COUNT(DISTINCT s.tbl_student_id)
-                FROM tbl_student s
-                LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-                WHERE {$rotcCondition}
-                   OR (creator.role = 'facilitator' AND creator.program = 'ROTC')
-            ");
-            $stmt->execute();
-        } else {
-        $stmt = $conn->prepare("
-            SELECT COUNT(DISTINCT s.tbl_student_id)
-            FROM tbl_student s
-            LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-            WHERE (creator.role = 'facilitator' AND creator.program = ?)
-               OR (
-                    (s.created_by IS NULL OR creator.role <> 'facilitator')
-                    AND (s.course_section = ? OR s.course_section LIKE ?)
-               )
-        ");
-        $stmt->execute([$componentName, $componentName, autoSectionFolderPrefix($componentName) . ' %']);
-        }
-
         $facilitatorStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_users WHERE role = 'facilitator' AND program = ?");
         $facilitatorStmt->execute([$componentName]);
 
         $superAdminComponentCards[] = [
             'component' => $componentName,
-            'student_count' => (int) $stmt->fetchColumn(),
+            'student_count' => (int) ($canonicalComponentCounts[$componentName] ?? 0),
             'facilitator_count' => (int) $facilitatorStmt->fetchColumn(),
         ];
     }
@@ -486,9 +454,7 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
 
 // Get total counts for stats
 if ($user_role === 'super_admin') {
-    $total_stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_student");
-    $total_stmt->execute();
-    $total_students = $total_stmt->fetchColumn();
+    $total_students = array_sum($canonicalComponentCounts);
     
     $my_students_count = $conn->prepare("SELECT COUNT(*) FROM tbl_student WHERE created_by = ?");
     $my_students_count->execute([$user_id]);
@@ -502,27 +468,7 @@ if ($user_role === 'super_admin') {
     $total_coordinators_stmt->execute();
     $total_coordinators = $total_coordinators_stmt->fetchColumn();
 } elseif ($user_role === 'facilitator') {
-    if (!empty($assignedSections)) {
-        $placeholders = implode(',', array_fill(0, count($assignedSections), '?'));
-        $total_stmt = $conn->prepare("
-            SELECT COUNT(*)
-            FROM tbl_student
-            WHERE created_by = ? AND course_section IN ($placeholders)
-        ");
-        $total_stmt->execute(array_merge([$user_id], $assignedSections));
-    } elseif ($isRotcFacilitator) {
-        $rotcCondition = rotcMs1StudentSqlCondition('s');
-        $total_stmt = $conn->prepare("
-            SELECT COUNT(*)
-            FROM tbl_student s
-            WHERE {$rotcCondition}
-        ");
-        $total_stmt->execute();
-    } else {
-        $total_stmt = $conn->prepare("SELECT 0");
-        $total_stmt->execute();
-    }
-    $total_students = $total_stmt->fetchColumn();
+    $total_students = (int) ($canonicalComponentCounts[$user_program] ?? 0);
     $my_students_count = $total_students;
 }
 
@@ -1424,7 +1370,7 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                                     <?php if ($user_role === 'super_admin'): ?>
                                     Total Students
                                     <?php else: ?>
-                                    My Students
+                                    <?php echo htmlspecialchars(($user_program ?: 'My') . ' Students'); ?>
                                     <?php endif; ?>
                                 </p>
                             </div>

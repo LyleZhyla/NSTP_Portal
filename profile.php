@@ -6,6 +6,7 @@ require_once 'include/attendance-settings.php';
 require_once 'include/profile-picture-utils.php';
 require_once 'include/data-edit-requests.php';
 require_once 'include/student-account-automation.php';
+require_once 'include/student-component-counts.php';
 
 
 // Check if user is logged in
@@ -318,6 +319,11 @@ if ($user && $user['role'] == 'facilitator') {
 $student_count = 0;
 if ($isStudent) {
     $student_count = $studentAttendanceCount;
+} elseif (($user['role'] ?? '') === 'super_admin') {
+    $student_count = array_sum(canonicalStudentComponentCounts($conn));
+} elseif (in_array($user['role'] ?? '', ['coordinator', 'facilitator'], true)) {
+    $staffComponent = normalizeProgram($user['program'] ?? null);
+    $student_count = canonicalStudentCountForComponent($conn, $staffComponent);
 } else {
     $student_sql = "SELECT COUNT(*) as total FROM tbl_student WHERE created_by = ?";
     $student_stmt = $conn->prepare($student_sql);
