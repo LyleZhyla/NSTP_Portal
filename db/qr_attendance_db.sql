@@ -89,7 +89,8 @@ INSERT INTO `tbl_admin_sections` (`admin_section_id`, `user_id`, `course_section
 CREATE TABLE `tbl_attendance` (
   `tbl_attendance_id` int(11) NOT NULL,
   `tbl_student_id` int(11) NOT NULL,
-  `time_in` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `time_in` timestamp NOT NULL DEFAULT current_timestamp(),
+  `time_out` datetime DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `status` varchar(50) DEFAULT 'On Time',
   `late_email_sent` tinyint(1) NOT NULL DEFAULT 0
@@ -113,7 +114,8 @@ CREATE TABLE `tbl_attendance_archive` (
   `tbl_attendance_archive_id` int(11) NOT NULL,
   `tbl_attendance_id` int(11) NOT NULL,
   `tbl_student_id` int(11) NOT NULL,
-  `time_in` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `time_in` timestamp NOT NULL DEFAULT current_timestamp(),
+  `time_out` datetime DEFAULT NULL,
   `status` varchar(50) DEFAULT NULL,
   `archived_date` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

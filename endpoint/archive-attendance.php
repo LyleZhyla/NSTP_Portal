@@ -16,6 +16,27 @@ require_once '../include/attendance-settings.php';
 
 $response = ['success' => false, 'message' => ''];
 
+function archiveAttendanceRecord(PDO $conn, array $record, $archiveHasStatus, $archiveHasTimeOut) {
+    $columns = ['tbl_attendance_id', 'tbl_student_id', 'time_in'];
+    $params = [$record['tbl_attendance_id'], $record['tbl_student_id'], $record['time_in']];
+    if ($archiveHasTimeOut) {
+        $columns[] = 'time_out';
+        $params[] = $record['time_out'] ?? null;
+    }
+    if ($archiveHasStatus) {
+        $columns[] = 'status';
+        $params[] = $record['status'] ?? null;
+    }
+    $columns[] = 'archived_date';
+    $placeholders = array_fill(0, count($params), '?');
+    $placeholders[] = 'NOW()';
+
+    $stmt = $conn->prepare(
+        'INSERT INTO tbl_attendance_archive (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')'
+    );
+    $stmt->execute($params);
+}
+
 try {
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
@@ -33,7 +54,9 @@ try {
     $user_id = $_SESSION['user_id'];
     $role = $_SESSION['role'] ?? 'facilitator';
     
-    $archiveHasStatus = ensureAttendanceArchiveStatusSchema($conn);
+    ensureAttendanceTimeOutSchema($conn);
+    $archiveHasTimeOut = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive');
+    $archiveHasStatus = attendanceArchiveHasStatusColumn($conn);
     $conn->beginTransaction();
     
     if ($role === 'super_admin') {
@@ -48,15 +71,7 @@ try {
         $records_to_archive = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         foreach ($records_to_archive as $record) {
-            // Insert into archive
-            $archive_stmt = $conn->prepare($archiveHasStatus
-                ? "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, status, archived_date) VALUES (?, ?, ?, ?, NOW())"
-                : "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, archived_date) VALUES (?, ?, ?, NOW())");
-            $archiveParams = [$record['tbl_attendance_id'], $record['tbl_student_id'], $record['time_in']];
-            if ($archiveHasStatus) {
-                $archiveParams[] = $record['status'] ?? null;
-            }
-            $archive_stmt->execute($archiveParams);
+            archiveAttendanceRecord($conn, $record, $archiveHasStatus, $archiveHasTimeOut);
             
             // Delete from main table
             $delete_stmt = $conn->prepare("DELETE FROM tbl_attendance WHERE tbl_attendance_id = ?");
@@ -92,14 +107,7 @@ try {
             $records_to_archive = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             foreach ($records_to_archive as $record) {
-                $archive_stmt = $conn->prepare($archiveHasStatus
-                    ? "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, status, archived_date) VALUES (?, ?, ?, ?, NOW())"
-                    : "INSERT INTO tbl_attendance_archive (tbl_attendance_id, tbl_student_id, time_in, archived_date) VALUES (?, ?, ?, NOW())");
-                $archiveParams = [$record['tbl_attendance_id'], $record['tbl_student_id'], $record['time_in']];
-                if ($archiveHasStatus) {
-                    $archiveParams[] = $record['status'] ?? null;
-                }
-                $archive_stmt->execute($archiveParams);
+                archiveAttendanceRecord($conn, $record, $archiveHasStatus, $archiveHasTimeOut);
                 
                 $delete_stmt = $conn->prepare("DELETE FROM tbl_attendance WHERE tbl_attendance_id = ?");
                 $delete_stmt->execute([$record['tbl_attendance_id']]);

@@ -9,13 +9,15 @@ if (!isset($_SESSION['user_id'])) {
 
 date_default_timezone_set('Asia/Manila');
 include('../conn/conn.php');
-require_once '../include/user-permissions.php';
+require_once '../include/attendance-settings.php';
 
 $admin_id = $_SESSION['user_id'];
 $admin_role = $_SESSION['role'] ?? 'facilitator';
 $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
 ensureAttendancePerformanceIndexes($conn);
+$timeOutEnabled = ensureAttendanceTimeOutSchema($conn);
+$timeOutSelect = $timeOutEnabled ? 'a.time_out' : 'NULL AS time_out';
 $canViewAllAttendance = $admin_role === 'super_admin';
 $attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
 $attendanceAccessCondition = $attendanceAccess['condition'];
@@ -55,7 +57,7 @@ try {
         
         // Get attendance records with student info
         $recordsStmt = $conn->prepare("
-            SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
+            SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, {$timeOutSelect}, a.status,
                    s.student_name, s.course_section
             FROM tbl_attendance a
             LEFT JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
@@ -102,7 +104,7 @@ try {
         
         // Get attendance records with student info
         $recordsStmt = $conn->prepare("
-            SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
+            SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, {$timeOutSelect}, a.status,
                    s.student_name, s.course_section
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
@@ -119,6 +121,7 @@ try {
     $formattedRecords = [];
     foreach ($records as $record) {
         $timeIn = strtotime($record['time_in']);
+        $timeOut = !empty($record['time_out']) ? strtotime($record['time_out']) : null;
         $formattedRecords[] = [
             'id' => $record['tbl_attendance_id'],
             'student_id' => $record['tbl_student_id'],
@@ -127,6 +130,9 @@ try {
             'time_in' => $record['time_in'],
             'time_formatted' => date('h:i A', $timeIn),
             'date_formatted' => date('M d, Y', $timeIn),
+            'time_out' => $record['time_out'] ?? null,
+            'time_out_formatted' => $timeOut ? date('h:i A', $timeOut) : 'Not yet',
+            'time_out_date_formatted' => $timeOut ? date('M d, Y', $timeOut) : '',
             'status' => $record['status'] ?? 'On Time'
         ];
     }

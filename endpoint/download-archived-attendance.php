@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once '../conn/conn.php';
-require_once '../include/user-permissions.php';
+require_once '../include/attendance-settings.php';
 
 if (!isset($_SESSION['user_id'])) {
     die('Unauthorized access');
@@ -22,7 +22,11 @@ if (!strtotime($startDate) || !strtotime($endDate)) {
 }
 
 date_default_timezone_set('Asia/Manila'); // Set timezone to Philippines
+ensureAttendanceTimeOutSchema($conn);
 $attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser, 's');
+$archiveTimeOutSelect = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive')
+    ? "aa.time_out"
+    : "NULL";
 
 // Set headers for Excel download
 header('Content-Type: application/vnd.ms-excel');
@@ -36,6 +40,7 @@ $query = "SELECT
     s.student_name as 'Student Name',
     s.course_section as 'Course & Section',
     aa.time_in as 'Time In',
+    {$archiveTimeOutSelect} as 'Time Out',
     DATE(aa.time_in) as 'Date',
     TIME(aa.time_in) as 'Time',
     aa.archived_date as 'Archived Date'
@@ -56,7 +61,7 @@ $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // Start Excel content
 echo '<table border="1">';
 echo '<tr>';
-echo '<th colspan="8" style="background-color: #4CAF50; color: white; font-size: 16px; font-weight: bold; text-align: center;">';
+echo '<th colspan="9" style="background-color: #4CAF50; color: white; font-size: 16px; font-weight: bold; text-align: center;">';
 echo 'ARCHIVED ATTENDANCE REPORT<br>';
 echo 'Period: ' . date('F j, Y', strtotime($startDate)) . ' to ' . date('F j, Y', strtotime($endDate));
 echo '</th>';
@@ -72,6 +77,7 @@ echo '<th style="width: 150px;">Course & Section</th>';
 echo '<th style="width: 100px;">Date</th>';
 echo '<th style="width: 100px;">Time</th>';
 echo '<th style="width: 150px;">Time In</th>';
+echo '<th style="width: 150px;">Time Out</th>';
 echo '<th style="width: 150px;">Archived Date</th>';
 echo '</tr>';
 
@@ -86,11 +92,12 @@ if (count($results) > 0) {
         echo '<td>' . htmlspecialchars($row['Date']) . '</td>';
         echo '<td>' . htmlspecialchars($row['Time']) . '</td>';
         echo '<td>' . htmlspecialchars($row['Time In']) . '</td>';
+        echo '<td>' . htmlspecialchars($row['Time Out'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($row['Archived Date']) . '</td>';
         echo '</tr>';
     }
 } else {
-    echo '<tr><td colspan="8" style="text-align: center; font-style: italic;">No archived attendance records found for the selected period</td></tr>';
+    echo '<tr><td colspan="9" style="text-align: center; font-style: italic;">No archived attendance records found for the selected period</td></tr>';
 }
 
 echo '</table>';

@@ -21,6 +21,8 @@ if (!canAccessStaffTools($admin_role)) {
 }
 $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
+$timeOutEnabled = ensureAttendanceTimeOutSchema($conn);
+$timeOutSelect = $timeOutEnabled ? 'a.time_out' : 'NULL AS time_out';
 $canViewAllAttendance = $admin_role === 'super_admin';
 $attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
 $attendanceAccessCondition = $attendanceAccess['condition'];
@@ -190,6 +192,45 @@ if ($admin_role === 'super_admin') {
             justify-content: center;
             flex-wrap: wrap;
             margin-top: 12px;
+        }
+
+        .scan-mode-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 0 auto 14px;
+            max-width: 430px;
+            padding: 6px;
+            border: 1px solid #d8e3dc;
+            border-radius: 10px;
+            background: #f4f8f5;
+        }
+
+        .scan-mode-btn {
+            border: 0;
+            border-radius: 7px;
+            padding: 10px 12px;
+            font-weight: 700;
+            background: transparent;
+            color: #506259;
+        }
+
+        .scan-mode-btn.active[data-mode="time_in"] {
+            background: #198754;
+            color: #fff;
+        }
+
+        .scan-mode-btn.active[data-mode="time_out"] {
+            background: #0d6efd;
+            color: #fff;
+        }
+
+        .scan-mode-help {
+            margin-top: -6px;
+            margin-bottom: 12px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.82rem;
         }
 
         .scanner-action-bar {
@@ -869,6 +910,22 @@ if ($admin_role === 'super_admin') {
                         </div>
                     </div>
                     <div class="card-body">
+                        <?php if (!$timeOutEnabled): ?>
+                        <div class="alert alert-warning py-2">
+                            <i class="fas fa-triangle-exclamation mr-1"></i>
+                            Time Out is temporarily unavailable because the database schema could not be updated.
+                        </div>
+                        <?php endif; ?>
+                        <div class="scan-mode-selector" aria-label="Attendance scan mode">
+                            <button type="button" class="scan-mode-btn active" data-mode="time_in" <?php echo !$timeOutEnabled ? 'disabled' : ''; ?>>
+                                <i class="fas fa-sign-in-alt mr-1"></i> TIME IN
+                            </button>
+                            <button type="button" class="scan-mode-btn" data-mode="time_out" <?php echo !$timeOutEnabled ? 'disabled' : ''; ?>>
+                                <i class="fas fa-sign-out-alt mr-1"></i> TIME OUT
+                            </button>
+                        </div>
+                        <div class="scan-mode-help" id="scanModeHelp">New scans will record the student's arrival time.</div>
+
                         <!-- Scanner Section -->
                         <div id="scannerSection">
                             <div class="text-center mb-3">
@@ -920,6 +977,7 @@ if ($admin_role === 'super_admin') {
                                 
                                 <form action="./endpoint/add-attendance.php" method="POST" id="attendanceForm">
                                     <input type="hidden" id="detectedQrCode" name="qr_code">
+                                    <input type="hidden" id="attendanceScanMode" name="scan_mode" value="time_in">
                                     <div class="mt-3">
                                         <button type="submit" class="btn btn-light btn-sm mr-2">
                                             <i class="fas fa-check mr-1"></i>Confirm Attendance
@@ -936,7 +994,7 @@ if ($admin_role === 'super_admin') {
                         <div id="attendanceSuccessSection" style="display: none;">
                             <div class="qr-detected-box text-center" style="background: #0f5132;">
                                 <i class="fas fa-check-circle fa-2x mb-2"></i>
-                                <h5 style="font-size: 1.1rem;">Attendance Recorded!</h5>
+                                <h5 style="font-size: 1.1rem;" id="successTitle">Time In Recorded!</h5>
                                 <div class="student-info" id="successStudentInfo"></div>
                                 <div class="attendance-time" id="successTime"></div>
                                 <div class="mt-2">
@@ -990,6 +1048,7 @@ if ($admin_role === 'super_admin') {
             <th>Student Name</th>
             <th>Course & Section</th>
             <th>Time In</th>
+            <th>Time Out</th>
             <th>Status</th>
             <th>Actions</th>
         </tr>
@@ -999,7 +1058,7 @@ if ($admin_role === 'super_admin') {
         // Fetch attendance records with JOIN to get student info
         if ($canViewAllAttendance) {
             $stmt = $conn->prepare("
-                SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
+                SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, {$timeOutSelect}, a.status,
                        s.student_number, s.student_name, s.course_section 
                 FROM tbl_attendance a 
                 LEFT JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id 
@@ -1009,7 +1068,7 @@ if ($admin_role === 'super_admin') {
             $stmt->execute();
         } else {
             $stmt = $conn->prepare("
-                SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, a.status,
+                SELECT a.tbl_attendance_id, a.tbl_student_id, a.time_in, {$timeOutSelect}, a.status,
                        s.student_number, s.student_name, s.course_section 
                 FROM tbl_attendance a 
                 INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
@@ -1030,6 +1089,7 @@ if ($admin_role === 'super_admin') {
                 $studentName = $record["student_name"] ?? 'Unknown Student';
                 $studentCourse = $record["course_section"] ?? 'N/A';
                 $timeIn = $record["time_in"];
+                $timeOut = $record["time_out"] ?? null;
                 $status = $record["status"] ?? '';
                 
                 // Determine status if not set
@@ -1048,6 +1108,10 @@ if ($admin_role === 'super_admin') {
                     <td>
                         <div><?= !empty($timeIn) ? date('h:i A', strtotime($timeIn)) : 'N/A' ?></div>
                         <small class="text-muted"><?= !empty($timeIn) ? date('M d, Y', strtotime($timeIn)) : '' ?></small>
+                    </td>
+                    <td>
+                        <div><?= !empty($timeOut) ? date('h:i A', strtotime($timeOut)) : 'Not yet' ?></div>
+                        <small class="text-muted"><?= !empty($timeOut) ? date('M d, Y', strtotime($timeOut)) : '' ?></small>
                     </td>
                     <td>
                         <span class="badge badge-<?= $statusClass ?> status-badge">
@@ -1276,6 +1340,7 @@ if ($admin_role === 'super_admin') {
     let scannerFlashSupported = false;
     let scannerFlashOn = false;
     let scannerFlashRunning = false;
+    let scannerMode = 'time_in';
     const adminId = <?= $admin_id ?>;
     const adminRole = '<?= $admin_role ?>';
     let dataTable = null;
@@ -1309,7 +1374,7 @@ if ($admin_role === 'super_admin') {
                 "responsive": true,
                 "order": [[3, 'desc']],
                 "columnDefs": [
-                    { "orderable": false, "targets": 5 }
+                    { "orderable": false, "targets": 6 }
                 ],
                 "language": {
                     "emptyTable": "No attendance records available"
@@ -1331,6 +1396,10 @@ if ($admin_role === 'super_admin') {
         $('#cameraStatusLabel').text('Camera not started');
         $('#qrDetectedSection').hide();
         $('#attendanceSuccessSection').hide();
+        $('.scan-mode-btn').on('click', function() {
+            setScanMode($(this).data('mode'));
+        });
+        setScanMode('time_in', false);
         updateExportPeriodFields();
         $('#exportPeriod').on('change', updateExportPeriodFields);
         // Check if library is loaded
@@ -1366,6 +1435,25 @@ if ($admin_role === 'super_admin') {
             $('#exportSemesterField').removeClass('d-none');
         } else {
             $('#exportDayField').removeClass('d-none');
+        }
+    }
+
+    function setScanMode(mode, announce = true) {
+        scannerMode = mode === 'time_out' ? 'time_out' : 'time_in';
+        $('.scan-mode-btn').removeClass('active');
+        $(`.scan-mode-btn[data-mode="${scannerMode}"]`).addClass('active');
+        $('#attendanceScanMode').val(scannerMode);
+
+        const isTimeOut = scannerMode === 'time_out';
+        $('#attendanceForm button[type="submit"]').html(isTimeOut
+            ? '<i class="fas fa-sign-out-alt mr-1"></i>Confirm Time Out'
+            : '<i class="fas fa-sign-in-alt mr-1"></i>Confirm Time In');
+        $('#scanModeHelp').text(isTimeOut
+            ? "Scans will record the student's departure time. A Time In is required first."
+            : "New scans will record the student's arrival time.");
+
+        if (announce) {
+            showStatus('info', isTimeOut ? 'TIME OUT mode selected.' : 'TIME IN mode selected.');
         }
     }
 
@@ -1674,7 +1762,8 @@ if ($admin_role === 'super_admin') {
         method: 'POST',
         data: { 
             qr_code: cleanQrCode,
-            admin_id: adminId
+            admin_id: adminId,
+            scan_mode: scannerMode
         },
         dataType: 'json',
         timeout: 10000,
@@ -1682,37 +1771,40 @@ if ($admin_role === 'super_admin') {
             console.log('Validation response:', response);
             
             if (response.valid) {
-                if (response.already_attended) {
-                    // Student already attended today
-                    showStatus('warning', 'Student already attended today');
+                const responseMode = response.scan_mode === 'time_out' ? 'time_out' : 'time_in';
+                const modeLabel = responseMode === 'time_out' ? 'TIME OUT' : 'TIME IN';
+
+                if (!response.can_scan) {
+                    let warningMessage = responseMode === 'time_out'
+                        ? 'Student must Time In before recording Time Out.'
+                        : 'Student already timed in today.';
+                    if (responseMode === 'time_out' && response.has_time_out) {
+                        warningMessage = 'Student already timed out today.';
+                    }
+
+                    showStatus('warning', warningMessage);
                     $('#studentInfo').text(response.student_name + ' - ' + response.course_section);
                     $('#qrContent').text(cleanQrCode);
                     $('#detectedQrCode').val(cleanQrCode);
-                    
+                    $('#attendanceScanMode').val(responseMode);
                     $('#scannerSection').hide();
                     $('#qrDetectedSection').show();
                     $('#attendanceSuccessSection').hide();
-                    
-                    // Show a warning message
-                    showToast('warning', 'Already Scanned', response.student_name + ' has already scanned today');
-                    
-                    // Automatically resume scanning after 3 seconds
+                    showToast('warning', modeLabel + ' Not Recorded', warningMessage);
+
                     setTimeout(() => {
                         resumeScanner();
                     }, 3000);
                 } else {
-                    // New attendance
                     $('#detectedQrCode').val(cleanQrCode);
+                    $('#attendanceScanMode').val(responseMode);
                     $('#qrContent').text(cleanQrCode);
-                    $('#studentInfo').text(response.student_name + ' - ' + response.course_section);
-                    
+                    $('#studentInfo').text(response.student_name + ' - ' + response.course_section + ' · ' + modeLabel);
                     $('#scannerSection').hide();
                     $('#qrDetectedSection').show();
                     $('#attendanceSuccessSection').hide();
-                    
-                    showStatus('success', 'Student found: ' + response.student_name);
-                    
-                    // Submit right after validation so the attendance list updates immediately.
+                    showStatus('success', modeLabel + ' ready for ' + response.student_name);
+
                     setTimeout(() => {
                         $('#attendanceForm').submit();
                     }, 250);
@@ -1769,13 +1861,18 @@ if ($admin_role === 'super_admin') {
                 console.log('Attendance response:', response);
                 
                 if (response.success) {
+                    const isTimeOut = response.scan_mode === 'time_out';
                     $('#qrDetectedSection').hide();
                     $('#attendanceSuccessSection').show();
+                    $('#successTitle').text(isTimeOut ? 'Time Out Recorded!' : 'Time In Recorded!');
                     $('#successStudentInfo').text(response.student_name);
-                    $('#successTime').text('Time: ' + response.time);
-                    $('#successStatus').text(response.status).removeClass('badge-success badge-warning').addClass(
-                        response.status && response.status.indexOf('Late') === 0 ? 'badge-warning' : 'badge-success'
-                    );
+                    $('#successTime').text((isTimeOut ? 'Time Out: ' : 'Time In: ') + response.time);
+                    $('#successStatus')
+                        .text(response.status)
+                        .removeClass('badge-success badge-warning badge-info')
+                        .addClass(isTimeOut
+                            ? 'badge-info'
+                            : (response.status && response.status.indexOf('Late') === 0 ? 'badge-warning' : 'badge-success'));
                     
                     showToast('success', 'Success!', response.message);
                     
@@ -1844,6 +1941,7 @@ if ($admin_role === 'super_admin') {
                             html += `<td><strong>${escapeHtml(record.student_name || 'Unknown')}</strong></td>`;
                             html += `<td>${escapeHtml(record.course_section || 'N/A')}</td>`;
                             html += `<td><div>${record.time_formatted || 'N/A'}</div><small class="text-muted">${record.date_formatted || ''}</small></td>`;
+                            html += `<td><div>${record.time_out_formatted || 'Not yet'}</div><small class="text-muted">${record.time_out_date_formatted || ''}</small></td>`;
                             html += `<td><span class="badge badge-${statusClass} status-badge">${record.status || 'Unknown'}</span></td>`;
                             html += `<td><button class="btn btn-danger btn-sm" onclick="deleteAttendance(${record.id})" title="Delete"><i class="fas fa-trash"></i></button></td>`;
                             html += `</tr>`;
@@ -1862,7 +1960,7 @@ if ($admin_role === 'super_admin') {
                                 "responsive": true,
                                 "order": [[3, 'desc']],
                                 "columnDefs": [
-                                    { "orderable": false, "targets": 5 }
+                                    { "orderable": false, "targets": 6 }
                                 ]
                             });
                         } catch (e) {

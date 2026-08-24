@@ -86,6 +86,7 @@ $userRole = $currentUser['role'] ?? 'facilitator';
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
 ensureRotcAttendanceSchema($conn);
 $archiveHasStatus = ensureAttendanceArchiveStatusSchema($conn);
+ensureAttendanceTimeOutSchema($conn);
 
 $requestedFolderKey = trim((string) ($_GET['attendance_folder'] ?? ''));
 $selectedFolderOwnerId = null;
@@ -188,13 +189,19 @@ $scannedDates = [];
 if (!empty($studentIds)) {
     $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
     $archiveStatusSelect = $archiveHasStatus ? 'status' : 'NULL AS status';
+    $activeTimeOutSelect = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance')
+        ? 'time_out'
+        : 'NULL AS time_out';
+    $archiveTimeOutSelect = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive')
+        ? 'time_out'
+        : 'NULL AS time_out';
     $attendanceSql = "
-        SELECT tbl_student_id, time_in, status
+        SELECT tbl_student_id, time_in, {$activeTimeOutSelect}, status
         FROM tbl_attendance
         WHERE tbl_student_id IN ({$placeholders})
           AND DATE(time_in) BETWEEN ? AND ?
         UNION ALL
-        SELECT tbl_student_id, time_in, {$archiveStatusSelect}
+        SELECT tbl_student_id, time_in, {$archiveTimeOutSelect}, {$archiveStatusSelect}
         FROM tbl_attendance_archive
         WHERE tbl_student_id IN ({$placeholders})
           AND DATE(time_in) BETWEEN ? AND ?
@@ -301,7 +308,10 @@ if (!empty($students)) {
                     }
                     $recordStatusGroup = exportStatusGroup($status);
                     $hasLateScan = $hasLateScan || $recordStatusGroup === 'Late';
-                    $scanLines[] = $recordStatusGroup . ' - ' . date('h:i A', strtotime($record['time_in']));
+                    $scanLines[] = $recordStatusGroup . ' In - ' . date('h:i A', strtotime($record['time_in']));
+                    if (!empty($record['time_out'])) {
+                        $scanLines[] = 'Time Out - ' . date('h:i A', strtotime($record['time_out']));
+                    }
                 }
                 $statusGroup = $hasLateScan ? 'Late' : 'Present';
                 $cellText = implode("\n", $scanLines);

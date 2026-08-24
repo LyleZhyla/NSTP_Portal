@@ -310,6 +310,7 @@ function ensureAttendanceArchiveStatusSchema(PDO $conn) {
                     tbl_attendance_id INT NOT NULL,
                     tbl_student_id INT NOT NULL,
                     time_in TIMESTAMP NOT NULL,
+                    time_out DATETIME NULL,
                     status VARCHAR(50) NULL,
                     archived_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_student_id (tbl_student_id),
@@ -333,6 +334,73 @@ function ensureAttendanceArchiveStatusSchema(PDO $conn) {
     }
 }
 
+function attendanceTimeInHasAutoUpdate(PDO $conn, $tableName) {
+    if (!in_array($tableName, ['tbl_attendance', 'tbl_attendance_archive'], true)) {
+        return false;
+    }
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT EXTRA
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME = 'time_in'
+            LIMIT 1
+        ");
+        $stmt->execute([$tableName]);
+        return stripos((string) $stmt->fetchColumn(), 'on update') !== false;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function attendanceTableHasTimeOutColumn(PDO $conn, $tableName) {
+    if (!in_array($tableName, ['tbl_attendance', 'tbl_attendance_archive'], true)) {
+        return false;
+    }
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME = 'time_out'
+        ");
+        $stmt->execute([$tableName]);
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function ensureAttendanceTimeOutSchema(PDO $conn) {
+    ensureAttendanceArchiveStatusSchema($conn);
+
+    try {
+        // Legacy tables used ON UPDATE CURRENT_TIMESTAMP for time_in. Remove it
+        // so recording a departure never overwrites the original arrival time.
+        if (attendanceTimeInHasAutoUpdate($conn, 'tbl_attendance')) {
+            $conn->exec("ALTER TABLE tbl_attendance MODIFY COLUMN time_in TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        }
+        if (attendanceTimeInHasAutoUpdate($conn, 'tbl_attendance_archive')) {
+            $conn->exec("ALTER TABLE tbl_attendance_archive MODIFY COLUMN time_in TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        }
+        if (!attendanceTableHasTimeOutColumn($conn, 'tbl_attendance')) {
+            $conn->exec("ALTER TABLE tbl_attendance ADD COLUMN time_out DATETIME NULL AFTER time_in");
+        }
+        if (!attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive')) {
+            $conn->exec("ALTER TABLE tbl_attendance_archive ADD COLUMN time_out DATETIME NULL AFTER time_in");
+        }
+    } catch (Throwable $error) {
+        return false;
+    }
+
+    return attendanceTableHasTimeOutColumn($conn, 'tbl_attendance')
+        && attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive');
+}
+
 function studentAttendanceTimeline(PDO $conn, array $student, $limit = null, $date = null) {
     $studentId = (int) ($student['tbl_student_id'] ?? 0);
     if ($studentId <= 0) {
@@ -352,8 +420,11 @@ function studentAttendanceTimeline(PDO $conn, array $student, $limit = null, $da
         $archiveParams[] = $attendanceDate;
     }
 
+    $activeTimeOutColumn = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance')
+        ? 'time_out'
+        : 'NULL AS time_out';
     $queries = [
-        "SELECT tbl_attendance_id, tbl_student_id, time_in, status, NULL AS archived_date, 0 AS is_archived
+        "SELECT tbl_attendance_id, tbl_student_id, time_in, {$activeTimeOutColumn}, status, NULL AS archived_date, 0 AS is_archived
          FROM tbl_attendance
          WHERE {$activeWhere}",
     ];
@@ -364,7 +435,10 @@ function studentAttendanceTimeline(PDO $conn, array $student, $limit = null, $da
         if (attendanceArchiveHasStatusColumn($conn)) {
             $archiveStatusColumn = 'status';
         }
-        $queries[] = "SELECT tbl_attendance_id, tbl_student_id, time_in, {$archiveStatusColumn}, archived_date, 1 AS is_archived
+        $archiveTimeOutColumn = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive')
+            ? 'time_out'
+            : 'NULL AS time_out';
+        $queries[] = "SELECT tbl_attendance_id, tbl_student_id, time_in, {$archiveTimeOutColumn}, {$archiveStatusColumn}, archived_date, 1 AS is_archived
                       FROM tbl_attendance_archive
                       WHERE {$archiveWhere}";
         $params = array_merge($params, $archiveParams);

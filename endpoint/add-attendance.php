@@ -25,8 +25,16 @@ if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
 }
 
 ensureAttendancePerformanceIndexes($conn);
+if (!ensureAttendanceTimeOutSchema($conn)) {
+    echo json_encode(['success' => false, 'message' => 'Unable to prepare the Time Out feature. Please contact the administrator.']);
+    exit;
+}
 
 $qr_code = isset($_POST['qr_code']) ? trim($_POST['qr_code']) : '';
+$scanMode = strtolower(trim((string) ($_POST['scan_mode'] ?? 'time_in')));
+if (!in_array($scanMode, ['time_in', 'time_out'], true)) {
+    $scanMode = 'time_in';
+}
 
 if (empty($qr_code)) {
     echo json_encode(['success' => false, 'message' => 'No QR code provided']);
@@ -62,19 +70,67 @@ try {
         exit;
     }
     
-    // Check if already attended today
+    // Find today's attendance row. Time Out updates the same row instead of
+    // creating a second attendance record.
     $today = date('Y-m-d');
     $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
     $checkStmt = $conn->prepare("
-        SELECT COUNT(*) FROM tbl_attendance 
+        SELECT tbl_attendance_id, time_in, time_out, status
+        FROM tbl_attendance
         WHERE tbl_student_id = ? AND time_in >= ? AND time_in < ?
+        ORDER BY time_in DESC
+        LIMIT 1
     ");
     $checkStmt->execute([$student['tbl_student_id'], $today . ' 00:00:00', $tomorrow . ' 00:00:00']);
-    
-    if ($checkStmt->fetchColumn() > 0) {
+    $todayAttendance = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($scanMode === 'time_out') {
+        if (!$todayAttendance) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'No Time In record found for this student today.'
+            ]);
+            exit;
+        }
+        if (!empty($todayAttendance['time_out'])) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Student already timed out today at ' . date('h:i A', strtotime($todayAttendance['time_out'])) . '.'
+            ]);
+            exit;
+        }
+
+        $timeOut = date('Y-m-d H:i:s');
+        $updateStmt = $conn->prepare("
+            UPDATE tbl_attendance
+            SET time_out = ?
+            WHERE tbl_attendance_id = ?
+              AND time_out IS NULL
+        ");
+        $updateStmt->execute([$timeOut, $todayAttendance['tbl_attendance_id']]);
+        if ($updateStmt->rowCount() !== 1) {
+            echo json_encode(['success' => false, 'message' => 'Time Out was already recorded.']);
+            exit;
+        }
+
         echo json_encode([
-            'success' => false, 
-            'message' => 'Student already attended today'
+            'success' => true,
+            'message' => 'Time Out recorded successfully',
+            'attendance_id' => (int) $todayAttendance['tbl_attendance_id'],
+            'student_name' => $student['student_name'],
+            'course_section' => $student['course_section'],
+            'time' => date('h:i A', strtotime($timeOut)),
+            'time_out' => $timeOut,
+            'status' => 'Timed Out',
+            'scan_mode' => 'time_out'
+        ]);
+        exit;
+    }
+
+    if ($todayAttendance) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Student already timed in today at ' . date('h:i A', strtotime($todayAttendance['time_in'])) . '.'
         ]);
         exit;
     }
@@ -124,6 +180,7 @@ try {
         'course_section' => $student['course_section'],
         'time' => date('h:i A', strtotime($time_in)),
         'status' => $status,
+        'scan_mode' => 'time_in',
         'account_automation' => $accountAutomation
     ]);
     
