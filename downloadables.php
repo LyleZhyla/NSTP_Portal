@@ -514,6 +514,17 @@ function downloadablesValidDate($value, $fallback) {
 $defaultSaturdayStart = date('Y-m-d', strtotime('-12 weeks', strtotime($today)));
 $saturdayStartDate = downloadablesValidDate($_GET['saturday_start'] ?? '', $defaultSaturdayStart);
 $saturdayEndDate = downloadablesValidDate($_GET['saturday_end'] ?? '', $today);
+$selectedAttendanceComponent = $role === 'super_admin'
+    ? normalizeProgram($_GET['attendance_component'] ?? null)
+    : $program;
+$attendanceGraphAccess = $attendanceAccess;
+if ($selectedAttendanceComponent) {
+    $attendanceGraphAccess = studentComponentAttendanceAccessSqlForUser([
+        'role' => 'coordinator',
+        'program' => $selectedAttendanceComponent,
+    ], 's');
+}
+$attendanceGraphComponentLabel = $selectedAttendanceComponent ?: 'All Components';
 if ($saturdayStartDate > $saturdayEndDate) {
     [$saturdayStartDate, $saturdayEndDate] = [$saturdayEndDate, $saturdayStartDate];
 }
@@ -543,7 +554,7 @@ $saturdayAttendanceSql = "
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
         WHERE DATE(a.time_in) BETWEEN ? AND ?
           AND DAYOFWEEK(a.time_in) = 7
-          AND ({$attendanceAccess['condition']})
+          AND ({$attendanceGraphAccess['condition']})
 
         UNION ALL
 
@@ -552,15 +563,15 @@ $saturdayAttendanceSql = "
         INNER JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
         WHERE DATE(aa.time_in) BETWEEN ? AND ?
           AND DAYOFWEEK(aa.time_in) = 7
-          AND ({$attendanceAccess['condition']})
+          AND ({$attendanceGraphAccess['condition']})
     ) attendance_rows
     ORDER BY attendance_rows.time_in ASC
 ";
 $saturdayAttendanceParams = array_merge(
     [$saturdayStartDate, $saturdayEndDate],
-    $attendanceAccess['params'],
+    $attendanceGraphAccess['params'],
     [$saturdayStartDate, $saturdayEndDate],
-    $attendanceAccess['params']
+    $attendanceGraphAccess['params']
 );
 $saturdayAttendanceStmt = $conn->prepare($saturdayAttendanceSql);
 $saturdayAttendanceStmt->execute($saturdayAttendanceParams);
@@ -866,6 +877,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
 
                         <form method="get" class="mb-3">
                             <input type="hidden" name="graph" value="<?php echo htmlspecialchars($selectedGraph); ?>">
+                            <input type="hidden" name="attendance_component" value="<?php echo htmlspecialchars($selectedAttendanceComponent ?: ''); ?>">
                             <div class="form-row">
                                 <?php if ($role === 'super_admin' || $role === 'facilitator'): ?>
                                 <div class="form-group col-md-2">
@@ -1026,15 +1038,31 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                         <form method="get" class="mb-3">
                             <input type="hidden" name="graph" value="<?php echo htmlspecialchars($selectedGraph); ?>">
                             <div class="form-row align-items-end">
-                                <div class="form-group col-md-4">
+                                <div class="form-group col-md-3">
+                                    <label for="attendanceComponentFilter">Attendance Component</label>
+                                    <?php if ($role === 'super_admin'): ?>
+                                    <select class="form-control" id="attendanceComponentFilter" name="attendance_component">
+                                        <option value="" <?php echo $selectedAttendanceComponent === null ? 'selected' : ''; ?>>All Components</option>
+                                        <?php foreach (['CWTS', 'LTS', 'ROTC'] as $attendanceComponentOption): ?>
+                                        <option value="<?php echo $attendanceComponentOption; ?>" <?php echo $selectedAttendanceComponent === $attendanceComponentOption ? 'selected' : ''; ?>>
+                                            <?php echo $attendanceComponentOption; ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <?php else: ?>
+                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($attendanceGraphComponentLabel); ?>" disabled>
+                                    <input type="hidden" name="attendance_component" value="<?php echo htmlspecialchars($selectedAttendanceComponent ?: ''); ?>">
+                                    <?php endif; ?>
+                                </div>
+                                <div class="form-group col-md-3">
                                     <label for="saturdayStartDate">Start Date</label>
                                     <input type="date" class="form-control" id="saturdayStartDate" name="saturday_start" value="<?php echo htmlspecialchars($saturdayStartDate); ?>">
                                 </div>
-                                <div class="form-group col-md-4">
+                                <div class="form-group col-md-3">
                                     <label for="saturdayEndDate">End Date</label>
                                     <input type="date" class="form-control" id="saturdayEndDate" name="saturday_end" value="<?php echo htmlspecialchars($saturdayEndDate); ?>">
                                 </div>
-                                <div class="form-group col-md-4">
+                                <div class="form-group col-md-3">
                                     <button type="submit" class="btn btn-primary btn-block">
                                         <i class="fas fa-filter mr-1"></i> Update Saturday Graph
                                     </button>
@@ -1043,6 +1071,10 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                         </form>
 
                         <div class="graph-summary">
+                            <div class="graph-summary-item">
+                                <span>Attendance Component</span>
+                                <strong><?php echo htmlspecialchars($attendanceGraphComponentLabel); ?></strong>
+                            </div>
                             <div class="graph-summary-item">
                                 <span>Saturdays in Range</span>
                                 <strong><?php echo number_format(count($saturdayChartRows)); ?></strong>
@@ -1062,7 +1094,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                 <div class="chart-panel">
                                     <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
                                         <div>
-                                            <div class="chart-panel-title">Unique Students Present per Saturday</div>
+                                            <div class="chart-panel-title"><?php echo htmlspecialchars($attendanceGraphComponentLabel); ?> - Unique Students Present per Saturday</div>
                                             <div class="muted-note"><?php echo htmlspecialchars(date('M d, Y', strtotime($saturdayStartDate)) . ' to ' . date('M d, Y', strtotime($saturdayEndDate))); ?></div>
                                         </div>
                                         <button type="button" class="btn btn-success btn-sm mt-2 mt-md-0" id="downloadSaturdayGraphBtn">
@@ -1074,7 +1106,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                             </div>
                             <div class="col-lg-3 mb-3">
                                 <div class="chart-panel">
-                                    <div class="chart-panel-title">Exact Saturday Counts</div>
+                                    <div class="chart-panel-title"><?php echo htmlspecialchars($attendanceGraphComponentLabel); ?> Exact Saturday Counts</div>
                                     <div class="chart-ranking">
                                         <table class="table table-sm table-hover">
                                             <thead>
@@ -1484,7 +1516,8 @@ const selectedEnrollmentGraph = <?php echo json_encode($selectedGraph); ?>;
 const saturdayAttendanceRows = <?php echo json_encode($saturdayChartRows); ?>;
 const saturdayAttendanceRange = {
     start: <?php echo json_encode($saturdayStartDate); ?>,
-    end: <?php echo json_encode($saturdayEndDate); ?>
+    end: <?php echo json_encode($saturdayEndDate); ?>,
+    component: <?php echo json_encode($attendanceGraphComponentLabel); ?>
 };
 const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5e9aa6', '#b97883', '#78906d', '#9b8a78', '#6f7f98', '#a284a6', '#8793a1'];
 
@@ -1670,7 +1703,7 @@ if (saturdayCanvas && typeof Chart !== 'undefined' && saturdayAttendanceRows.len
         data: {
             labels: saturdayAttendanceRows.map(row => row.label),
             datasets: [{
-                label: 'Unique Students Present',
+                label: saturdayAttendanceRange.component + ' - Unique Students Present',
                 data: saturdayAttendanceRows.map(row => Number(row.total || 0)),
                 backgroundColor: saturdayAttendanceRows.map(row => Number(row.total || 0) > 0 ? '#198754' : '#d9e2e8'),
                 borderColor: saturdayAttendanceRows.map(row => Number(row.total || 0) > 0 ? '#146c43' : '#b8c4cc'),
@@ -1730,11 +1763,11 @@ if (downloadSaturdayGraphBtn) {
         exportContext.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
         exportContext.fillStyle = '#17324d';
         exportContext.font = 'bold 30px Arial, sans-serif';
-        exportContext.fillText('TAU-NSTP Saturday Attendance', padding, 48);
+        exportContext.fillText('TAU-NSTP ' + saturdayAttendanceRange.component + ' Saturday Attendance', padding, 48);
         exportContext.fillStyle = '#5f6b76';
         exportContext.font = '18px Arial, sans-serif';
         exportContext.fillText(
-            saturdayAttendanceRange.start + ' to ' + saturdayAttendanceRange.end + ' · Unique students per Saturday',
+            saturdayAttendanceRange.start + ' to ' + saturdayAttendanceRange.end + ' · ' + saturdayAttendanceRange.component + ' unique students per Saturday',
             padding,
             78
         );
@@ -1754,7 +1787,8 @@ if (downloadSaturdayGraphBtn) {
             const downloadUrl = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = downloadUrl;
-            link.download = 'saturday-attendance-' + saturdayAttendanceRange.start + '-to-' + saturdayAttendanceRange.end + '.png';
+            const componentSlug = saturdayAttendanceRange.component.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            link.download = 'saturday-attendance-' + componentSlug + '-' + saturdayAttendanceRange.start + '-to-' + saturdayAttendanceRange.end + '.png';
             document.body.appendChild(link);
             link.click();
             link.remove();

@@ -29,13 +29,53 @@ $attendanceAccess = studentComponentAttendanceAccessSqlForUser(
     $currentUserRecord ?: ['role' => $currentUserRole, 'user_id' => $currentUserID],
     's'
 );
+$componentAttendanceCounts = ['CWTS' => 0, 'LTS' => 0, 'ROTC' => 0];
 
 // Get statistics with role-based filtering
 if ($currentUserRole === 'super_admin') {
     // Super Admin: See all records
-    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_attendance WHERE DATE(time_in) = :today");
-    $stmt->execute(['today' => $today]);
+    $stmt = $conn->prepare("
+        SELECT COUNT(DISTINCT scanned.tbl_student_id)
+        FROM (
+            SELECT tbl_student_id FROM tbl_attendance WHERE DATE(time_in) = ?
+            UNION ALL
+            SELECT tbl_student_id FROM tbl_attendance_archive WHERE DATE(time_in) = ?
+        ) scanned
+    ");
+    $stmt->execute([$today, $today]);
     $todayAttendance = $stmt->fetchColumn();
+
+    foreach (array_keys($componentAttendanceCounts) as $componentName) {
+        $componentAttendanceAccess = studentComponentAttendanceAccessSqlForUser([
+            'role' => 'coordinator',
+            'program' => $componentName,
+        ], 's');
+        $componentAttendanceStmt = $conn->prepare("
+            SELECT COUNT(DISTINCT component_attendance.tbl_student_id)
+            FROM (
+                SELECT a.tbl_student_id
+                FROM tbl_attendance a
+                INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
+                WHERE DATE(a.time_in) = ?
+                  AND ({$componentAttendanceAccess['condition']})
+
+                UNION ALL
+
+                SELECT aa.tbl_student_id
+                FROM tbl_attendance_archive aa
+                INNER JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
+                WHERE DATE(aa.time_in) = ?
+                  AND ({$componentAttendanceAccess['condition']})
+            ) component_attendance
+        ");
+        $componentAttendanceStmt->execute(array_merge(
+            [$today],
+            $componentAttendanceAccess['params'],
+            [$today],
+            $componentAttendanceAccess['params']
+        ));
+        $componentAttendanceCounts[$componentName] = (int) $componentAttendanceStmt->fetchColumn();
+    }
 
     $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_attendance");
     $stmt->execute();
@@ -74,13 +114,29 @@ if ($currentUserRole === 'super_admin') {
     // Component-wide attendance: every coordinator and facilitator in the
     // same component sees the same records regardless of who scanned them.
     $stmt = $conn->prepare("
-        SELECT COUNT(*) as total 
-        FROM tbl_attendance a
-        INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        WHERE DATE(a.time_in) = ?
-          AND ({$attendanceAccess['condition']})
+        SELECT COUNT(DISTINCT component_attendance.tbl_student_id)
+        FROM (
+            SELECT a.tbl_student_id
+            FROM tbl_attendance a
+            INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
+            WHERE DATE(a.time_in) = ?
+              AND ({$attendanceAccess['condition']})
+
+            UNION ALL
+
+            SELECT aa.tbl_student_id
+            FROM tbl_attendance_archive aa
+            INNER JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
+            WHERE DATE(aa.time_in) = ?
+              AND ({$attendanceAccess['condition']})
+        ) component_attendance
     ");
-    $stmt->execute(array_merge([$today], $attendanceAccess['params']));
+    $stmt->execute(array_merge(
+        [$today],
+        $attendanceAccess['params'],
+        [$today],
+        $attendanceAccess['params']
+    ));
     $todayAttendance = $stmt->fetchColumn();
 
     $stmt = $conn->prepare("
@@ -683,6 +739,39 @@ if ($currentUserRole === 'super_admin') {
                             </div>
                             <div class="icon"><i class="fas fa-user-clock"></i></div>
                             <a href="masterlist.php" class="small-box-footer">Review Students <i class="fas fa-arrow-circle-right"></i></a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-2">
+                    <div class="col-lg-4 col-md-4 col-12">
+                        <div class="small-box bg-info">
+                            <div class="inner">
+                                <h3><?php echo number_format($componentAttendanceCounts['CWTS']); ?></h3>
+                                <p>CWTS Scanned Today</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-qrcode"></i></div>
+                            <a href="graphs.php?attendance_component=CWTS" class="small-box-footer">View CWTS Attendance Graph <i class="fas fa-arrow-circle-right"></i></a>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-4 col-12">
+                        <div class="small-box bg-teal">
+                            <div class="inner">
+                                <h3><?php echo number_format($componentAttendanceCounts['LTS']); ?></h3>
+                                <p>LTS Scanned Today</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-qrcode"></i></div>
+                            <a href="graphs.php?attendance_component=LTS" class="small-box-footer">View LTS Attendance Graph <i class="fas fa-arrow-circle-right"></i></a>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-4 col-12">
+                        <div class="small-box bg-maroon">
+                            <div class="inner">
+                                <h3><?php echo number_format($componentAttendanceCounts['ROTC']); ?></h3>
+                                <p>ROTC Scanned Today</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-qrcode"></i></div>
+                            <a href="graphs.php?attendance_component=ROTC" class="small-box-footer">View ROTC Attendance Graph <i class="fas fa-arrow-circle-right"></i></a>
                         </div>
                     </div>
                 </div>
