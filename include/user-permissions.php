@@ -7,6 +7,15 @@ function normalizeProgram($program) {
 }
 }
 
+if (!function_exists('resolveStudentComponentFromSources')) {
+function resolveStudentComponentFromSources($accountProgram, $registrationComponent, $courseSection, $creatorRole = null, $creatorProgram = null) {
+    return normalizeProgram($accountProgram)
+        ?: normalizeProgram($registrationComponent)
+        ?: inferProgramFromText($courseSection)
+        ?: ((string) $creatorRole === 'facilitator' ? normalizeProgram($creatorProgram) : null);
+}
+}
+
 if (!function_exists('inferProgramFromText')) {
 function inferProgramFromText($text) {
     $text = strtoupper((string) $text);

@@ -179,6 +179,7 @@ $coordinatorFacilitatorCards = [];
 $superAdminFolderCards = [];
 $superAdminSystemFolderCards = [];
 $superAdminComponentCards = [];
+$superAdminNoComponentCount = 0;
 $superAdminExportFacilitators = [];
 $studentManagementFolders = [];
 $folderAssignableFacilitators = [];
@@ -483,6 +484,42 @@ if ($showRotcMsSummary) {
     foreach ($rotcMsCountStmt->fetchAll(PDO::FETCH_ASSOC) as $rotcMsRow) {
         $msLevel = normalizeRotcMsLevel($rotcMsRow['ms_level'] ?? null) ?: 'MS-1';
         $rotcMsCounts[$msLevel] = (int) $rotcMsRow['student_count'];
+    }
+
+    if ($user_role === 'super_admin') {
+        $noComponentStmt = $conn->query("
+        SELECT
+            s.course_section,
+            student_user.program AS account_program,
+            creator.role AS creator_role,
+            creator.program AS creator_program,
+            (
+                SELECT r.component
+                FROM tbl_public_student_registrations r
+                WHERE r.registrant_role = 'student'
+                  AND COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+                  AND (
+                        (s.user_id IS NOT NULL AND r.user_id = s.user_id)
+                        OR (NULLIF(TRIM(s.student_number), '') IS NOT NULL AND r.student_number = s.student_number)
+                  )
+                ORDER BY r.registration_id DESC
+                LIMIT 1
+            ) AS registration_component
+        FROM tbl_student s
+        LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id AND student_user.role = 'student'
+        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
+    ");
+        foreach ($noComponentStmt->fetchAll(PDO::FETCH_ASSOC) as $studentSource) {
+            if (!resolveStudentComponentFromSources(
+                $studentSource['account_program'] ?? null,
+                $studentSource['registration_component'] ?? null,
+                $studentSource['course_section'] ?? null,
+                $studentSource['creator_role'] ?? null,
+                $studentSource['creator_program'] ?? null
+            )) {
+                $superAdminNoComponentCount++;
+            }
+        }
     }
 }
 $rotcMsTotal = array_sum($rotcMsCounts);
@@ -2007,10 +2044,10 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                 <?php elseif ($user_role === 'super_admin'): ?>
 
                 <div class="alert alert-secondary d-flex align-items-center">
-                    <i class="fas fa-eye fa-2x mr-3"></i>
+                    <i class="fas fa-users-cog fa-2x mr-3"></i>
                     <div>
-                        <strong>Read-only security view:</strong>
-                        Super Admin can review students by component. Open a component to view its student list.
+                        <strong>Component management:</strong>
+                        Review students by component, or open No Component to assign students to CWTS, LTS, or ROTC.
                     </div>
                 </div>
 
@@ -2023,6 +2060,12 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                 </div>
 
                 <div class="folder-grid">
+                    <a class="folder-box" href="folder-students.php?scope=no_component">
+                        <span class="folder-box-icon"><i class="fas fa-user-tag"></i></span>
+                        <span class="folder-box-title">No Component</span>
+                        <span class="folder-box-meta">Assign CWTS, LTS, or ROTC to these students.</span>
+                        <span class="folder-box-count"><i class="fas fa-users"></i><?php echo (int) $superAdminNoComponentCount; ?> students</span>
+                    </a>
                     <?php foreach ($superAdminComponentCards as $componentCard): ?>
                         <a class="folder-box" href="folder-students.php?scope=component&component=<?php echo urlencode($componentCard['component']); ?>">
                             <span class="folder-box-icon"><i class="fas fa-layer-group"></i></span>
