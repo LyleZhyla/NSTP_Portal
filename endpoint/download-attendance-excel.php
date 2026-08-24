@@ -135,84 +135,20 @@ if ($requestedFolderKey !== '') {
 
     $selectedFolderLabel = $selectedFolder;
 }
-$isRotcFacilitator = $userRole === 'facilitator' && $program === 'ROTC';
-$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
-$canViewAllAttendance = $userRole === 'super_admin'
-    || (in_array($userRole, ['coordinator', 'facilitator'], true) && !$facilitatorScanRestrictionEnabled);
-
-if ($canViewAllAttendance) {
-    $studentWhere = '';
-    if ($userRole !== 'super_admin' && $program === 'ROTC') {
-        $studentWhere = 'WHERE ' . ($userRole === 'facilitator'
-            ? rotcMs1StudentSqlCondition('s')
-            : rotcStudentSqlCondition('s'));
-    }
-
-    $studentSql = "
-        SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
-               COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
-        FROM tbl_student s
-        LEFT JOIN tbl_users u ON s.created_by = u.user_id
-        {$studentWhere}
-        ORDER BY s.course_section ASC, s.student_name ASC
-    ";
-    $studentStmt = $conn->prepare($studentSql);
-    $studentStmt->execute();
-    $preparedBy = $userRole === 'super_admin' ? 'SUPER ADMIN' : strtoupper($_SESSION['username'] ?? 'FACILITATOR');
-} elseif ($userRole === 'coordinator') {
-    if ($program === 'ROTC') {
-        $coordinatorRotcCondition = rotcStudentSqlCondition('s');
-        $studentSql = "
-            SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
-                   COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
-            FROM tbl_student s
-            LEFT JOIN tbl_users u ON s.created_by = u.user_id
-            WHERE {$coordinatorRotcCondition}
-            ORDER BY s.course_section ASC, s.student_name ASC
-        ";
-        $studentStmt = $conn->prepare($studentSql);
-        $studentStmt->execute();
-    } else {
-        $studentSql = "
-            SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
-                   COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
-            FROM tbl_student s
-            LEFT JOIN tbl_users u ON s.created_by = u.user_id
-            WHERE (u.role = 'facilitator' AND u.program = :program)
-               OR s.course_section = :program_section
-            ORDER BY s.course_section ASC, s.student_name ASC
-        ";
-        $studentStmt = $conn->prepare($studentSql);
-        $studentStmt->execute([
-            ':program' => $program,
-            ':program_section' => $program,
-        ]);
-    }
-    $preparedBy = strtoupper(($program ?: 'NSTP') . ' COORDINATOR');
-} else {
-    $facilitatorStudentAccessCondition = "(s.created_by = :creator_user_id OR ads.user_id = :section_user_id"
-        . ($isRotcFacilitator ? " OR " . rotcMs1StudentSqlCondition('s') : "")
-        . ")";
-    if ($program === 'ROTC') {
-        $facilitatorStudentAccessCondition = "({$facilitatorStudentAccessCondition} AND " . rotcMs1StudentSqlCondition('s') . ")";
-    }
-
-    $studentSql = "
-        SELECT DISTINCT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
-               COALESCE(NULLIF(u.full_name, ''), u.username, 'Facilitator') AS facilitator_name
-        FROM tbl_student s
-        LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
-        LEFT JOIN tbl_users u ON s.created_by = u.user_id
-        WHERE {$facilitatorStudentAccessCondition}
-        ORDER BY s.course_section ASC, s.student_name ASC
-    ";
-    $studentStmt = $conn->prepare($studentSql);
-    $studentStmt->execute([
-        ':section_user_id' => $userId,
-        ':creator_user_id' => $userId,
-    ]);
-    $preparedBy = strtoupper($_SESSION['username'] ?? 'FACILITATOR');
-}
+$attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser, 's');
+$studentSql = "
+    SELECT DISTINCT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.original_section, s.course_section,
+           COALESCE(NULLIF(u.full_name, ''), u.username, 'Unassigned') AS facilitator_name
+    FROM tbl_student s
+    LEFT JOIN tbl_users u ON s.created_by = u.user_id
+    WHERE {$attendanceAccess['condition']}
+    ORDER BY s.course_section ASC, s.student_name ASC
+";
+$studentStmt = $conn->prepare($studentSql);
+$studentStmt->execute($attendanceAccess['params']);
+$preparedBy = $userRole === 'super_admin'
+    ? 'SUPER ADMIN'
+    : strtoupper(($program ?: 'NSTP') . ' COMPONENT');
 
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
 if ($selectedFolderOwnerId && $selectedFolder !== '') {

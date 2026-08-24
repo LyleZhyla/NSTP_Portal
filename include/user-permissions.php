@@ -323,16 +323,15 @@ function studentProgramForAttendance(PDO $conn, array $student) {
     }
 }
 
-function studentAttendanceAccessSqlForUser(array $actor, $studentAlias = 's') {
+function studentComponentAttendanceAccessSqlForUser(array $actor, $studentAlias = 's') {
     $studentAlias = preg_replace('/[^A-Za-z0-9_]/', '', (string) $studentAlias) ?: 's';
     $role = $actor['role'] ?? '';
-    $actorId = (int) ($actor['user_id'] ?? 0);
 
     if ($role === 'super_admin') {
         return ['condition' => '1=1', 'params' => []];
     }
 
-    if ($role === 'coordinator') {
+    if (in_array($role, ['coordinator', 'facilitator'], true)) {
         $program = normalizeProgram($actor['program'] ?? null);
         if (!$program) {
             return ['condition' => '1=0', 'params' => []];
@@ -375,6 +374,18 @@ function studentAttendanceAccessSqlForUser(array $actor, $studentAlias = 's') {
             )",
             'params' => ['%' . $program . '%', $program, $program, $program],
         ];
+    }
+
+    return ['condition' => '1=0', 'params' => []];
+}
+
+function studentAttendanceAccessSqlForUser(array $actor, $studentAlias = 's') {
+    $studentAlias = preg_replace('/[^A-Za-z0-9_]/', '', (string) $studentAlias) ?: 's';
+    $role = $actor['role'] ?? '';
+    $actorId = (int) ($actor['user_id'] ?? 0);
+
+    if (in_array($role, ['super_admin', 'coordinator'], true)) {
+        return studentComponentAttendanceAccessSqlForUser($actor, $studentAlias);
     }
 
     if ($role === 'facilitator') {

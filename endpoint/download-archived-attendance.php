@@ -22,6 +22,7 @@ if (!strtotime($startDate) || !strtotime($endDate)) {
 }
 
 date_default_timezone_set('Asia/Manila'); // Set timezone to Philippines
+$attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser, 's');
 
 // Set headers for Excel download
 header('Content-Type: application/vnd.ms-excel');
@@ -40,24 +41,10 @@ $query = "SELECT
     aa.archived_date as 'Archived Date'
 FROM tbl_attendance_archive aa
 LEFT JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
-LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-WHERE DATE(aa.time_in) BETWEEN :start_date AND :end_date
+WHERE DATE(aa.time_in) BETWEEN ? AND ?
+  AND ({$attendanceAccess['condition']})
 ";
-$params = [
-    ':start_date' => $startDate,
-    ':end_date' => $endDate,
-];
-
-$role = $currentUser['role'] ?? 'facilitator';
-if ($role === 'coordinator') {
-    $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
-    $query .= " AND ((creator.role = 'facilitator' AND creator.program = :program) OR s.course_section = :program_section)";
-    $params[':program'] = $program;
-    $params[':program_section'] = $program;
-} elseif ($role === 'facilitator') {
-    $query .= " AND s.created_by = :user_id";
-    $params[':user_id'] = (int) $currentUser['user_id'];
-}
+$params = array_merge([$startDate, $endDate], $attendanceAccess['params']);
 
 $query .= "
 ORDER BY aa.time_in DESC";

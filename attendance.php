@@ -21,10 +21,8 @@ if (!canAccessStaffTools($admin_role)) {
 }
 $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
-$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
-$canViewAllAttendance = $admin_role === 'super_admin'
-    || (in_array($admin_role, ['coordinator', 'facilitator'], true) && !$facilitatorScanRestrictionEnabled);
-$attendanceAccess = studentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
+$canViewAllAttendance = $admin_role === 'super_admin';
+$attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
 $attendanceAccessCondition = $attendanceAccess['condition'];
 $attendanceAccessParams = $attendanceAccess['params'];
 
@@ -773,7 +771,6 @@ if ($admin_role === 'super_admin') {
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance a
                                     INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-                                    LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
                                     AND {$attendanceAccessCondition}
                                 ");
@@ -808,7 +805,6 @@ if ($admin_role === 'super_admin') {
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance a
                                     INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-                                    LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
                                     AND (a.status IS NULL OR a.status = '' OR a.status LIKE 'On Time%')
                                     AND {$attendanceAccessCondition}
@@ -844,7 +840,6 @@ if ($admin_role === 'super_admin') {
                                     SELECT COUNT(*) 
                                     FROM tbl_attendance a
                                     INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-                                    LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE DATE(a.time_in) = CURDATE() 
                                     AND a.status LIKE 'Late%'
                                     AND {$attendanceAccessCondition}
@@ -1018,7 +1013,6 @@ if ($admin_role === 'super_admin') {
                        s.student_number, s.student_name, s.course_section 
                 FROM tbl_attendance a 
                 INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-                LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                 WHERE DATE(a.time_in) = CURDATE() 
                 AND {$attendanceAccessCondition}
                 ORDER BY a.time_in DESC
@@ -1212,7 +1206,6 @@ if ($admin_role === 'super_admin') {
                                 $stmt = $conn->prepare("
                                     SELECT DISTINCT s.tbl_student_id, s.student_name, s.course_section 
                                     FROM tbl_student s
-                                    LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
                                     WHERE {$attendanceAccessCondition}
                                     ORDER BY s.student_name
                                 ");

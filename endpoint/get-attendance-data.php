@@ -16,10 +16,8 @@ $admin_role = $_SESSION['role'] ?? 'facilitator';
 $currentUser = getCurrentUserRecord($conn);
 ensureRotcAttendanceSchema($conn);
 ensureAttendancePerformanceIndexes($conn);
-$facilitatorScanRestrictionEnabled = isFacilitatorScanRestrictionEnabled($conn);
-$canViewAllAttendance = $admin_role === 'super_admin'
-    || (in_array($admin_role, ['coordinator', 'facilitator'], true) && !$facilitatorScanRestrictionEnabled);
-$attendanceAccess = studentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
+$canViewAllAttendance = $admin_role === 'super_admin';
+$attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser ?: ['role' => $admin_role, 'user_id' => $admin_id], 's');
 $attendanceAccessCondition = $attendanceAccess['condition'];
 $attendanceAccessParams = $attendanceAccess['params'];
 
@@ -72,7 +70,6 @@ try {
             SELECT COUNT(*) 
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-            LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE a.time_in >= ? AND a.time_in < ?
             AND {$attendanceAccessCondition}
         ");
@@ -84,7 +81,6 @@ try {
             SELECT COUNT(*) 
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-            LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE a.time_in >= ? AND a.time_in < ?
             AND a.status LIKE 'On Time%'
             AND {$attendanceAccessCondition}
@@ -97,7 +93,6 @@ try {
             SELECT COUNT(*) 
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-            LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE a.time_in >= ? AND a.time_in < ?
             AND a.status LIKE 'Late%'
             AND {$attendanceAccessCondition}
@@ -111,7 +106,6 @@ try {
                    s.student_name, s.course_section
             FROM tbl_attendance a
             INNER JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-            LEFT JOIN tbl_admin_sections ads ON s.course_section = ads.course_section
             WHERE a.time_in >= ? AND a.time_in < ?
             AND {$attendanceAccessCondition}
             ORDER BY a.time_in DESC

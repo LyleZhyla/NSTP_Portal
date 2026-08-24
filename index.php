@@ -25,6 +25,10 @@ if (!canAccessStaffTools($currentUserRole)) {
     exit();
 }
 $componentCounts = canonicalStudentComponentCounts($conn);
+$attendanceAccess = studentComponentAttendanceAccessSqlForUser(
+    $currentUserRecord ?: ['role' => $currentUserRole, 'user_id' => $currentUserID],
+    's'
+);
 
 // Get statistics with role-based filtering
 if ($currentUserRole === 'super_admin') {
@@ -67,47 +71,45 @@ if ($currentUserRole === 'super_admin') {
         ? (int) ($componentCounts[$currentUserProgram] ?? 0)
         : 0;
 
-    // Today's attendance for students created by this admin
+    // Component-wide attendance: every coordinator and facilitator in the
+    // same component sees the same records regardless of who scanned them.
     $stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM tbl_attendance a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        WHERE DATE(a.time_in) = :today 
-        AND s.created_by = :user_id
+        WHERE DATE(a.time_in) = ?
+          AND ({$attendanceAccess['condition']})
     ");
-    $stmt->execute(['today' => $today, 'user_id' => $currentUserID]);
+    $stmt->execute(array_merge([$today], $attendanceAccess['params']));
     $todayAttendance = $stmt->fetchColumn();
 
-    // All attendance for students created by this admin
     $stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM tbl_attendance a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        WHERE s.created_by = :user_id
+        WHERE {$attendanceAccess['condition']}
     ");
-    $stmt->execute(['user_id' => $currentUserID]);
+    $stmt->execute($attendanceAccess['params']);
     $totalAttendance = $stmt->fetchColumn();
 
-    // Archived records for students created by this admin
     $stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM tbl_attendance_archive a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        WHERE s.created_by = :user_id
+        WHERE {$attendanceAccess['condition']}
     ");
-    $stmt->execute(['user_id' => $currentUserID]);
+    $stmt->execute($attendanceAccess['params']);
     $totalArchived = $stmt->fetchColumn();
 
-    // Recent attendance - only for students created by this admin
     $stmt = $conn->prepare("
         SELECT a.*, s.student_name, s.course_section 
         FROM tbl_attendance a 
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id 
-        WHERE s.created_by = :user_id 
+        WHERE {$attendanceAccess['condition']}
         ORDER BY a.time_in DESC 
         LIMIT 8
     ");
-    $stmt->execute(['user_id' => $currentUserID]);
+    $stmt->execute($attendanceAccess['params']);
     $recent = $stmt->fetchAll();
 }
 ?>
@@ -579,7 +581,7 @@ if ($currentUserRole === 'super_admin') {
                                     <?php if ($currentUserRole === 'super_admin'): ?>
                                         Today's Attendance
                                     <?php else: ?>
-                                        My Today's Attendance
+                                        Today's <?php echo htmlspecialchars($currentUserProgram ?: 'Component'); ?> Attendance
                                     <?php endif; ?>
                                 </p>
                             </div>
@@ -602,7 +604,7 @@ if ($currentUserRole === 'super_admin') {
                                     <?php if ($currentUserRole === 'super_admin'): ?>
                                         Active Records
                                     <?php else: ?>
-                                        My Active Records
+                                        <?php echo htmlspecialchars($currentUserProgram ?: 'Component'); ?> Active Records
                                     <?php endif; ?>
                                 </p>
                             </div>
@@ -625,7 +627,7 @@ if ($currentUserRole === 'super_admin') {
                                     <?php if ($currentUserRole === 'super_admin'): ?>
                                         Facilitators
                                     <?php else: ?>
-                                        My Archived Records
+                                        <?php echo htmlspecialchars($currentUserProgram ?: 'Component'); ?> Archived Records
                                     <?php endif; ?>
                                 </p>
                             </div>
@@ -695,7 +697,7 @@ if ($currentUserRole === 'super_admin') {
                                 <?php if ($currentUserRole === 'super_admin'): ?>
                                     <span class="badge badge-danger float-right">All Admins</span>
                                 <?php else: ?>
-                                    <span class="badge badge-primary float-right">My Students Only</span>
+                                    <span class="badge badge-primary float-right"><?php echo htmlspecialchars($currentUserProgram ?: 'Component'); ?> Attendance</span>
                                 <?php endif; ?>
                             </div>
                             <div class="card-body p-0">

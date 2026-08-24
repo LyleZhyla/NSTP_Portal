@@ -444,6 +444,7 @@ $downloadStats = [
     'public_registrations' => 0,
 ];
 $canonicalComponentCounts = canonicalStudentComponentCounts($conn);
+$attendanceAccess = studentComponentAttendanceAccessSqlForUser($currentUser, 's');
 
 if ($role === 'super_admin') {
     $downloadStats['students'] = array_sum($canonicalComponentCounts);
@@ -457,22 +458,18 @@ if ($role === 'super_admin') {
         SELECT COUNT(*)
         FROM tbl_attendance a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-        WHERE (creator.role = 'facilitator' AND creator.program = ?)
-           OR s.course_section = ?
+        WHERE {$attendanceAccess['condition']}
     ");
-    $statsStmt->execute([$program, $program]);
+    $statsStmt->execute($attendanceAccess['params']);
     $downloadStats['attendance'] = (int) $statsStmt->fetchColumn();
 
     $statsStmt = $conn->prepare("
         SELECT COUNT(*)
         FROM tbl_attendance_archive a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
-        WHERE (creator.role = 'facilitator' AND creator.program = ?)
-           OR s.course_section = ?
+        WHERE {$attendanceAccess['condition']}
     ");
-    $statsStmt->execute([$program, $program]);
+    $statsStmt->execute($attendanceAccess['params']);
     $downloadStats['archived'] = (int) $statsStmt->fetchColumn();
 
     $statsStmt = $conn->prepare("
@@ -489,18 +486,18 @@ if ($role === 'super_admin') {
         SELECT COUNT(*)
         FROM tbl_attendance a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        WHERE s.created_by = ?
+        WHERE {$attendanceAccess['condition']}
     ");
-    $statsStmt->execute([(int) $currentUser['user_id']]);
+    $statsStmt->execute($attendanceAccess['params']);
     $downloadStats['attendance'] = (int) $statsStmt->fetchColumn();
 
     $statsStmt = $conn->prepare("
         SELECT COUNT(*)
         FROM tbl_attendance_archive a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        WHERE s.created_by = ?
+        WHERE {$attendanceAccess['condition']}
     ");
-    $statsStmt->execute([(int) $currentUser['user_id']]);
+    $statsStmt->execute($attendanceAccess['params']);
     $downloadStats['archived'] = (int) $statsStmt->fetchColumn();
     $downloadStats['public_registrations'] = $filteredEnrollmentTotal;
 }
@@ -538,14 +535,12 @@ for ($dateCursor = clone $firstSaturday; $dateCursor <= $lastSaturdayBoundary; $
     $saturdayAttendance[$dateKey] = 0;
 }
 
-$attendanceAccess = studentAttendanceAccessSqlForUser($currentUser, 's');
 $saturdayAttendanceSql = "
     SELECT attendance_rows.tbl_student_id, attendance_rows.time_in
     FROM (
         SELECT DISTINCT a.tbl_student_id, a.time_in
         FROM tbl_attendance a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
-        LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
         WHERE DATE(a.time_in) BETWEEN ? AND ?
           AND DAYOFWEEK(a.time_in) = 7
           AND ({$attendanceAccess['condition']})
@@ -555,7 +550,6 @@ $saturdayAttendanceSql = "
         SELECT DISTINCT aa.tbl_student_id, aa.time_in
         FROM tbl_attendance_archive aa
         INNER JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
-        LEFT JOIN tbl_admin_sections ads ON ads.course_section = s.course_section
         WHERE DATE(aa.time_in) BETWEEN ? AND ?
           AND DAYOFWEEK(aa.time_in) = 7
           AND ({$attendanceAccess['condition']})

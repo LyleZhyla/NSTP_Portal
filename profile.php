@@ -340,16 +340,17 @@ if ($isStudent && $studentRecord) {
     }
     unset($activity);
 } else {
+    $profileAttendanceAccess = studentComponentAttendanceAccessSqlForUser($user, 's');
     $activity_sql = "
         SELECT a.*, s.student_name, s.course_section
         FROM tbl_attendance a
         JOIN tbl_student s ON a.tbl_student_id = s.tbl_student_id
-        WHERE s.created_by = ?
+        WHERE {$profileAttendanceAccess['condition']}
         ORDER BY a.time_in DESC
         LIMIT 10
     ";
     $activity_stmt = $conn->prepare($activity_sql);
-    $activity_stmt->execute([$user_id]);
+    $activity_stmt->execute($profileAttendanceAccess['params']);
     $activities = $activity_stmt->fetchAll();
 }
 
