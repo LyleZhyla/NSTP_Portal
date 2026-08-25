@@ -23,6 +23,7 @@ $role = $currentUser['role'];
 $today = date('Y-m-d');
 $defaultStartDate = date('Y-m-d', strtotime('-7 days'));
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
+ensureRotcAttendanceSchema($conn);
 
 function downloadablesColumnExists(PDO $conn, $tableName, $columnName) {
     try {
@@ -204,9 +205,64 @@ $totalEnrollmentStmt = $conn->prepare("
 $totalEnrollmentStmt->execute($chartParams);
 $filteredEnrollmentTotal = (int) $totalEnrollmentStmt->fetchColumn();
 
+$genderTotals = ['Male' => 0, 'Female' => 0];
+if ($hasGenderColumn) {
+    $genderTotalsStmt = $conn->prepare("
+        SELECT
+            SUM(CASE WHEN UPPER(TRIM(COALESCE(r.gender, ''))) IN ('MALE', 'M') THEN 1 ELSE 0 END) AS male_total,
+            SUM(CASE WHEN UPPER(TRIM(COALESCE(r.gender, ''))) IN ('FEMALE', 'F') THEN 1 ELSE 0 END) AS female_total
+        $studentGraphFromSql
+        WHERE " . implode(' AND ', $chartWhere)
+    );
+    $genderTotalsStmt->execute($chartParams);
+    $genderTotalsRow = $genderTotalsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $genderTotals['Male'] = (int) ($genderTotalsRow['male_total'] ?? 0);
+    $genderTotals['Female'] = (int) ($genderTotalsRow['female_total'] ?? 0);
+}
+$genderChartRows = [
+    ['label' => 'Male', 'total' => $genderTotals['Male']],
+    ['label' => 'Female', 'total' => $genderTotals['Female']],
+];
+$genderUsesRotcMsBreakdown = $selectedFilters['component'] === 'ROTC'
+    || (in_array($role, ['coordinator', 'facilitator'], true) && $program === 'ROTC');
+$rotcGenderTotals = [
+    'MS-1' => ['Male' => 0, 'Female' => 0],
+    'MS-31' => ['Male' => 0, 'Female' => 0],
+    'MS-41' => ['Male' => 0, 'Female' => 0],
+];
+if ($hasGenderColumn && $genderUsesRotcMsBreakdown) {
+    $rotcMsExpression = rotcStudentMsLevelSqlExpression('s');
+    $rotcGenderStmt = $conn->prepare("
+        SELECT
+            {$rotcMsExpression} AS ms_level,
+            SUM(CASE WHEN UPPER(TRIM(COALESCE(r.gender, ''))) IN ('MALE', 'M') THEN 1 ELSE 0 END) AS male_total,
+            SUM(CASE WHEN UPPER(TRIM(COALESCE(r.gender, ''))) IN ('FEMALE', 'F') THEN 1 ELSE 0 END) AS female_total
+        $studentGraphFromSql
+        WHERE " . implode(' AND ', $chartWhere) . "
+          AND ($studentComponentExpression) = 'ROTC'
+        GROUP BY ms_level
+    ");
+    $rotcGenderStmt->execute($chartParams);
+    foreach ($rotcGenderStmt->fetchAll(PDO::FETCH_ASSOC) as $rotcGenderRow) {
+        $msLevel = normalizeRotcMsLevel($rotcGenderRow['ms_level'] ?? null) ?: 'MS-1';
+        $rotcGenderTotals[$msLevel]['Male'] = (int) ($rotcGenderRow['male_total'] ?? 0);
+        $rotcGenderTotals[$msLevel]['Female'] = (int) ($rotcGenderRow['female_total'] ?? 0);
+    }
+
+    $genderChartRows = [];
+    foreach (['MS-1', 'MS-31', 'MS-41'] as $msLevel) {
+        foreach (['Male', 'Female'] as $genderLabel) {
+            $genderChartRows[] = [
+                'label' => $msLevel . ' ' . $genderLabel,
+                'total' => $rotcGenderTotals[$msLevel][$genderLabel],
+            ];
+        }
+    }
+}
+
 $chartData = [
     'components' => downloadablesGroupedData($conn, $studentGraphFromSql, $studentComponentExpression, $chartWhere, $chartParams),
-    'gender' => $hasGenderColumn ? downloadablesGroupedData($conn, $studentGraphFromSql, 'r.gender', $chartWhere, $chartParams) : [],
+    'gender' => $hasGenderColumn ? $genderChartRows : [],
     'course' => downloadablesGroupedData($conn, $studentGraphFromSql, 'r.course', $chartWhere, $chartParams),
     'college' => downloadablesGroupedData($conn, $studentGraphFromSql, 'r.college', $chartWhere, $chartParams),
     'province' => downloadablesGroupedData($conn, $studentGraphFromSql, 'r.province', $chartWhere, $chartParams),
@@ -214,6 +270,13 @@ $chartData = [
 $selectedChartDataKey = $selectedGraph === 'component' ? 'components' : $selectedGraph;
 $selectedChartRows = $chartData[$selectedChartDataKey] ?? [];
 $topChartRow = $selectedChartRows[0] ?? null;
+if ($selectedGraph === 'gender' && count($selectedChartRows) >= 2) {
+    foreach ($selectedChartRows as $genderChartRow) {
+        if (!$topChartRow || (int) $genderChartRow['total'] > (int) $topChartRow['total']) {
+            $topChartRow = $genderChartRow;
+        }
+    }
+}
 $activeFilterLabels = [];
 if (!empty($selectedFilters['component'])) {
     $activeFilterLabels[] = 'Component: ' . $selectedFilters['component'];
@@ -961,6 +1024,30 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                 <span>Highest Group</span>
                                 <strong><?php echo $topChartRow ? htmlspecialchars($topChartRow['label']) . ' (' . number_format((int) $topChartRow['total']) . ')' : 'No data'; ?></strong>
                             </div>
+                            <?php if ($hasGenderColumn): ?>
+                            <?php if ($genderUsesRotcMsBreakdown): ?>
+                                <?php foreach (['MS-1', 'MS-31', 'MS-41'] as $summaryMsLevel): ?>
+                                <div class="graph-summary-item">
+                                    <span><?php echo htmlspecialchars($summaryMsLevel); ?> Gender Count</span>
+                                    <strong>
+                                        <i class="fas fa-mars mr-1 text-primary"></i><?php echo number_format($rotcGenderTotals[$summaryMsLevel]['Male']); ?>
+                                        <span class="mx-1">/</span>
+                                        <i class="fas fa-venus mr-1 text-danger"></i><?php echo number_format($rotcGenderTotals[$summaryMsLevel]['Female']); ?>
+                                    </strong>
+                                    <div class="muted-note">Male / Female</div>
+                                </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                            <div class="graph-summary-item">
+                                <span><i class="fas fa-mars mr-1 text-primary"></i>Male Students</span>
+                                <strong><?php echo number_format($genderTotals['Male']); ?></strong>
+                            </div>
+                            <div class="graph-summary-item">
+                                <span><i class="fas fa-venus mr-1 text-danger"></i>Female Students</span>
+                                <strong><?php echo number_format($genderTotals['Female']); ?></strong>
+                            </div>
+                            <?php endif; ?>
+                            <?php endif; ?>
                             <div class="graph-summary-item">
                                 <span>Active Filters</span>
                                 <strong><?php echo count($activeFilterLabels) ? count($activeFilterLabels) . ' applied' : 'None'; ?></strong>
@@ -1638,6 +1725,20 @@ function chartTotals(rows) {
     return rows.map(row => Number(row.total || 0));
 }
 
+function enrollmentChartColor(label, index) {
+    const genderColors = {
+        'MS-1 Male': '#2563eb',
+        'MS-1 Female': '#ec4899',
+        'MS-31 Male': '#1d4ed8',
+        'MS-31 Female': '#db2777',
+        'MS-41 Male': '#1e40af',
+        'MS-41 Female': '#be185d',
+        'Male': '#2563eb',
+        'Female': '#ec4899'
+    };
+    return genderColors[label] || chartPalette[index % chartPalette.length];
+}
+
 function renderEnrollmentChart(canvasId, rows, type) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === 'undefined') {
@@ -1654,6 +1755,27 @@ function renderEnrollmentChart(canvasId, rows, type) {
         return;
     }
 
+    const enrollmentValueLabels = {
+        id: 'enrollmentValueLabels',
+        afterDatasetsDraw(chart) {
+            const context = chart.ctx;
+            context.save();
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                const metadata = chart.getDatasetMeta(datasetIndex);
+                metadata.data.forEach((element, valueIndex) => {
+                    const value = Number(dataset.data[valueIndex] || 0);
+                    const position = element.tooltipPosition();
+                    context.font = 'bold 13px Source Sans Pro, Arial, sans-serif';
+                    context.textAlign = 'center';
+                    context.textBaseline = 'middle';
+                    context.fillStyle = chart.config.type === 'doughnut' ? '#ffffff' : '#263238';
+                    context.fillText(value.toLocaleString(), position.x, chart.config.type === 'doughnut' ? position.y : position.y - 10);
+                });
+            });
+            context.restore();
+        }
+    };
+
     new Chart(canvas, {
         type: type,
         data: {
@@ -1661,14 +1783,18 @@ function renderEnrollmentChart(canvasId, rows, type) {
             datasets: [{
                 label: 'Enrollees',
                 data: totals,
-                backgroundColor: labels.map((_, index) => chartPalette[index % chartPalette.length]),
+                backgroundColor: labels.map((label, index) => enrollmentChartColor(label, index)),
                 borderColor: '#ffffff',
                 borderWidth: type === 'doughnut' ? 2 : 0
             }]
         },
+        plugins: [enrollmentValueLabels],
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+                padding: { top: type === 'doughnut' ? 0 : 22 }
+            },
             plugins: {
                 legend: {
                     display: type === 'doughnut',
