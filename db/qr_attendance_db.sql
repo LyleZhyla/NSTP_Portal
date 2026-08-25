@@ -310,6 +310,21 @@ INSERT INTO `tbl_student` (`tbl_student_id`, `user_id`, `student_name`, `origina
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `tbl_student_rotc_levels`
+--
+
+CREATE TABLE `tbl_student_rotc_levels` (
+  `tbl_student_id` int(11) NOT NULL,
+  `rotc_ms_level` varchar(20) NOT NULL,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`tbl_student_id`),
+  KEY `idx_rotc_ms_level` (`rotc_ms_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `tbl_users`
 --
 

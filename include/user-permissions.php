@@ -82,6 +82,20 @@ function ensureRotcAttendanceSchema(PDO $conn) {
     } catch (Throwable $error) {
         // Older installs may not have the public registration table yet.
     }
+
+    try {
+        $conn->exec("
+            CREATE TABLE IF NOT EXISTS tbl_student_rotc_levels (
+                tbl_student_id INT NOT NULL PRIMARY KEY,
+                rotc_ms_level VARCHAR(20) NOT NULL,
+                updated_by INT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_rotc_ms_level (rotc_ms_level)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $error) {
+        // Existing registration-based MS levels remain usable if schema changes are unavailable.
+    }
 }
 
 function ensureAttendancePerformanceIndexes(PDO $conn) {
@@ -137,6 +151,17 @@ function rotcStudentMsLevelSqlExpression($studentAlias = 's') {
     $studentAlias = preg_replace('/[^A-Za-z0-9_]/', '', (string) $studentAlias) ?: 's';
 
     return "COALESCE(
+        (
+            SELECT CASE
+                WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(ms_override.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS1' THEN 'MS-1'
+                WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(ms_override.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS31' THEN 'MS-31'
+                WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(ms_override.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS41' THEN 'MS-41'
+                ELSE NULL
+            END
+            FROM tbl_student_rotc_levels ms_override
+            WHERE ms_override.tbl_student_id = {$studentAlias}.tbl_student_id
+            LIMIT 1
+        ),
         (
             SELECT CASE
                 WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(latest_rotc_registration.rotc_ms_level), ' ', ''), '-', ''), '_', '')) = 'MS1' THEN 'MS-1'
@@ -253,6 +278,26 @@ function isRotcStudentRecord(PDO $conn, array $student) {
 }
 
 function getRotcStudentMsLevel(PDO $conn, array $student) {
+    $studentId = (int) ($student['tbl_student_id'] ?? 0);
+    if ($studentId > 0) {
+        try {
+            ensureRotcAttendanceSchema($conn);
+            $overrideStmt = $conn->prepare("
+                SELECT rotc_ms_level
+                FROM tbl_student_rotc_levels
+                WHERE tbl_student_id = ?
+                LIMIT 1
+            ");
+            $overrideStmt->execute([$studentId]);
+            $overrideLevel = normalizeRotcMsLevel($overrideStmt->fetchColumn());
+            if ($overrideLevel) {
+                return $overrideLevel;
+            }
+        } catch (Throwable $error) {
+            // Fall through to registration and legacy section values.
+        }
+    }
+
     $studentNumber = preg_replace('/\D/', '', (string) ($student['student_number'] ?? ''));
     $studentUserId = (int) ($student['user_id'] ?? 0);
     if ($studentNumber !== '' || $studentUserId > 0) {

@@ -45,10 +45,11 @@ function folderStudentsTableExists(PDO $conn, $tableName) {
 }
 
 function attachLatestRegistrationDetails(PDO $conn, array $students) {
-    if (empty($students) || !folderStudentsTableExists($conn, 'tbl_public_student_registrations')) {
+    if (empty($students)) {
         return $students;
     }
 
+    $registrations = [];
     $studentNumbers = [];
     foreach ($students as $student) {
         $studentNumber = trim((string) ($student['student_number'] ?? ''));
@@ -57,32 +58,53 @@ function attachLatestRegistrationDetails(PDO $conn, array $students) {
         }
     }
 
-    if (empty($studentNumbers)) {
-        return $students;
+    if (!empty($studentNumbers) && folderStudentsTableExists($conn, 'tbl_public_student_registrations')) {
+        $studentNumbers = array_keys($studentNumbers);
+        $placeholders = implode(',', array_fill(0, count($studentNumbers), '?'));
+        $stmt = $conn->prepare("
+            SELECT r.*
+            FROM tbl_public_student_registrations r
+            INNER JOIN (
+                SELECT student_number, MAX(registration_id) AS latest_registration_id
+                FROM tbl_public_student_registrations
+                WHERE student_number IN ($placeholders)
+                GROUP BY student_number
+            ) latest ON latest.latest_registration_id = r.registration_id
+        ");
+        $stmt->execute($studentNumbers);
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $registration) {
+            $registrations[(string) $registration['student_number']] = $registration;
+        }
     }
 
-    $studentNumbers = array_keys($studentNumbers);
-    $placeholders = implode(',', array_fill(0, count($studentNumbers), '?'));
-    $stmt = $conn->prepare("
-        SELECT r.*
-        FROM tbl_public_student_registrations r
-        INNER JOIN (
-            SELECT student_number, MAX(registration_id) AS latest_registration_id
-            FROM tbl_public_student_registrations
-            WHERE student_number IN ($placeholders)
-            GROUP BY student_number
-        ) latest ON latest.latest_registration_id = r.registration_id
-    ");
-    $stmt->execute($studentNumbers);
-
-    $registrations = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $registration) {
-        $registrations[(string) $registration['student_number']] = $registration;
+    $rotcLevelOverrides = [];
+    if (folderStudentsTableExists($conn, 'tbl_student_rotc_levels')) {
+        $studentIds = array_values(array_filter(array_map(
+            static fn($student) => (int) ($student['tbl_student_id'] ?? 0),
+            $students
+        )));
+        if ($studentIds) {
+            $idPlaceholders = implode(',', array_fill(0, count($studentIds), '?'));
+            $overrideStmt = $conn->prepare("
+                SELECT tbl_student_id, rotc_ms_level
+                FROM tbl_student_rotc_levels
+                WHERE tbl_student_id IN ($idPlaceholders)
+            ");
+            $overrideStmt->execute($studentIds);
+            foreach ($overrideStmt->fetchAll(PDO::FETCH_ASSOC) as $override) {
+                $rotcLevelOverrides[(int) $override['tbl_student_id']] = $override['rotc_ms_level'];
+            }
+        }
     }
 
     foreach ($students as &$student) {
         $studentNumber = (string) ($student['student_number'] ?? '');
         $student['_registration'] = $registrations[$studentNumber] ?? [];
+        $studentId = (int) ($student['tbl_student_id'] ?? 0);
+        if (isset($rotcLevelOverrides[$studentId])) {
+            $student['_registration']['rotc_ms_level'] = $rotcLevelOverrides[$studentId];
+        }
     }
     unset($student);
 
@@ -413,6 +435,9 @@ $detailColumns = [
     'status' => 'Registration Status',
     'created_at' => 'Registered At',
 ];
+$canBulkAssignComponent = $scope === 'no_component' && $role === 'super_admin';
+$canBulkEditRotcMsLevel = $scope === 'component' && $component === 'ROTC' && $role === 'super_admin';
+$showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditRotcMsLevel;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -684,7 +709,7 @@ $detailColumns = [
                                 </div>
                             </div>
                             <div class="table-responsive">
-                                <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
+                                <?php if ($canBulkAssignComponent): ?>
                                 <div class="border-bottom bg-light p-3">
                                     <div class="form-row align-items-end">
                                         <div class="col-md-3 mb-2 mb-md-0">
@@ -715,13 +740,35 @@ $detailColumns = [
                                     </div>
                                 </div>
                                 <?php endif; ?>
+                                <?php if ($canBulkEditRotcMsLevel): ?>
+                                <div class="border-bottom bg-light p-3">
+                                    <div class="form-row align-items-end">
+                                        <div class="col-md-4 mb-2 mb-md-0">
+                                            <label for="bulkEditRotcMsLevel" class="mb-1">Change selected ROTC students to</label>
+                                            <select class="form-control" id="bulkEditRotcMsLevel">
+                                                <option value="MS-1">MS-1</option>
+                                                <option value="MS-31">MS-31</option>
+                                                <option value="MS-41">MS-41</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4 mb-2 mb-md-0">
+                                            <button type="button" class="btn btn-warning btn-block" id="bulkUpdateRotcMsButton" disabled>
+                                                <i class="fas fa-pen-to-square mr-1"></i> Update MS Level
+                                            </button>
+                                        </div>
+                                        <div class="col-md-4 text-md-right mt-2 mt-md-0">
+                                            <span class="badge badge-info p-2" id="selectedStudentCount">0 selected</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                                 <table class="table table-hover mb-0 student-detail-table">
                                     <thead>
                                         <tr>
                                             <th style="width: 70px;">No.</th>
-                                            <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
+                                            <?php if ($showBulkStudentSelection): ?>
                                                 <th style="width: 55px;" class="text-center">
-                                                    <input type="checkbox" id="selectAllNoComponentStudents" title="Select all students">
+                                                    <input type="checkbox" id="selectAllManagedStudents" title="Select all students">
                                                 </th>
                                             <?php endif; ?>
                                             <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
@@ -735,7 +782,7 @@ $detailColumns = [
                                         <?php foreach ($students as $index => $student): ?>
                                             <tr>
                                                 <td><?php echo $index + 1; ?></td>
-                                                <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
+                                                <?php if ($showBulkStudentSelection): ?>
                                                     <td class="text-center">
                                                         <input type="checkbox"
                                                                class="student-component-checkbox"
@@ -833,7 +880,12 @@ $detailColumns = [
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
 $(function() {
-    const basicColumns = new Set(['student_name', 'course', 'year_section']);
+    const basicColumns = new Set([
+        'student_name',
+        'course',
+        'year_section'
+        <?php echo $canBulkEditRotcMsLevel ? ", 'rotc_ms_level'" : ''; ?>
+    ]);
     const studentDetailTable = $('.student-detail-table').length
         ? $('.student-detail-table').DataTable({
             paging: true,
@@ -846,8 +898,8 @@ $(function() {
             pageLength: 25,
             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
             pagingType: 'simple_numbers',
-            order: [[<?php echo $scope === 'no_component' && $role === 'super_admin' ? 2 : 1; ?>, 'asc']],
-            columnDefs: <?php echo $scope === 'no_component' && $role === 'super_admin'
+            order: [[<?php echo $showBulkStudentSelection ? 2 : 1; ?>, 'asc']],
+            columnDefs: <?php echo $showBulkStudentSelection
                 ? "[{ orderable: false, targets: 1 }]"
                 : '[]'; ?>,
             language: {
@@ -930,13 +982,14 @@ $(function() {
         const totalCount = componentCheckboxes().length;
         $('#selectedStudentCount').text(selectedCount + ' selected');
         $('#bulkAssignComponentButton').prop('disabled', selectedCount === 0 || !component);
-        $('#selectAllNoComponentStudents').prop({
+        $('#bulkUpdateRotcMsButton').prop('disabled', selectedCount === 0);
+        $('#selectAllManagedStudents').prop({
             checked: totalCount > 0 && selectedCount === totalCount,
             indeterminate: selectedCount > 0 && selectedCount < totalCount
         });
     }
 
-    $('#selectAllNoComponentStudents').on('change', function() {
+    $('#selectAllManagedStudents').on('change', function() {
         componentCheckboxes().prop('checked', this.checked);
         updateBulkComponentControls();
     });
@@ -980,6 +1033,40 @@ $(function() {
             alert('Unable to assign the selected students. Please try again.');
         }).always(function() {
             saveButton.html('<i class="fas fa-save mr-1"></i> Assign Selected');
+            updateBulkComponentControls();
+        });
+    });
+
+    $('#bulkUpdateRotcMsButton').on('click', function() {
+        const studentIds = selectedStudentIds();
+        const msLevel = $('#bulkEditRotcMsLevel').val();
+        if (!studentIds.length || !msLevel) {
+            return;
+        }
+        if (!window.confirm(`Change ${studentIds.length} selected ROTC student(s) to ${msLevel}?`)) {
+            return;
+        }
+
+        const saveButton = $(this);
+        saveButton.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Updating...');
+        $.ajax({
+            url: './endpoint/update-rotc-ms-level.php',
+            method: 'POST',
+            data: {
+                student_ids: studentIds,
+                rotc_ms_level: msLevel
+            },
+            dataType: 'json'
+        }).done(function(response) {
+            if (response.success) {
+                window.location.reload();
+                return;
+            }
+            alert(response.message || 'Unable to update the selected ROTC students.');
+        }).fail(function() {
+            alert('Unable to update the selected ROTC students. Please try again.');
+        }).always(function() {
+            saveButton.html('<i class="fas fa-pen-to-square mr-1"></i> Update MS Level');
             updateBulkComponentControls();
         });
     });

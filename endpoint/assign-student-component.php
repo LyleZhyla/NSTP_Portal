@@ -88,6 +88,14 @@ try {
         SET course_section = ?, created_by = NULL
         WHERE tbl_student_id = ?
     ");
+    $rotcLevelStmt = $conn->prepare("
+        INSERT INTO tbl_student_rotc_levels (tbl_student_id, rotc_ms_level, updated_by)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            rotc_ms_level = VALUES(rotc_ms_level),
+            updated_by = VALUES(updated_by)
+    ");
+    $clearRotcLevelStmt = $conn->prepare("DELETE FROM tbl_student_rotc_levels WHERE tbl_student_id = ?");
 
     foreach ($students as $student) {
         $studentNumber = trim((string) ($student['student_number'] ?? ''));
@@ -151,6 +159,11 @@ try {
         }
 
         $studentStmt->execute([$component, (int) $student['tbl_student_id']]);
+        if ($component === 'ROTC') {
+            $rotcLevelStmt->execute([(int) $student['tbl_student_id'], $rotcMsLevel, (int) $currentUser['user_id']]);
+        } else {
+            $clearRotcLevelStmt->execute([(int) $student['tbl_student_id']]);
+        }
     }
 
     $conn->commit();

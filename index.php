@@ -24,6 +24,7 @@ if (!canAccessStaffTools($currentUserRole)) {
     header("Location: profile.php");
     exit();
 }
+ensureRotcAttendanceSchema($conn);
 $componentCounts = canonicalStudentComponentCounts($conn);
 $attendanceAccess = studentComponentAttendanceAccessSqlForUser(
     $currentUserRecord ?: ['role' => $currentUserRole, 'user_id' => $currentUserID],
