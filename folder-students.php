@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once './conn/conn.php';
 require_once './include/user-permissions.php';
+require_once './include/student-component-counts.php';
 require_once './include/automatic-sectioning.php';
 require_once './include/section-folders.php';
 
@@ -105,38 +106,7 @@ function displayDetailValue($value) {
 
 try {
     if ($scope === 'no_component' && $role === 'super_admin') {
-        $stmt = $conn->query("
-            SELECT
-                s.*,
-                student_user.program AS _account_program,
-                creator.role AS _creator_role,
-                creator.program AS _creator_program,
-                (
-                    SELECT r.component
-                    FROM tbl_public_student_registrations r
-                    WHERE r.registrant_role = 'student'
-                      AND COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
-                      AND (
-                            (s.user_id IS NOT NULL AND r.user_id = s.user_id)
-                            OR (NULLIF(TRIM(s.student_number), '') IS NOT NULL AND r.student_number = s.student_number)
-                      )
-                    ORDER BY r.registration_id DESC
-                    LIMIT 1
-                ) AS _registration_component
-            FROM tbl_student s
-            LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id AND student_user.role = 'student'
-            LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
-            ORDER BY s.student_name ASC
-        ");
-        $students = array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC), static function ($student) {
-            return !resolveStudentComponentFromSources(
-                $student['_account_program'] ?? null,
-                $student['_registration_component'] ?? null,
-                $student['course_section'] ?? null,
-                $student['_creator_role'] ?? null,
-                $student['_creator_program'] ?? null
-            );
-        }));
+        $students = studentManagementUnassignedStudents($conn);
         $pageTitle = 'No Component';
         $folderMeta = 'Students waiting for component assignment';
     } elseif ($scope === 'component' && $role === 'super_admin') {
@@ -714,24 +684,65 @@ $detailColumns = [
                                 </div>
                             </div>
                             <div class="table-responsive">
+                                <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
+                                <div class="border-bottom bg-light p-3">
+                                    <div class="form-row align-items-end">
+                                        <div class="col-md-3 mb-2 mb-md-0">
+                                            <label for="bulkAssignedComponent" class="mb-1">Save selected students to</label>
+                                            <select class="form-control" id="bulkAssignedComponent">
+                                                <option value="">Select component</option>
+                                                <option value="CWTS">CWTS</option>
+                                                <option value="LTS">LTS</option>
+                                                <option value="ROTC">ROTC</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 mb-2 mb-md-0" id="bulkRotcMsLevelGroup" style="display: none;">
+                                            <label for="bulkAssignedRotcMsLevel" class="mb-1">ROTC MS Level</label>
+                                            <select class="form-control" id="bulkAssignedRotcMsLevel">
+                                                <option value="MS-1">MS-1</option>
+                                                <option value="MS-31">MS-31</option>
+                                                <option value="MS-41">MS-41</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 mb-2 mb-md-0">
+                                            <button type="button" class="btn btn-primary btn-block" id="bulkAssignComponentButton" disabled>
+                                                <i class="fas fa-save mr-1"></i> Assign Selected
+                                            </button>
+                                        </div>
+                                        <div class="col-md-3 text-md-right mt-2 mt-md-0">
+                                            <span class="badge badge-info p-2" id="selectedStudentCount">0 selected</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                                 <table class="table table-hover mb-0 student-detail-table">
                                     <thead>
                                         <tr>
                                             <th style="width: 70px;">No.</th>
+                                            <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
+                                                <th style="width: 55px;" class="text-center">
+                                                    <input type="checkbox" id="selectAllNoComponentStudents" title="Select all students">
+                                                </th>
+                                            <?php endif; ?>
                                             <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
                                                 <th class="detail-col detail-col-<?php echo htmlspecialchars($columnKey); ?>" data-column="<?php echo htmlspecialchars($columnKey); ?>">
                                                     <?php echo htmlspecialchars($columnLabel); ?>
                                                 </th>
                                             <?php endforeach; ?>
-                                            <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
-                                                <th style="width: 170px;">Actions</th>
-                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php foreach ($students as $index => $student): ?>
                                             <tr>
                                                 <td><?php echo $index + 1; ?></td>
+                                                <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
+                                                    <td class="text-center">
+                                                        <input type="checkbox"
+                                                               class="student-component-checkbox"
+                                                               value="<?php echo (int) $student['tbl_student_id']; ?>"
+                                                               aria-label="Select <?php echo htmlspecialchars($student['student_name'] ?? 'student', ENT_QUOTES, 'UTF-8'); ?>">
+                                                    </td>
+                                                <?php endif; ?>
                                                 <?php foreach ($detailColumns as $columnKey => $columnLabel): ?>
                                                     <?php
                                                         $value = detailValue($student, $columnKey);
@@ -769,16 +780,6 @@ $detailColumns = [
                                                         <?php endif; ?>
                                                     </td>
                                                 <?php endforeach; ?>
-                                                <?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
-                                                    <td>
-                                                        <button type="button"
-                                                                class="btn btn-sm btn-primary assign-component-btn"
-                                                                data-student-id="<?php echo (int) $student['tbl_student_id']; ?>"
-                                                                data-student-name="<?php echo htmlspecialchars($student['student_name'] ?? 'Student', ENT_QUOTES, 'UTF-8'); ?>">
-                                                            <i class="fas fa-user-tag mr-1"></i> Assign Component
-                                                        </button>
-                                                    </td>
-                                                <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -799,51 +800,6 @@ $detailColumns = [
 
     <?php include 'footer.php'; ?>
 </div>
-
-<?php if ($scope === 'no_component' && $role === 'super_admin'): ?>
-<div class="modal fade" id="assignComponentModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form id="assignComponentForm">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-user-tag mr-2"></i>Assign Component</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" name="student_id" id="componentStudentId">
-                    <p>Student: <strong id="componentStudentName"></strong></p>
-                    <div class="form-group">
-                        <label for="assignedComponent">Component</label>
-                        <select class="form-control" name="component" id="assignedComponent" required>
-                            <option value="">Select component</option>
-                            <option value="CWTS">CWTS</option>
-                            <option value="LTS">LTS</option>
-                            <option value="ROTC">ROTC</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="rotcMsLevelGroup" style="display: none;">
-                        <label for="assignedRotcMsLevel">ROTC MS Level</label>
-                        <select class="form-control" name="rotc_ms_level" id="assignedRotcMsLevel">
-                            <option value="MS-1">MS-1</option>
-                            <option value="MS-31">MS-31</option>
-                            <option value="MS-41">MS-41</option>
-                        </select>
-                    </div>
-                    <div class="alert alert-info py-2 mb-0">
-                        The student will be placed in the selected component's pending list until assigned to a facilitator folder.
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="saveComponentButton">
-                        <i class="fas fa-save mr-1"></i> Save Component
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
 
 <div class="modal fade" id="folderStudentQrModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -890,7 +846,10 @@ $(function() {
             pageLength: 25,
             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
             pagingType: 'simple_numbers',
-            order: [[1, 'asc']],
+            order: [[<?php echo $scope === 'no_component' && $role === 'super_admin' ? 2 : 1; ?>, 'asc']],
+            columnDefs: <?php echo $scope === 'no_component' && $role === 'super_admin'
+                ? "[{ orderable: false, targets: 1 }]"
+                : '[]'; ?>,
             language: {
                 lengthMenu: 'Show _MENU_ students',
                 info: 'Showing _START_ to _END_ of _TOTAL_ students',
@@ -950,43 +909,82 @@ $(function() {
 
     applyBasicColumns();
 
-    $('.assign-component-btn').on('click', function() {
-        $('#componentStudentId').val($(this).data('student-id'));
-        $('#componentStudentName').text($(this).data('student-name'));
-        $('#assignedComponent').val('');
-        $('#assignedRotcMsLevel').val('MS-1');
-        $('#rotcMsLevelGroup').hide();
-        $('#assignComponentModal').modal('show');
+    function componentCheckboxes() {
+        if (studentDetailTable) {
+            return $(studentDetailTable.rows({ search: 'applied' }).nodes()).find('.student-component-checkbox');
+        }
+        return $('.student-component-checkbox');
+    }
+
+    function selectedStudentIds() {
+        return componentCheckboxes().filter(':checked').map(function() {
+            return Number(this.value);
+        }).get().filter(function(id) {
+            return Number.isInteger(id) && id > 0;
+        });
+    }
+
+    function updateBulkComponentControls() {
+        const selectedCount = selectedStudentIds().length;
+        const component = $('#bulkAssignedComponent').val();
+        const totalCount = componentCheckboxes().length;
+        $('#selectedStudentCount').text(selectedCount + ' selected');
+        $('#bulkAssignComponentButton').prop('disabled', selectedCount === 0 || !component);
+        $('#selectAllNoComponentStudents').prop({
+            checked: totalCount > 0 && selectedCount === totalCount,
+            indeterminate: selectedCount > 0 && selectedCount < totalCount
+        });
+    }
+
+    $('#selectAllNoComponentStudents').on('change', function() {
+        componentCheckboxes().prop('checked', this.checked);
+        updateBulkComponentControls();
     });
 
-    $('#assignedComponent').on('change', function() {
-        const isRotc = this.value === 'ROTC';
-        $('#rotcMsLevelGroup').toggle(isRotc);
-        $('#assignedRotcMsLevel').prop('required', isRotc);
+    $(document).on('change', '.student-component-checkbox', updateBulkComponentControls);
+
+    $('#bulkAssignedComponent').on('change', function() {
+        $('#bulkRotcMsLevelGroup').toggle(this.value === 'ROTC');
+        updateBulkComponentControls();
     });
 
-    $('#assignComponentForm').on('submit', function(event) {
-        event.preventDefault();
-        const saveButton = $('#saveComponentButton');
+    $('#bulkAssignComponentButton').on('click', function() {
+        const studentIds = selectedStudentIds();
+        const component = $('#bulkAssignedComponent').val();
+        const rotcMsLevel = $('#bulkAssignedRotcMsLevel').val();
+        if (!studentIds.length || !component) {
+            return;
+        }
+        if (!window.confirm(`Assign ${studentIds.length} selected student(s) to ${component}?`)) {
+            return;
+        }
+
+        const saveButton = $(this);
         saveButton.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving...');
-
         $.ajax({
             url: './endpoint/assign-student-component.php',
             method: 'POST',
-            data: $(this).serialize(),
+            data: {
+                student_ids: studentIds,
+                component: component,
+                rotc_ms_level: component === 'ROTC' ? rotcMsLevel : ''
+            },
             dataType: 'json'
         }).done(function(response) {
             if (response.success) {
                 window.location.reload();
                 return;
             }
-            alert(response.message || 'Unable to assign the component.');
+            alert(response.message || 'Unable to assign the selected students.');
         }).fail(function() {
-            alert('Unable to assign the component. Please try again.');
+            alert('Unable to assign the selected students. Please try again.');
         }).always(function() {
-            saveButton.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save Component');
+            saveButton.html('<i class="fas fa-save mr-1"></i> Assign Selected');
+            updateBulkComponentControls();
         });
     });
+
+    updateBulkComponentControls();
 });
 
 function getFolderStudentQrImageUrl(qrCode, size) {
