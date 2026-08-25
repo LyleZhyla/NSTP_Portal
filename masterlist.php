@@ -487,39 +487,7 @@ if ($showRotcMsSummary) {
     }
 
     if ($user_role === 'super_admin') {
-        $noComponentStmt = $conn->query("
-        SELECT
-            s.course_section,
-            student_user.program AS account_program,
-            creator.role AS creator_role,
-            creator.program AS creator_program,
-            (
-                SELECT r.component
-                FROM tbl_public_student_registrations r
-                WHERE r.registrant_role = 'student'
-                  AND COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
-                  AND (
-                        (s.user_id IS NOT NULL AND r.user_id = s.user_id)
-                        OR (NULLIF(TRIM(s.student_number), '') IS NOT NULL AND r.student_number = s.student_number)
-                  )
-                ORDER BY r.registration_id DESC
-                LIMIT 1
-            ) AS registration_component
-        FROM tbl_student s
-        LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id AND student_user.role = 'student'
-        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
-    ");
-        foreach ($noComponentStmt->fetchAll(PDO::FETCH_ASSOC) as $studentSource) {
-            if (!resolveStudentComponentFromSources(
-                $studentSource['account_program'] ?? null,
-                $studentSource['registration_component'] ?? null,
-                $studentSource['course_section'] ?? null,
-                $studentSource['creator_role'] ?? null,
-                $studentSource['creator_program'] ?? null
-            )) {
-                $superAdminNoComponentCount++;
-            }
-        }
+        $superAdminNoComponentCount = (int) ($canonicalComponentCounts['Unassigned'] ?? 0);
     }
 }
 $rotcMsTotal = array_sum($rotcMsCounts);

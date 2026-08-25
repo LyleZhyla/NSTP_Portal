@@ -2,6 +2,80 @@
 
 require_once __DIR__ . '/user-permissions.php';
 
+if (!function_exists('studentManagementIdentityKey')) {
+function studentManagementIdentityKey(array $student) {
+    $studentNumber = preg_replace('/\D/', '', (string) ($student['student_number'] ?? ''));
+    if ($studentNumber !== '') {
+        return 'student:' . $studentNumber;
+    }
+    if (!empty($student['user_id'])) {
+        return 'user:' . (int) $student['user_id'];
+    }
+    return 'record:' . (int) ($student['tbl_student_id'] ?? 0);
+}
+}
+
+if (!function_exists('studentManagementUnassignedStudents')) {
+function studentManagementUnassignedStudents(PDO $conn) {
+    $stmt = $conn->query("
+        SELECT
+            s.*,
+            student_user.program AS _account_program,
+            creator.role AS _creator_role,
+            creator.program AS _creator_program,
+            (
+                SELECT r.component
+                FROM tbl_public_student_registrations r
+                WHERE r.registrant_role = 'student'
+                  AND COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+                  AND (
+                        (s.user_id IS NOT NULL AND r.user_id = s.user_id)
+                        OR (NULLIF(TRIM(s.student_number), '') IS NOT NULL AND r.student_number = s.student_number)
+                  )
+                ORDER BY r.registration_id DESC
+                LIMIT 1
+            ) AS _registration_component
+        FROM tbl_student s
+        LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id AND student_user.role = 'student'
+        LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
+        ORDER BY s.tbl_student_id DESC
+    ");
+
+    $students = [];
+    $seenIdentities = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $student) {
+        $identityKey = studentManagementIdentityKey($student);
+        if (isset($seenIdentities[$identityKey])) {
+            continue;
+        }
+        $seenIdentities[$identityKey] = true;
+
+        $component = resolveStudentComponentFromSources(
+            $student['_account_program'] ?? null,
+            $student['_registration_component'] ?? null,
+            $student['course_section'] ?? null,
+            $student['_creator_role'] ?? null,
+            $student['_creator_program'] ?? null
+        );
+        if (!$component) {
+            $students[] = $student;
+        }
+    }
+
+    usort($students, static function ($left, $right) {
+        $nameComparison = strnatcasecmp(
+            (string) ($left['student_name'] ?? ''),
+            (string) ($right['student_name'] ?? '')
+        );
+        return $nameComparison !== 0
+            ? $nameComparison
+            : ((int) ($left['tbl_student_id'] ?? 0) <=> (int) ($right['tbl_student_id'] ?? 0));
+    });
+
+    return $students;
+}
+}
+
 if (!function_exists('canonicalStudentComponentCounts')) {
 function canonicalStudentComponentCounts(PDO $conn) {
     $componentCounts = ['CWTS' => 0, 'LTS' => 0, 'ROTC' => 0, 'Unassigned' => 0];
@@ -91,6 +165,10 @@ function canonicalStudentComponentCounts(PDO $conn) {
             $program
         );
     }
+
+    // The dashboard's No Component total must represent the exact actionable
+    // student rows shown in Student Management, using the same deduplication.
+    $componentCounts['Unassigned'] = count(studentManagementUnassignedStudents($conn));
 
     return $componentCounts;
 }
