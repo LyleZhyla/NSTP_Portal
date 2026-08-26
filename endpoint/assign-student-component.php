@@ -22,6 +22,7 @@ $studentIds = isset($_POST['student_ids']) && is_array($_POST['student_ids'])
 $studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds), static fn($id) => $id > 0)));
 $component = normalizeProgram($_POST['component'] ?? null);
 $rotcMsLevel = normalizeRotcMsLevel($_POST['rotc_ms_level'] ?? null);
+$allowExistingComponent = (string) ($_POST['allow_existing'] ?? '0') === '1';
 
 if (empty($studentIds) || !$component) {
     echo json_encode(['success' => false, 'message' => 'Select at least one student and a component.']);
@@ -76,9 +77,14 @@ try {
             $student['creator_role'] ?? null,
             $student['creator_program'] ?? null
         );
-        if ($currentComponent) {
+        if ($currentComponent && !$allowExistingComponent) {
             throw new RuntimeException(
                 ($student['student_name'] ?? 'A selected student') . ' already belongs to ' . $currentComponent . '.'
+            );
+        }
+        if ($currentComponent === $component) {
+            throw new RuntimeException(
+                ($student['student_name'] ?? 'A selected student') . ' is already assigned to ' . $component . '.'
             );
         }
     }
@@ -174,14 +180,14 @@ try {
     }
     logSystemEvent(
         $conn,
-        'student_components_assigned',
-        'Super Admin assigned ' . count($students) . ' student(s) to ' . $component
+        $allowExistingComponent ? 'student_components_changed' : 'student_components_assigned',
+        'Super Admin ' . ($allowExistingComponent ? 'changed' : 'assigned') . ' ' . count($students) . ' student(s) to ' . $component
             . ($component === 'ROTC' ? ' ' . $rotcMsLevel : '') . '.'
     );
 
     echo json_encode([
         'success' => true,
-        'message' => count($students) . ' student(s) assigned successfully.',
+        'message' => count($students) . ' student(s) ' . ($allowExistingComponent ? 'moved' : 'assigned') . ' successfully.',
         'assigned_count' => count($students),
         'component' => $component,
         'rotc_ms_level' => $component === 'ROTC' ? $rotcMsLevel : null,

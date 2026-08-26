@@ -436,8 +436,9 @@ $detailColumns = [
     'created_at' => 'Registered At',
 ];
 $canBulkAssignComponent = $scope === 'no_component' && $role === 'super_admin';
+$canBulkEditComponent = $scope === 'component' && $component && $role === 'super_admin';
 $canBulkEditRotcMsLevel = $scope === 'component' && $component === 'ROTC' && $role === 'super_admin';
-$showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditRotcMsLevel;
+$showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditComponent || $canBulkEditRotcMsLevel;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -740,6 +741,39 @@ $showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditRotcMsLevel;
                                     </div>
                                 </div>
                                 <?php endif; ?>
+                                <?php if ($canBulkEditComponent): ?>
+                                <div class="border-bottom bg-light p-3">
+                                    <div class="form-row align-items-end">
+                                        <div class="col-md-3 mb-2 mb-md-0">
+                                            <label for="bulkChangeComponent" class="mb-1">Move selected students to</label>
+                                            <select class="form-control" id="bulkChangeComponent">
+                                                <option value="">Select new component</option>
+                                                <?php foreach (['CWTS', 'LTS', 'ROTC'] as $componentOption): ?>
+                                                    <?php if ($componentOption === $component) continue; ?>
+                                                    <option value="<?php echo $componentOption; ?>"><?php echo $componentOption; ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 mb-2 mb-md-0" id="bulkChangeRotcMsGroup" style="display: none;">
+                                            <label for="bulkChangeRotcMsLevel" class="mb-1">ROTC MS Level</label>
+                                            <select class="form-control" id="bulkChangeRotcMsLevel">
+                                                <option value="MS-1">MS-1</option>
+                                                <option value="MS-31">MS-31</option>
+                                                <option value="MS-41">MS-41</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 mb-2 mb-md-0">
+                                            <button type="button" class="btn btn-danger btn-block" id="bulkChangeComponentButton" disabled>
+                                                <i class="fas fa-right-left mr-1"></i> Change Component
+                                            </button>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <span class="badge badge-info p-2 mb-1" id="selectedStudentCount">0 selected</span>
+                                            <div class="muted-note">Students will be released from their current facilitator and moved to the new component's pending list.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                                 <?php if ($canBulkEditRotcMsLevel): ?>
                                 <div class="border-bottom bg-light p-3">
                                     <div class="form-row align-items-end">
@@ -756,8 +790,8 @@ $showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditRotcMsLevel;
                                                 <i class="fas fa-pen-to-square mr-1"></i> Update MS Level
                                             </button>
                                         </div>
-                                        <div class="col-md-4 text-md-right mt-2 mt-md-0">
-                                            <span class="badge badge-info p-2" id="selectedStudentCount">0 selected</span>
+                                        <div class="col-md-4 mt-2 mt-md-0">
+                                            <div class="muted-note">This changes only the MS level. The current component, section, and facilitator stay the same.</div>
                                         </div>
                                     </div>
                                 </div>
@@ -983,6 +1017,7 @@ $(function() {
         $('#selectedStudentCount').text(selectedCount + ' selected');
         $('#bulkAssignComponentButton').prop('disabled', selectedCount === 0 || !component);
         $('#bulkUpdateRotcMsButton').prop('disabled', selectedCount === 0);
+        $('#bulkChangeComponentButton').prop('disabled', selectedCount === 0 || !$('#bulkChangeComponent').val());
         $('#selectAllManagedStudents').prop({
             checked: totalCount > 0 && selectedCount === totalCount,
             indeterminate: selectedCount > 0 && selectedCount < totalCount
@@ -998,6 +1033,11 @@ $(function() {
 
     $('#bulkAssignedComponent').on('change', function() {
         $('#bulkRotcMsLevelGroup').toggle(this.value === 'ROTC');
+        updateBulkComponentControls();
+    });
+
+    $('#bulkChangeComponent').on('change', function() {
+        $('#bulkChangeRotcMsGroup').toggle(this.value === 'ROTC');
         updateBulkComponentControls();
     });
 
@@ -1067,6 +1107,44 @@ $(function() {
             alert('Unable to update the selected ROTC students. Please try again.');
         }).always(function() {
             saveButton.html('<i class="fas fa-pen-to-square mr-1"></i> Update MS Level');
+            updateBulkComponentControls();
+        });
+    });
+
+    $('#bulkChangeComponentButton').on('click', function() {
+        const studentIds = selectedStudentIds();
+        const component = $('#bulkChangeComponent').val();
+        const rotcMsLevel = $('#bulkChangeRotcMsLevel').val();
+        if (!studentIds.length || !component) {
+            return;
+        }
+        const warning = `Change ${studentIds.length} selected student(s) to ${component}? Their current facilitator and section assignment will be removed.`;
+        if (!window.confirm(warning)) {
+            return;
+        }
+
+        const saveButton = $(this);
+        saveButton.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Moving...');
+        $.ajax({
+            url: './endpoint/assign-student-component.php',
+            method: 'POST',
+            data: {
+                student_ids: studentIds,
+                component: component,
+                rotc_ms_level: component === 'ROTC' ? rotcMsLevel : '',
+                allow_existing: '1'
+            },
+            dataType: 'json'
+        }).done(function(response) {
+            if (response.success) {
+                window.location.reload();
+                return;
+            }
+            alert(response.message || 'Unable to change the selected students component.');
+        }).fail(function() {
+            alert('Unable to change the selected students component. Please try again.');
+        }).always(function() {
+            saveButton.html('<i class="fas fa-right-left mr-1"></i> Change Component');
             updateBulkComponentControls();
         });
     });
