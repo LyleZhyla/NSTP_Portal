@@ -94,8 +94,6 @@ if ($admin_role === 'super_admin') {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <!-- DataTables -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-    <!-- Select2 -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
     <link rel="stylesheet" href="include/theme.css">
     <style>
         /* RESET TO MATCH OTHER PAGES - CONSISTENT SIZING */
@@ -643,18 +641,6 @@ if ($admin_role === 'super_admin') {
         
         .input-group-append .input-group-text {
             border-radius: 0 20px 20px 0;
-        }
-        
-        /* SELECT2 CUSTOM */
-        .select2-container--bootstrap4 .select2-selection {
-            border-radius: 20px !important;
-            border: 1px solid #e9ecef !important;
-            padding: 5px 15px;
-        }
-        
-        .select2-container--bootstrap4.select2-container--focus .select2-selection {
-            border-color: #198754 !important;
-            box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.25) !important;
         }
         
         /* SCANNER STATUS */
@@ -1255,41 +1241,18 @@ if ($admin_role === 'super_admin') {
             <form action="./endpoint/manual-attendance.php" method="POST" id="manualEntryForm">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="studentSelect">Select Student:</label>
-                        <select class="form-control select2" id="studentSelect" name="student_id" style="width: 100%;" required>
-                            <option value="">-- Select a student --</option>
-                            <?php
-                            if ($canViewAllAttendance) {
-                                $stmt = $conn->prepare("
-                                    SELECT tbl_student_id, student_name, course_section 
-                                    FROM tbl_student 
-                                    ORDER BY student_name
-                                ");
-                                $stmt->execute();
-                            } else {
-                                $stmt = $conn->prepare("
-                                    SELECT DISTINCT s.tbl_student_id, s.student_name, s.course_section 
-                                    FROM tbl_student s
-                                    WHERE {$attendanceAccessCondition}
-                                    ORDER BY s.student_name
-                                ");
-                                $stmt->execute($attendanceAccessParams);
-                            }
-                            $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                            
-                            if (count($students) > 0):
-                                foreach ($students as $student):
-                            ?>
-                            <option value="<?= $student['tbl_student_id'] ?>">
-                                <?= htmlspecialchars($student['student_name']) ?> - <?= htmlspecialchars($student['course_section']) ?>
-                            </option>
-                            <?php 
-                                endforeach;
-                            else:
-                            ?>
-                            <option value="" disabled>No students found in your section</option>
-                            <?php endif; ?>
-                        </select>
+                        <label for="manualStudentNumber">Student Number:</label>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text">
+                                    <i class="fas fa-id-card"></i>
+                                </span>
+                            </div>
+                            <input type="text" class="form-control" id="manualStudentNumber"
+                                   name="student_number" inputmode="numeric" pattern="[0-9]{10}"
+                                   maxlength="10" autocomplete="off" placeholder="Enter 10-digit student number" required>
+                        </div>
+                        <small class="form-text text-muted">The student will be identified using their student number.</small>
                     </div>
                     <div class="form-group">
                         <label for="manualTime">Time In:</label>
@@ -1327,7 +1290,6 @@ if ($admin_role === 'super_admin') {
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 
 <script>
@@ -1349,13 +1311,6 @@ if ($admin_role === 'super_admin') {
     // Initialize on document ready
     $(document).ready(function() {
         console.log('Document ready - initializing...');
-        
-        // Initialize Select2
-        $('.select2').select2({
-            theme: 'bootstrap4',
-            placeholder: 'Select an option',
-            allowClear: true
-        });
         
         // Update time display
         updateTime();
@@ -2179,6 +2134,9 @@ if ($admin_role === 'super_admin') {
     // Handle manual entry form submission
     $('#manualEntryForm').on('submit', function(e) {
         e.preventDefault();
+
+        const submitButton = $(this).find('button[type="submit"]');
+        submitButton.prop('disabled', true);
         
         const formData = $(this).serialize();
         
@@ -2192,6 +2150,7 @@ if ($admin_role === 'super_admin') {
                 if (response.success) {
                     showToast('success', 'Success', response.message || 'Attendance recorded successfully');
                     $('#manualEntryModal').modal('hide');
+                    $('#manualStudentNumber').val('');
                     refreshAttendanceData();
                 } else {
                     showToast('error', 'Error', response.message || 'Error recording attendance');
@@ -2200,8 +2159,15 @@ if ($admin_role === 'super_admin') {
             error: function(xhr, status, error) {
                 console.error('Manual entry error:', error);
                 showToast('error', 'Error', 'Network error. Please try again.');
+            },
+            complete: function() {
+                submitButton.prop('disabled', false);
             }
         });
+    });
+
+    $('#manualEntryModal').on('shown.bs.modal', function() {
+        $('#manualStudentNumber').trigger('focus');
     });
     
     // Clean up on page unload

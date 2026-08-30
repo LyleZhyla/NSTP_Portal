@@ -23,29 +23,45 @@ if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
     exit();
 }
 
-$student_id = $_POST['student_id'] ?? '';
+$student_number = trim((string) ($_POST['student_number'] ?? ''));
 $time_in = $_POST['time_in'] ?? '';
 $notes = $_POST['notes'] ?? '';
 
-if (empty($student_id)) {
-    echo json_encode(['success' => false, 'message' => 'Student is required']);
+if ($student_number === '') {
+    echo json_encode(['success' => false, 'message' => 'Student number is required']);
+    exit();
+}
+
+if (!preg_match('/^\d{10}$/', $student_number)) {
+    echo json_encode(['success' => false, 'message' => 'Enter a valid 10-digit student number']);
     exit();
 }
 
 try {
-    // Validate student exists and can be handled by this staff account.
+    // Resolve the typed student number and retain the existing staff access rules.
     $stmt = $conn->prepare("
         SELECT s.*
         FROM tbl_student s
-        WHERE s.tbl_student_id = ?
+        WHERE s.student_number = ?
     ");
-    $stmt->execute([$student_id]);
-    $student = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$student || !canRecordStudentAttendance($conn, $currentUser, $student)) {
+    $stmt->execute([$student_number]);
+    $matchingStudents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $accessibleStudents = array_values(array_filter($matchingStudents, static function (array $student) use ($conn, $currentUser): bool {
+        return canRecordStudentAttendance($conn, $currentUser, $student);
+    }));
+
+    if (count($accessibleStudents) === 0) {
         echo json_encode(['success' => false, 'message' => 'Student not found or not enrolled in your section']);
         exit();
     }
+
+    if (count($accessibleStudents) > 1) {
+        echo json_encode(['success' => false, 'message' => 'Multiple student records use this student number. Please contact the administrator.']);
+        exit();
+    }
+
+    $student = $accessibleStudents[0];
+    $student_id = (int) $student['tbl_student_id'];
     
     // Use current time if not provided
     if (empty($time_in)) {
