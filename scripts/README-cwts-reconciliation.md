@@ -10,6 +10,13 @@ facilitator. Component students absent from the workbook are not deleted; if
 they are currently assigned to a section folder, they are moved to the
 component pending list with `created_by = NULL`.
 
+Workbook names are matched against the entire student table, not only students
+already tagged with the selected component. This recovers pending, public,
+unassigned, or incorrectly tagged students. When a listed student comes from a
+different component, the exact sync also updates the student account and latest
+registration component. Web applies containing such cross-component recovery
+must be performed by a Super Admin.
+
 The command is intentionally fail-closed. It does not apply changes when a
 student is unmatched or ambiguous, or when a facilitator from the workbook is
 missing from the database. Before a successful apply, it writes a JSON snapshot

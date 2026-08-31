@@ -20,6 +20,7 @@ $apply = in_array('--apply', $args, true);
 $json = in_array('--json', $args, true);
 $production = in_array('--production', $args, true);
 $actorId = $isWebRunner ? (int) ($GLOBALS['cwtsReconciliationActorId'] ?? 0) : 0;
+$actorRole = $isWebRunner ? (string) ($GLOBALS['cwtsReconciliationActorRole'] ?? '') : 'cli';
 $component = $isWebRunner ? strtoupper((string) ($GLOBALS['cwtsReconciliationComponent'] ?? 'CWTS')) : 'CWTS';
 $file = null;
 
@@ -201,8 +202,8 @@ $duplicateWorkbookNames = array_values(array_map(
     array_filter($workbookNameIndex, static fn(array $rows): bool => count($rows) > 1)
 ));
 
-$studentStmt = $conn->prepare("
-    SELECT s.tbl_student_id, s.student_name, s.course_section, s.created_by,
+$studentStmt = $conn->query("
+    SELECT s.tbl_student_id, s.user_id, s.student_number, s.student_name, s.course_section, s.created_by,
            creator.full_name AS creator_name, creator.program AS creator_program,
            student_user.program AS user_program,
            (SELECT latest_component.component
@@ -218,33 +219,22 @@ $studentStmt = $conn->prepare("
     FROM tbl_student s
     LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id
     LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
-    WHERE s.course_section LIKE ?
-       OR s.course_section = ?
-       OR student_user.program = ?
-       OR creator.program = ?
-       OR EXISTS (
-           SELECT 1 FROM tbl_public_student_registrations registration
-           WHERE registration.registration_id = (
-                    SELECT MAX(latest_registration.registration_id)
-                    FROM tbl_public_student_registrations latest_registration
-                    WHERE (s.student_number IS NOT NULL AND s.student_number <> '' AND latest_registration.student_number = s.student_number)
-                       OR (s.user_id IS NOT NULL AND latest_registration.user_id = s.user_id)
-                 )
-             AND registration.component = ?
-       )
 ");
-$studentStmt->execute([$component . ' %', $component, $component, $component, $component]);
-$students = array_values(array_filter($studentStmt->fetchAll(PDO::FETCH_ASSOC), static function (array $student) use ($component): bool {
-    $resolvedComponent = normalizeProgram($student['user_program'] ?? null)
+$allStudents = array_map(static function (array $student): array {
+    $student['resolved_component'] = normalizeProgram($student['user_program'] ?? null)
         ?: normalizeProgram($student['registration_component'] ?? null)
         ?: inferProgramFromText($student['course_section'] ?? '')
         ?: normalizeProgram($student['creator_program'] ?? null);
 
-    return $resolvedComponent === $component;
+    return $student;
+}, $studentStmt->fetchAll(PDO::FETCH_ASSOC));
+$students = array_values(array_filter($allStudents, static function (array $student) use ($component): bool {
+    return ($student['resolved_component'] ?? null) === $component;
 }));
+
 $studentExactIndex = [];
 $studentTokenIndex = [];
-foreach ($students as $student) {
+foreach ($allStudents as $student) {
     addIndex($studentExactIndex, normalizedName((string) $student['student_name']), $student);
     addIndex($studentTokenIndex, tokenName((string) $student['student_name']), $student);
 }
@@ -288,8 +278,9 @@ $matched = [];
 $unmatched = [];
 $ambiguous = [];
 $matchedStudentIds = [];
+$matchedDatabaseStudents = [];
 foreach ($masterRows as $masterRow) {
-    $match = uniqueIndexedMatch($students, $studentExactIndex, $studentTokenIndex, $masterRow['name'], $masterRow['program']);
+    $match = uniqueIndexedMatch($allStudents, $studentExactIndex, $studentTokenIndex, $masterRow['name'], $masterRow['program']);
     if ($match['status'] === 'unmatched') {
         $unmatched[] = $masterRow;
         continue;
@@ -306,12 +297,16 @@ foreach ($masterRows as $masterRow) {
         continue;
     }
     $matchedStudentIds[$studentId] = true;
+    $matchedDatabaseStudents[$studentId] = $student;
     $facilitator = $sectionFacilitators[$masterRow['section']] ?? null;
     $matched[] = $masterRow + [
         'student_id' => $studentId,
         'database_name' => $student['student_name'],
         'old_section' => $student['course_section'],
         'old_facilitator_id' => $student['created_by'] !== null ? (int) $student['created_by'] : null,
+        'old_component' => $student['resolved_component'] ?? null,
+        'student_user_id' => $student['user_id'] !== null ? (int) $student['user_id'] : null,
+        'student_number' => $student['student_number'],
         'new_facilitator_id' => $facilitator ? (int) $facilitator['user_id'] : null,
         'match_method' => $match['method'],
     ];
@@ -324,7 +319,14 @@ $databaseOnly = array_values(array_filter($students, static fn(array $student): 
 $databaseOnlyAssigned = array_values(array_filter($databaseOnly, static fn(array $student): bool =>
     trim((string) ($student['course_section'] ?? '')) !== $component || $student['created_by'] !== null
 ));
-$totalChangesNeeded = count($changes) + count($databaseOnlyAssigned);
+$incomingMatches = array_values(array_filter($matched, static fn(array $row): bool => ($row['old_component'] ?? null) !== $component));
+$folderChangeIds = array_fill_keys(array_map(static fn(array $row): int => (int) $row['student_id'], $changes), true);
+$listedUpdatesById = [];
+foreach (array_merge($changes, $incomingMatches) as $row) {
+    $listedUpdatesById[(int) $row['student_id']] = $row;
+}
+$listedUpdates = array_values($listedUpdatesById);
+$totalChangesNeeded = count($listedUpdates) + count($databaseOnlyAssigned);
 
 $report = [
     'mode' => $apply ? 'apply' : 'dry-run',
@@ -335,7 +337,16 @@ $report = [
     'database_component_candidates' => count($students),
     'matched' => count($matched),
     'changes_needed' => $totalChangesNeeded,
-    'listed_changes_needed' => count($changes),
+    'listed_changes_needed' => count($listedUpdates),
+    'incoming_to_component_count' => count($incomingMatches),
+    'incoming_requires_super_admin' => $isWebRunner && $actorRole !== 'super_admin' && !empty($incomingMatches),
+    'incoming' => array_map(static fn(array $row): array => [
+        'student_id' => (int) $row['student_id'],
+        'name' => $row['database_name'],
+        'old_component' => $row['old_component'],
+        'old_section' => $row['old_section'],
+        'new_section' => $row['section'],
+    ], $incomingMatches),
     'move_to_pending_count' => count($databaseOnlyAssigned),
     'unmatched_count' => count($unmatched),
     'ambiguous_count' => count($ambiguous),
@@ -364,6 +375,9 @@ if ($apply) {
     } elseif ($unmatched || $ambiguous || $missingFacilitators || count($matched) !== count($masterRows)) {
         $report['applied'] = false;
         $report['blocked_reason'] = 'Resolve duplicate, unmatched, ambiguous, or missing-facilitator records before applying.';
+    } elseif ($isWebRunner && $actorRole !== 'super_admin' && $incomingMatches) {
+        $report['applied'] = false;
+        $report['blocked_reason'] = 'A Super Admin must apply this workbook because it contains students currently outside ' . $component . '.';
     } else {
         $backupDirectory = __DIR__ . '/../backups';
         if (!is_dir($backupDirectory) && !mkdir($backupDirectory, 0775, true) && !is_dir($backupDirectory)) {
@@ -374,15 +388,23 @@ if ($apply) {
         $backupAssignmentsStmt->execute([$component]);
         $backupFoldersStmt = $conn->prepare("SELECT * FROM tbl_section_folders WHERE program = ?");
         $backupFoldersStmt->execute([$component]);
+        $backupStudentsById = [];
+        foreach (array_merge($students, array_values($matchedDatabaseStudents)) as $student) {
+            $backupStudentsById[(int) $student['tbl_student_id']] = $student;
+        }
         $backup = [
             'created_at' => date(DATE_ATOM),
             'component' => $component,
             'source_file' => realpath($file),
-            'students' => array_map(static fn(array $student): array => [
+            'students' => array_values(array_map(static fn(array $student): array => [
                 'tbl_student_id' => (int) $student['tbl_student_id'],
+                'user_id' => $student['user_id'],
+                'student_number' => $student['student_number'],
                 'course_section' => $student['course_section'],
                 'created_by' => $student['created_by'],
-            ], $students),
+                'user_program' => $student['user_program'],
+                'registration_component' => $student['registration_component'],
+            ], $backupStudentsById)),
             'admin_sections' => $backupAssignmentsStmt->fetchAll(PDO::FETCH_ASSOC),
             'section_folders' => $backupFoldersStmt->fetchAll(PDO::FETCH_ASSOC),
         ];
@@ -413,10 +435,40 @@ if ($apply) {
             }
 
             $update = $conn->prepare("UPDATE tbl_student SET course_section = ?, created_by = ? WHERE tbl_student_id = ?");
-            foreach ($changes as $row) {
+            foreach ($listedUpdates as $row) {
                 $update->execute([$row['section'], $row['new_facilitator_id'], $row['student_id']]);
-                if ($update->rowCount() !== 1) {
+                if (isset($folderChangeIds[(int) $row['student_id']]) && $update->rowCount() !== 1) {
                     throw new RuntimeException('A listed student assignment changed during reconciliation. Nothing was committed.');
+                }
+            }
+
+            $updateStudentAccount = $conn->prepare("UPDATE tbl_users SET program = ? WHERE user_id = ? AND role = 'student'");
+            $updateStudentAccountByNumber = $conn->prepare("UPDATE tbl_users SET program = ? WHERE username = ? AND role = 'student'");
+            $updateLatestRegistration = $conn->prepare("
+                UPDATE tbl_public_student_registrations
+                SET component = ?, rotc_ms_level = NULL
+                WHERE registration_id = (
+                    SELECT registration_id FROM (
+                        SELECT registration_id
+                        FROM tbl_public_student_registrations
+                        WHERE registrant_role = 'student'
+                          AND COALESCE(status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
+                          AND ((? > 0 AND user_id = ?) OR (? <> '' AND student_number = ?))
+                        ORDER BY registration_id DESC
+                        LIMIT 1
+                    ) latest_registration
+                )
+            ");
+            foreach ($incomingMatches as $row) {
+                $studentUserId = (int) ($row['student_user_id'] ?? 0);
+                $studentNumber = trim((string) ($row['student_number'] ?? ''));
+                if ($studentUserId > 0) {
+                    $updateStudentAccount->execute([$component, $studentUserId]);
+                } elseif ($studentNumber !== '') {
+                    $updateStudentAccountByNumber->execute([$component, $studentNumber]);
+                }
+                if ($studentUserId > 0 || $studentNumber !== '') {
+                    $updateLatestRegistration->execute([$component, $studentUserId, $studentUserId, $studentNumber, $studentNumber]);
                 }
             }
 

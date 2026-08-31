@@ -78,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $GLOBALS['cwtsReconciliationArgs'][] = '--apply';
         }
         $GLOBALS['cwtsReconciliationActorId'] = (int) $currentUser['user_id'];
+        $GLOBALS['cwtsReconciliationActorRole'] = (string) $currentUser['role'];
         $GLOBALS['cwtsReconciliationComponent'] = $selectedComponent;
         $GLOBALS['cwtsReconciliationReport'] = null;
 
@@ -229,6 +230,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                             ['Workbook Students', (int) ($report['workbook_students'] ?? 0), false],
                             ['Matched', (int) ($report['matched'] ?? 0), false],
                             ['Changes Needed', (int) ($report['changes_needed'] ?? 0), true],
+                            ['Incoming/Recovered', (int) ($report['incoming_to_component_count'] ?? 0), true],
                             ['Move to Pending', (int) ($report['move_to_pending_count'] ?? 0), true],
                             ['Unmatched', (int) ($report['unmatched_count'] ?? 0), true],
                             ['Ambiguous', (int) ($report['ambiguous_count'] ?? 0), true],
@@ -260,6 +262,19 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                         <div class="card card-danger card-outline"><div class="card-header"><h3 class="card-title">Missing facilitators</h3></div><div class="card-body"><ul class="mb-0">
                             <?php foreach ($report['missing_facilitators'] as $item): ?><li><?php echo htmlspecialchars((string) $item['section']); ?> — <?php echo htmlspecialchars((string) $item['facilitator']); ?></li><?php endforeach; ?>
                         </ul></div></div>
+                    <?php endif; ?>
+
+                    <?php if (!empty($report['incoming'])): ?>
+                        <div class="card card-info card-outline">
+                            <div class="card-header"><h3 class="card-title">Excel-listed students recovered from outside <?php echo htmlspecialchars($selectedComponent); ?></h3></div>
+                            <div class="card-body">
+                                <p class="text-muted">These names were found anywhere in the student database and will be moved into the exact Excel section. Their student account and latest registration component will also be corrected.</p>
+                                <?php if (!empty($report['incoming_requires_super_admin'])): ?><div class="alert alert-warning mb-0">A Super Admin must perform Apply because this includes component reassignment.</div><?php endif; ?>
+                            </div>
+                            <div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>Student</th><th>Current component</th><th>Current section</th><th>Excel section</th></tr></thead><tbody>
+                            <?php foreach (array_slice($report['incoming'], 0, 100) as $item): ?><tr><td><?php echo htmlspecialchars((string) $item['name']); ?></td><td><?php echo htmlspecialchars((string) ($item['old_component'] ?: 'Unassigned')); ?></td><td><?php echo htmlspecialchars((string) $item['old_section']); ?></td><td><?php echo htmlspecialchars((string) $item['new_section']); ?></td></tr><?php endforeach; ?>
+                            </tbody></table></div>
+                        </div>
                     <?php endif; ?>
 
                     <?php if (!empty($report['unmatched']) || !empty($report['ambiguous'])): ?>
