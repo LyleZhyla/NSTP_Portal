@@ -158,11 +158,15 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                 <?php endif; ?>
 
                 <?php if (is_array($report) && $action === 'apply' && !empty($report['applied'])): ?>
-                    <div class="alert alert-success">
-                        <strong>Reconciliation completed.</strong>
+                    <div class="alert <?php echo !empty($report['partial_applied']) ? 'alert-warning' : 'alert-success'; ?>">
+                        <strong><?php echo !empty($report['partial_applied']) ? 'Matched students were placed.' : 'Reconciliation completed.'; ?></strong>
                         <?php echo (int) ($report['updated_students'] ?? 0); ?> student assignment(s) were updated.
                         <?php echo (int) ($report['moved_to_pending'] ?? 0); ?> unlisted student(s) were moved out of section folders and into the component pending list.
-                        Run Preview again to confirm that Changes Needed is zero.
+                        <?php if (!empty($report['partial_applied'])): ?>
+                            <?php echo (int) ($report['skipped_workbook_rows'] ?? 0); ?> workbook row(s) could not be matched safely and were skipped; this did not stop the other students from moving. Unlisted-student cleanup was deferred to prevent removing a possible unmatched student.
+                        <?php else: ?>
+                            Run Preview again to confirm that Changes Needed is zero.
+                        <?php endif; ?>
                     </div>
                 <?php elseif (is_array($report) && $action === 'apply' && empty($report['applied'])): ?>
                     <div class="alert alert-warning"><strong>No changes were applied.</strong> <?php echo htmlspecialchars((string) ($report['blocked_reason'] ?? 'Review the validation results below.')); ?></div>
@@ -176,7 +180,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars((string) $_SESSION['cwts_reconciliation_csrf']); ?>">
                                 <div class="card-body">
                                     <div class="alert alert-info">
-                                        The workbook is the authoritative folder roster. Listed students are placed in the exact worksheet section and facilitator; component students not listed in the workbook are removed from section folders and moved to the pending list. Preview does not change the database.
+                                        The workbook is the authoritative folder roster. Apply places every safely matched name into the exact worksheet section and facilitator in one run. A problematic row no longer blocks the other matched students. Unlisted-student cleanup runs only when the whole workbook matches safely. Preview does not change the database.
                                     </div>
                                     <div class="form-group">
                                         <label for="component">Component</label>
@@ -202,7 +206,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                                 </div>
                                 <div class="card-footer d-flex justify-content-between">
                                     <button type="submit" class="btn btn-info" name="action" value="preview"><i class="fas fa-magnifying-glass mr-1"></i>Preview</button>
-                                    <button type="submit" class="btn btn-danger" name="action" value="apply" onclick="return confirm('Apply the workbook assignments to the production database?');"><i class="fas fa-check-double mr-1"></i>Apply corrections</button>
+                                    <button type="submit" class="btn btn-danger" name="action" value="apply" onclick="return confirm('Place all safely matched workbook students into their Excel folders?');"><i class="fas fa-check-double mr-1"></i>Place matched students</button>
                                 </div>
                             </form>
                         </div>
@@ -213,10 +217,10 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                             <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-halved mr-2"></i>Required safe result</h3></div>
                             <div class="card-body">
                                 <ul class="mb-0">
-                                    <li>Workbook Students and Matched must be equal and greater than zero.</li>
-                                    <li>Unmatched, Ambiguous, and Missing Facilitators must all be zero.</li>
-                                    <li>Move to Pending shows database students currently inside a component folder but absent from the workbook; they are not deleted.</li>
-                                    <li>After applying, upload the workbook again and Preview; Changes Needed must be zero.</li>
+                                    <li>Ready to Place is the number that will be processed immediately in one Apply.</li>
+                                    <li>Unmatched or ambiguous rows are skipped without blocking the safely matched students.</li>
+                                    <li>Move to Pending runs only when every workbook row is safely matched; otherwise it is deferred.</li>
+                                    <li>After applying, Preview again to see any rows that could not be found in the student database.</li>
                                 </ul>
                             </div>
                         </div>
@@ -229,6 +233,8 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                         $metrics = [
                             ['Workbook Students', (int) ($report['workbook_students'] ?? 0), false],
                             ['Matched', (int) ($report['matched'] ?? 0), false],
+                            ['Ready to Place', (int) ($report['assignable_matched'] ?? 0), false],
+                            ['Skipped Rows', (int) ($report['skipped_workbook_rows'] ?? 0), true],
                             ['Changes Needed', (int) ($report['changes_needed'] ?? 0), true],
                             ['Incoming/Recovered', (int) ($report['incoming_to_component_count'] ?? 0), true],
                             ['Move to Pending', (int) ($report['move_to_pending_count'] ?? 0), true],
@@ -291,7 +297,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                         <div class="card card-warning card-outline">
                             <div class="card-header"><h3 class="card-title">Component students absent from the workbook</h3></div>
                             <div class="card-body">
-                                <p class="text-muted">Students marked “Move to pending” will be removed from their current section folder without deleting their account, registration, QR code, attendance, or grades.</p>
+                                <p class="text-muted">Students marked “Move to pending” will be removed from their current section folder without deleting their account, registration, QR code, attendance, or grades. If the workbook has skipped rows, this cleanup is deferred automatically.</p>
                             </div>
                             <div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>Student</th><th>Current section</th><th>Exact-sync action</th></tr></thead><tbody>
                             <?php foreach (array_slice($report['database_only'], 0, 100) as $item): ?><tr><td><?php echo htmlspecialchars((string) $item['name']); ?></td><td><?php echo htmlspecialchars((string) $item['section']); ?></td><td><?php if (!empty($item['will_move_to_pending'])): ?><span class="badge badge-warning">Move to pending</span><?php else: ?><span class="badge badge-secondary">Already pending</span><?php endif; ?></td></tr><?php endforeach; ?>

@@ -312,21 +312,35 @@ foreach ($masterRows as $masterRow) {
     ];
 }
 
-$changes = array_values(array_filter($matched, static fn(array $row): bool =>
+$facilitatorReadyMatched = array_values(array_filter($matched, static fn(array $row): bool => !empty($row['new_facilitator_id'])));
+$allIncomingMatches = array_values(array_filter($facilitatorReadyMatched, static fn(array $row): bool => ($row['old_component'] ?? null) !== $component));
+$incomingRequiresSuperAdmin = $isWebRunner && $actorRole !== 'super_admin' && !empty($allIncomingMatches);
+$assignableMatched = $incomingRequiresSuperAdmin
+    ? array_values(array_filter($facilitatorReadyMatched, static fn(array $row): bool => ($row['old_component'] ?? null) === $component))
+    : $facilitatorReadyMatched;
+$skippedWorkbookRows = count($masterRows) - count($assignableMatched);
+$fullWorkbookReady = !empty($masterRows)
+    && count($assignableMatched) === count($masterRows)
+    && !$unmatched
+    && !$ambiguous
+    && !$missingFacilitators;
+
+$changes = array_values(array_filter($assignableMatched, static fn(array $row): bool =>
     $row['old_section'] !== $row['section'] || $row['old_facilitator_id'] !== $row['new_facilitator_id']
 ));
 $databaseOnly = array_values(array_filter($students, static fn(array $student): bool => !isset($matchedStudentIds[(int) $student['tbl_student_id']])));
 $databaseOnlyAssigned = array_values(array_filter($databaseOnly, static fn(array $student): bool =>
     trim((string) ($student['course_section'] ?? '')) !== $component || $student['created_by'] !== null
 ));
-$incomingMatches = array_values(array_filter($matched, static fn(array $row): bool => ($row['old_component'] ?? null) !== $component));
+$databaseOnlyAssignedToApply = $fullWorkbookReady ? $databaseOnlyAssigned : [];
+$incomingMatches = array_values(array_filter($assignableMatched, static fn(array $row): bool => ($row['old_component'] ?? null) !== $component));
 $folderChangeIds = array_fill_keys(array_map(static fn(array $row): int => (int) $row['student_id'], $changes), true);
 $listedUpdatesById = [];
 foreach (array_merge($changes, $incomingMatches) as $row) {
     $listedUpdatesById[(int) $row['student_id']] = $row;
 }
 $listedUpdates = array_values($listedUpdatesById);
-$totalChangesNeeded = count($listedUpdates) + count($databaseOnlyAssigned);
+$totalChangesNeeded = count($listedUpdates) + count($databaseOnlyAssignedToApply);
 
 $report = [
     'mode' => $apply ? 'apply' : 'dry-run',
@@ -336,18 +350,22 @@ $report = [
     'workbook_students' => count($masterRows),
     'database_component_candidates' => count($students),
     'matched' => count($matched),
+    'assignable_matched' => count($assignableMatched),
+    'skipped_workbook_rows' => $skippedWorkbookRows,
+    'full_workbook_ready' => $fullWorkbookReady,
     'changes_needed' => $totalChangesNeeded,
     'listed_changes_needed' => count($listedUpdates),
-    'incoming_to_component_count' => count($incomingMatches),
-    'incoming_requires_super_admin' => $isWebRunner && $actorRole !== 'super_admin' && !empty($incomingMatches),
+    'incoming_to_component_count' => count($allIncomingMatches),
+    'incoming_requires_super_admin' => $incomingRequiresSuperAdmin,
     'incoming' => array_map(static fn(array $row): array => [
         'student_id' => (int) $row['student_id'],
         'name' => $row['database_name'],
         'old_component' => $row['old_component'],
         'old_section' => $row['old_section'],
         'new_section' => $row['section'],
-    ], $incomingMatches),
-    'move_to_pending_count' => count($databaseOnlyAssigned),
+    ], $allIncomingMatches),
+    'move_to_pending_count' => count($databaseOnlyAssignedToApply),
+    'deferred_move_to_pending_count' => $fullWorkbookReady ? 0 : count($databaseOnlyAssigned),
     'unmatched_count' => count($unmatched),
     'ambiguous_count' => count($ambiguous),
     'database_only_count' => count($databaseOnly),
@@ -372,12 +390,9 @@ if ($apply) {
     if (!$sections || !$masterRows) {
         $report['applied'] = false;
         $report['blocked_reason'] = 'The workbook contains no valid ' . $component . ' section sheets or student rows.';
-    } elseif ($unmatched || $ambiguous || $missingFacilitators || count($matched) !== count($masterRows)) {
+    } elseif (!$assignableMatched) {
         $report['applied'] = false;
-        $report['blocked_reason'] = 'Resolve duplicate, unmatched, ambiguous, or missing-facilitator records before applying.';
-    } elseif ($isWebRunner && $actorRole !== 'super_admin' && $incomingMatches) {
-        $report['applied'] = false;
-        $report['blocked_reason'] = 'A Super Admin must apply this workbook because it contains students currently outside ' . $component . '.';
+        $report['blocked_reason'] = 'No workbook students could be matched safely to a section with a valid facilitator.';
     } else {
         $backupDirectory = __DIR__ . '/../backups';
         if (!is_dir($backupDirectory) && !mkdir($backupDirectory, 0775, true) && !is_dir($backupDirectory)) {
@@ -416,6 +431,9 @@ if ($apply) {
         $conn->beginTransaction();
         try {
             foreach ($sections as $section => $details) {
+                if (!isset($sectionFacilitators[$section])) {
+                    continue;
+                }
                 $facilitator = $sectionFacilitators[$section];
                 createSectionFolder($conn, $component, $section, $actorId ?: null);
 
@@ -473,7 +491,7 @@ if ($apply) {
             }
 
             $moveToPending = $conn->prepare("UPDATE tbl_student SET course_section = ?, created_by = NULL WHERE tbl_student_id = ?");
-            foreach ($databaseOnlyAssigned as $student) {
+            foreach ($databaseOnlyAssignedToApply as $student) {
                 $moveToPending->execute([$component, (int) $student['tbl_student_id']]);
                 if ($moveToPending->rowCount() !== 1) {
                     throw new RuntimeException('An unlisted student assignment changed during reconciliation. Nothing was committed.');
@@ -482,8 +500,10 @@ if ($apply) {
 
             $conn->commit();
             $report['applied'] = true;
+            $report['partial_applied'] = !$fullWorkbookReady;
             $report['updated_students'] = $totalChangesNeeded;
-            $report['moved_to_pending'] = count($databaseOnlyAssigned);
+            $report['moved_to_pending'] = count($databaseOnlyAssignedToApply);
+            $report['skipped_workbook_rows'] = $skippedWorkbookRows;
         } catch (Throwable $error) {
             if ($conn->inTransaction()) {
                 $conn->rollBack();

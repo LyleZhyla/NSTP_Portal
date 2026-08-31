@@ -17,10 +17,12 @@ different component, the exact sync also updates the student account and latest
 registration component. Web applies containing such cross-component recovery
 must be performed by a Super Admin.
 
-The command is intentionally fail-closed. It does not apply changes when a
-student is unmatched or ambiguous, or when a facilitator from the workbook is
-missing from the database. Before a successful apply, it writes a JSON snapshot
-of the affected database records to `backups/`.
+The command applies every safely matched, unambiguous workbook row in one run.
+Unmatched or ambiguous rows, and rows whose facilitator is missing, are skipped
+without blocking the other students. Removal of unlisted students from section
+folders is intentionally deferred unless the entire workbook matches safely.
+Before a successful apply, the command writes a JSON snapshot of the affected
+database records to `backups/`.
 
 ## Important
 
@@ -57,12 +59,12 @@ For LTS, add `--component=LTS`:
 php scripts/reconcile-cwts-masterlist.php /private/path/student-masterlist-lts.xlsx --component=LTS --production --json
 ```
 
-Only continue when the result shows:
+The key result fields are:
 
-- `unmatched_count: 0`
-- `ambiguous_count: 0`
-- an empty `missing_facilitators` list
-- expected values for `workbook_students`, `matched`, and `changes_needed`
+- `assignable_matched`: rows that Apply will place immediately
+- `skipped_workbook_rows`: rows that cannot be placed safely
+- `move_to_pending_count`: unlisted students removed from folders when the full workbook matches
+- `deferred_move_to_pending_count`: cleanup withheld because one or more workbook rows were skipped
 
 `database_only_count` is informational. `move_to_pending_count` shows how many
 unlisted component students will be removed from their existing section folder.
