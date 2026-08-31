@@ -19,6 +19,19 @@ of the affected database records to `backups/`.
 
 ## Production dry-run
 
+### Recommended: website admin page
+
+After deployment, sign in as Super Admin or the CWTS Coordinator and open
+`cwts-section-reconciliation.php` from the **CWTS Reconciliation** sidebar
+item. Upload the workbook and click **Preview**. The page shows the match and
+validation totals without changing the database.
+
+When all required safety totals are zero, select the workbook again, type
+`APPLY CWTS`, and click **Apply corrections**. Upload it one final time and
+click **Preview** to verify that `Changes Needed` is zero.
+
+### Alternative: server command line
+
 Upload the workbook privately to the server, then run from the project root:
 
 ```sh
@@ -55,4 +68,3 @@ php scripts/reconcile-cwts-masterlist.php /private/path/student-masterlist-cwts.
 After a correct apply, `changes_needed` must be `0` and all 925 workbook rows
 must still match. Verify the CWTS A-W counts in the website before allowing
 normal section-management activity to resume.
-

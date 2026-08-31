@@ -7,30 +7,50 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../include/section-folders.php';
 
-if (PHP_SAPI !== 'cli') {
+$isWebRunner = defined('CWTS_RECONCILIATION_WEB') && CWTS_RECONCILIATION_WEB === true;
+if (PHP_SAPI !== 'cli' && !$isWebRunner) {
     fwrite(STDERR, "This command can only be run from the command line.\n");
     exit(1);
 }
 
-$args = array_slice($argv, 1);
+$args = $isWebRunner
+    ? (array) ($GLOBALS['cwtsReconciliationArgs'] ?? [])
+    : array_slice($argv, 1);
 $apply = in_array('--apply', $args, true);
 $json = in_array('--json', $args, true);
 $production = in_array('--production', $args, true);
+$actorId = $isWebRunner ? (int) ($GLOBALS['cwtsReconciliationActorId'] ?? 0) : 0;
+$component = $isWebRunner ? strtoupper((string) ($GLOBALS['cwtsReconciliationComponent'] ?? 'CWTS')) : 'CWTS';
 $file = null;
 
 foreach ($args as $arg) {
+    if (str_starts_with($arg, '--component=')) {
+        $component = strtoupper(trim(substr($arg, strlen('--component='))));
+        continue;
+    }
     if (strncmp($arg, '--', 2) !== 0) {
         $file = $arg;
         break;
     }
 }
 
+if (!in_array($component, ['CWTS', 'LTS'], true)) {
+    throw new InvalidArgumentException('Only CWTS and LTS masterlists are supported.');
+}
+
 if (!$file || !is_file($file)) {
-    fwrite(STDERR, "Usage: php scripts/reconcile-cwts-masterlist.php <masterlist.xlsx> [--production] [--apply] [--json]\n");
+    if ($isWebRunner) {
+        throw new InvalidArgumentException('A valid masterlist workbook is required.');
+    }
+    fwrite(STDERR, "Usage: php scripts/reconcile-cwts-masterlist.php <masterlist.xlsx> [--component=CWTS|LTS] [--production] [--apply] [--json]\n");
     exit(1);
 }
 
-if ($production) {
+if ($isWebRunner) {
+    if (!isset($conn) || !$conn instanceof PDO) {
+        throw new RuntimeException('The web runner did not provide a database connection.');
+    }
+} elseif ($production) {
     $_SERVER['HTTP_HOST'] = 'production';
     require __DIR__ . '/../conn/conn.php';
 } else {
@@ -73,6 +93,16 @@ function normalizedName(string $value): string
 function tokenName(string $value): string
 {
     $tokens = array_values(array_filter(explode(' ', normalizedName($value))));
+    sort($tokens, SORT_STRING);
+    return implode(' ', $tokens);
+}
+
+function corePersonName(string $value): string
+{
+    $tokens = array_values(array_filter(
+        explode(' ', normalizedName($value)),
+        static fn(string $token): bool => strlen($token) > 1
+    ));
     sort($tokens, SORT_STRING);
     return implode(' ', $tokens);
 }
@@ -134,7 +164,7 @@ foreach ($workbook->getWorksheetIterator() as $sheet) {
     $section = trim(str_contains($sectionLine, 'Section:') ? explode('Section:', $sectionLine, 2)[1] : $sheet->getTitle());
     $facilitator = trim(str_contains($facilitatorLine, 'Facilitator:') ? explode('Facilitator:', $facilitatorLine, 2)[1] : '');
 
-    if (!preg_match('/^CWTS\s+[A-Z0-9-]+$/i', $section)) {
+    if (!preg_match('/^' . preg_quote($component, '/') . '\s+[A-Z0-9-]+$/i', $section)) {
         continue;
     }
 
@@ -172,7 +202,7 @@ $duplicateWorkbookNames = array_values(array_map(
     array_filter($workbookNameIndex, static fn(array $rows): bool => count($rows) > 1)
 ));
 
-$studentStmt = $conn->query("
+$studentStmt = $conn->prepare("
     SELECT s.tbl_student_id, s.student_name, s.course_section, s.created_by,
            creator.full_name AS creator_name, creator.program AS creator_program,
            (SELECT CONCAT_WS(' ', latest.course, latest.year_section)
@@ -181,13 +211,14 @@ $studentStmt = $conn->query("
             ORDER BY latest.registration_id DESC LIMIT 1) AS registration_program
     FROM tbl_student s
     LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
-    WHERE s.course_section LIKE 'CWTS %'
-       OR creator.program = 'CWTS'
+    WHERE s.course_section LIKE ?
+       OR creator.program = ?
        OR EXISTS (
            SELECT 1 FROM tbl_public_student_registrations registration
-           WHERE registration.user_id = s.user_id AND registration.component = 'CWTS'
+           WHERE registration.user_id = s.user_id AND registration.component = ?
        )
 ");
+$studentStmt->execute([$component . ' %', $component, $component]);
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
 $studentExactIndex = [];
 $studentTokenIndex = [];
@@ -196,22 +227,34 @@ foreach ($students as $student) {
     addIndex($studentTokenIndex, tokenName((string) $student['student_name']), $student);
 }
 
-$facilitators = $conn->query("
+$facilitatorStmt = $conn->prepare("
     SELECT user_id, full_name, assigned_section
     FROM tbl_users
-    WHERE role = 'facilitator' AND program = 'CWTS'
-")->fetchAll(PDO::FETCH_ASSOC);
+    WHERE role = 'facilitator' AND program = ?
+");
+$facilitatorStmt->execute([$component]);
+$facilitators = $facilitatorStmt->fetchAll(PDO::FETCH_ASSOC);
 $facilitatorExactIndex = [];
 $facilitatorTokenIndex = [];
+$facilitatorCoreIndex = [];
 foreach ($facilitators as $facilitator) {
     addIndex($facilitatorExactIndex, normalizedName((string) $facilitator['full_name']), $facilitator);
     addIndex($facilitatorTokenIndex, tokenName((string) $facilitator['full_name']), $facilitator);
+    addIndex($facilitatorCoreIndex, corePersonName((string) $facilitator['full_name']), $facilitator);
 }
 
 $sectionFacilitators = [];
 $missingFacilitators = [];
 foreach ($sections as $section => $details) {
     $match = uniqueIndexedMatch($facilitators, $facilitatorExactIndex, $facilitatorTokenIndex, $details['facilitator']);
+    if ($match['status'] === 'unmatched') {
+        $coreMatches = $facilitatorCoreIndex[corePersonName($details['facilitator'])] ?? [];
+        if (count($coreMatches) === 1) {
+            $match = ['status' => 'matched', 'method' => 'facilitator_without_initials', 'record' => $coreMatches[0]];
+        } elseif (count($coreMatches) > 1) {
+            $match = ['status' => 'ambiguous', 'method' => 'facilitator_without_initials', 'records' => $coreMatches];
+        }
+    }
     if ($match['status'] !== 'matched') {
         $missingFacilitators[] = ['section' => $section, 'facilitator' => $details['facilitator'], 'status' => $match['status']];
         continue;
@@ -259,10 +302,11 @@ $databaseOnly = array_values(array_filter($students, static fn(array $student): 
 
 $report = [
     'mode' => $apply ? 'apply' : 'dry-run',
+    'component' => $component,
     'source_file' => realpath($file),
     'sheet_count' => count($sections),
     'workbook_students' => count($masterRows),
-    'database_cwts_candidates' => count($students),
+    'database_component_candidates' => count($students),
     'matched' => count($matched),
     'changes_needed' => count($changes),
     'unmatched_count' => count($unmatched),
@@ -285,7 +329,10 @@ $report = [
 ];
 
 if ($apply) {
-    if ($unmatched || $ambiguous || $missingFacilitators) {
+    if (!$sections || !$masterRows) {
+        $report['applied'] = false;
+        $report['blocked_reason'] = 'The workbook contains no valid ' . $component . ' section sheets or student rows.';
+    } elseif ($unmatched || $ambiguous || $missingFacilitators || count($matched) !== count($masterRows)) {
         $report['applied'] = false;
         $report['blocked_reason'] = 'Resolve duplicate, unmatched, ambiguous, or missing-facilitator records before applying.';
     } else {
@@ -293,13 +340,20 @@ if ($apply) {
         if (!is_dir($backupDirectory) && !mkdir($backupDirectory, 0775, true) && !is_dir($backupDirectory)) {
             throw new RuntimeException('Unable to create the reconciliation backup directory.');
         }
-        $backupPath = $backupDirectory . '/cwts-reconciliation-' . date('Ymd-His') . '.json';
+        $backupPath = $backupDirectory . '/' . strtolower($component) . '-reconciliation-' . date('Ymd-His') . '.json';
+        $backupStudentsStmt = $conn->prepare("SELECT tbl_student_id, course_section, created_by FROM tbl_student WHERE course_section LIKE ? OR created_by IN (SELECT user_id FROM tbl_users WHERE role = 'facilitator' AND program = ?)");
+        $backupStudentsStmt->execute([$component . ' %', $component]);
+        $backupAssignmentsStmt = $conn->prepare("SELECT ads.* FROM tbl_admin_sections ads INNER JOIN tbl_users u ON u.user_id = ads.user_id WHERE u.role = 'facilitator' AND u.program = ?");
+        $backupAssignmentsStmt->execute([$component]);
+        $backupFoldersStmt = $conn->prepare("SELECT * FROM tbl_section_folders WHERE program = ?");
+        $backupFoldersStmt->execute([$component]);
         $backup = [
             'created_at' => date(DATE_ATOM),
+            'component' => $component,
             'source_file' => realpath($file),
-            'students' => $conn->query("SELECT * FROM tbl_student WHERE course_section LIKE 'CWTS %' OR created_by IN (SELECT user_id FROM tbl_users WHERE role = 'facilitator' AND program = 'CWTS')")->fetchAll(PDO::FETCH_ASSOC),
-            'admin_sections' => $conn->query("SELECT ads.* FROM tbl_admin_sections ads INNER JOIN tbl_users u ON u.user_id = ads.user_id WHERE u.role = 'facilitator' AND u.program = 'CWTS'")->fetchAll(PDO::FETCH_ASSOC),
-            'section_folders' => $conn->query("SELECT * FROM tbl_section_folders WHERE program = 'CWTS'")->fetchAll(PDO::FETCH_ASSOC),
+            'students' => $backupStudentsStmt->fetchAll(PDO::FETCH_ASSOC),
+            'admin_sections' => $backupAssignmentsStmt->fetchAll(PDO::FETCH_ASSOC),
+            'section_folders' => $backupFoldersStmt->fetchAll(PDO::FETCH_ASSOC),
         ];
         if (file_put_contents($backupPath, json_encode($backup, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === false) {
             throw new RuntimeException('Unable to write the reconciliation backup.');
@@ -310,21 +364,21 @@ if ($apply) {
         try {
             foreach ($sections as $section => $details) {
                 $facilitator = $sectionFacilitators[$section];
-                createSectionFolder($conn, 'CWTS', $section, (int) $facilitator['user_id']);
+                createSectionFolder($conn, $component, $section, $actorId ?: null);
 
                 $delete = $conn->prepare("
                     DELETE ads FROM tbl_admin_sections ads
                     INNER JOIN tbl_users u ON u.user_id = ads.user_id
-                    WHERE ads.course_section = ? AND u.role = 'facilitator' AND u.program = 'CWTS' AND ads.user_id <> ?
+                    WHERE ads.course_section = ? AND u.role = 'facilitator' AND u.program = ? AND ads.user_id <> ?
                 ");
-                $delete->execute([$section, (int) $facilitator['user_id']]);
+                $delete->execute([$section, $component, (int) $facilitator['user_id']]);
 
                 $upsert = $conn->prepare("
                     INSERT INTO tbl_admin_sections (user_id, course_section, assigned_by, assigned_at)
-                    VALUES (?, ?, NULL, NOW())
-                    ON DUPLICATE KEY UPDATE assigned_at = VALUES(assigned_at)
+                    VALUES (?, ?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE assigned_by = VALUES(assigned_by), assigned_at = VALUES(assigned_at)
                 ");
-                $upsert->execute([(int) $facilitator['user_id'], $section]);
+                $upsert->execute([(int) $facilitator['user_id'], $section, $actorId ?: null]);
             }
 
             $update = $conn->prepare("UPDATE tbl_student SET course_section = ?, created_by = ? WHERE tbl_student_id = ?");
@@ -344,7 +398,10 @@ if ($apply) {
     }
 }
 
-if ($json) {
+if ($isWebRunner) {
+    $GLOBALS['cwtsReconciliationReport'] = $report;
+    return;
+} elseif ($json) {
     echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 } else {
     printf(

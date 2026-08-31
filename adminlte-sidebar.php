@@ -308,6 +308,14 @@ if (isset($_SESSION['user_id'])) {
                     </a>
                 </li>
                 <?php endif; ?>
+                <?php if (isset($_SESSION['role']) && ($_SESSION['role'] === 'super_admin' || ($_SESSION['role'] === 'coordinator' && strtoupper((string) ($_SESSION['program'] ?? '')) === 'CWTS'))): ?>
+                <li class="nav-item">
+                    <a href="cwts-section-reconciliation.php" class="nav-link <?= ($currentPage == 'cwts-section-reconciliation.php') ? 'active' : '' ?>">
+                        <i class="nav-icon fas fa-people-arrows"></i>
+                        <p>CWTS Reconciliation</p>
+                    </a>
+                </li>
+                <?php endif; ?>
                 
                 <!-- Logout -->
                 <li class="nav-item">
