@@ -204,21 +204,44 @@ $duplicateWorkbookNames = array_values(array_map(
 $studentStmt = $conn->prepare("
     SELECT s.tbl_student_id, s.student_name, s.course_section, s.created_by,
            creator.full_name AS creator_name, creator.program AS creator_program,
+           student_user.program AS user_program,
+           (SELECT latest_component.component
+            FROM tbl_public_student_registrations latest_component
+            WHERE (s.student_number IS NOT NULL AND s.student_number <> '' AND latest_component.student_number = s.student_number)
+               OR (s.user_id IS NOT NULL AND latest_component.user_id = s.user_id)
+            ORDER BY latest_component.registration_id DESC LIMIT 1) AS registration_component,
            (SELECT CONCAT_WS(' ', latest.course, latest.year_section)
             FROM tbl_public_student_registrations latest
-            WHERE latest.user_id = s.user_id
+            WHERE (s.student_number IS NOT NULL AND s.student_number <> '' AND latest.student_number = s.student_number)
+               OR (s.user_id IS NOT NULL AND latest.user_id = s.user_id)
             ORDER BY latest.registration_id DESC LIMIT 1) AS registration_program
     FROM tbl_student s
+    LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id
     LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
     WHERE s.course_section LIKE ?
+       OR s.course_section = ?
+       OR student_user.program = ?
        OR creator.program = ?
        OR EXISTS (
            SELECT 1 FROM tbl_public_student_registrations registration
-           WHERE registration.user_id = s.user_id AND registration.component = ?
+           WHERE registration.registration_id = (
+                    SELECT MAX(latest_registration.registration_id)
+                    FROM tbl_public_student_registrations latest_registration
+                    WHERE (s.student_number IS NOT NULL AND s.student_number <> '' AND latest_registration.student_number = s.student_number)
+                       OR (s.user_id IS NOT NULL AND latest_registration.user_id = s.user_id)
+                 )
+             AND registration.component = ?
        )
 ");
-$studentStmt->execute([$component . ' %', $component, $component]);
-$students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
+$studentStmt->execute([$component . ' %', $component, $component, $component, $component]);
+$students = array_values(array_filter($studentStmt->fetchAll(PDO::FETCH_ASSOC), static function (array $student) use ($component): bool {
+    $resolvedComponent = normalizeProgram($student['user_program'] ?? null)
+        ?: normalizeProgram($student['registration_component'] ?? null)
+        ?: inferProgramFromText($student['course_section'] ?? '')
+        ?: normalizeProgram($student['creator_program'] ?? null);
+
+    return $resolvedComponent === $component;
+}));
 $studentExactIndex = [];
 $studentTokenIndex = [];
 foreach ($students as $student) {
@@ -298,6 +321,10 @@ $changes = array_values(array_filter($matched, static fn(array $row): bool =>
     $row['old_section'] !== $row['section'] || $row['old_facilitator_id'] !== $row['new_facilitator_id']
 ));
 $databaseOnly = array_values(array_filter($students, static fn(array $student): bool => !isset($matchedStudentIds[(int) $student['tbl_student_id']])));
+$databaseOnlyAssigned = array_values(array_filter($databaseOnly, static fn(array $student): bool =>
+    trim((string) ($student['course_section'] ?? '')) !== $component || $student['created_by'] !== null
+));
+$totalChangesNeeded = count($changes) + count($databaseOnlyAssigned);
 
 $report = [
     'mode' => $apply ? 'apply' : 'dry-run',
@@ -307,7 +334,9 @@ $report = [
     'workbook_students' => count($masterRows),
     'database_component_candidates' => count($students),
     'matched' => count($matched),
-    'changes_needed' => count($changes),
+    'changes_needed' => $totalChangesNeeded,
+    'listed_changes_needed' => count($changes),
+    'move_to_pending_count' => count($databaseOnlyAssigned),
     'unmatched_count' => count($unmatched),
     'ambiguous_count' => count($ambiguous),
     'database_only_count' => count($databaseOnly),
@@ -323,6 +352,7 @@ $report = [
         'student_id' => (int) $row['tbl_student_id'],
         'name' => $row['student_name'],
         'section' => $row['course_section'],
+        'will_move_to_pending' => trim((string) ($row['course_section'] ?? '')) !== $component || $row['created_by'] !== null,
     ], $databaseOnly),
     'changes' => $changes,
 ];
@@ -340,8 +370,6 @@ if ($apply) {
             throw new RuntimeException('Unable to create the reconciliation backup directory.');
         }
         $backupPath = $backupDirectory . '/' . strtolower($component) . '-reconciliation-' . date('Ymd-His') . '.json';
-        $backupStudentsStmt = $conn->prepare("SELECT tbl_student_id, course_section, created_by FROM tbl_student WHERE course_section LIKE ? OR created_by IN (SELECT user_id FROM tbl_users WHERE role = 'facilitator' AND program = ?)");
-        $backupStudentsStmt->execute([$component . ' %', $component]);
         $backupAssignmentsStmt = $conn->prepare("SELECT ads.* FROM tbl_admin_sections ads INNER JOIN tbl_users u ON u.user_id = ads.user_id WHERE u.role = 'facilitator' AND u.program = ?");
         $backupAssignmentsStmt->execute([$component]);
         $backupFoldersStmt = $conn->prepare("SELECT * FROM tbl_section_folders WHERE program = ?");
@@ -350,7 +378,11 @@ if ($apply) {
             'created_at' => date(DATE_ATOM),
             'component' => $component,
             'source_file' => realpath($file),
-            'students' => $backupStudentsStmt->fetchAll(PDO::FETCH_ASSOC),
+            'students' => array_map(static fn(array $student): array => [
+                'tbl_student_id' => (int) $student['tbl_student_id'],
+                'course_section' => $student['course_section'],
+                'created_by' => $student['created_by'],
+            ], $students),
             'admin_sections' => $backupAssignmentsStmt->fetchAll(PDO::FETCH_ASSOC),
             'section_folders' => $backupFoldersStmt->fetchAll(PDO::FETCH_ASSOC),
         ];
@@ -381,13 +413,25 @@ if ($apply) {
             }
 
             $update = $conn->prepare("UPDATE tbl_student SET course_section = ?, created_by = ? WHERE tbl_student_id = ?");
-            foreach ($matched as $row) {
+            foreach ($changes as $row) {
                 $update->execute([$row['section'], $row['new_facilitator_id'], $row['student_id']]);
+                if ($update->rowCount() !== 1) {
+                    throw new RuntimeException('A listed student assignment changed during reconciliation. Nothing was committed.');
+                }
+            }
+
+            $moveToPending = $conn->prepare("UPDATE tbl_student SET course_section = ?, created_by = NULL WHERE tbl_student_id = ?");
+            foreach ($databaseOnlyAssigned as $student) {
+                $moveToPending->execute([$component, (int) $student['tbl_student_id']]);
+                if ($moveToPending->rowCount() !== 1) {
+                    throw new RuntimeException('An unlisted student assignment changed during reconciliation. Nothing was committed.');
+                }
             }
 
             $conn->commit();
             $report['applied'] = true;
-            $report['updated_students'] = count($changes);
+            $report['updated_students'] = $totalChangesNeeded;
+            $report['moved_to_pending'] = count($databaseOnlyAssigned);
         } catch (Throwable $error) {
             if ($conn->inTransaction()) {
                 $conn->rollBack();

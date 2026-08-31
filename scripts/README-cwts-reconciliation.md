@@ -4,6 +4,12 @@
 current section and facilitator with the section worksheets in an exported
 student masterlist.
 
+The selected workbook is treated as the exact, authoritative folder roster.
+Students listed in the workbook are assigned to that worksheet's section and
+facilitator. Component students absent from the workbook are not deleted; if
+they are currently assigned to a section folder, they are moved to the
+component pending list with `created_by = NULL`.
+
 The command is intentionally fail-closed. It does not apply changes when a
 student is unmatched or ambiguous, or when a facilitator from the workbook is
 missing from the database. Before a successful apply, it writes a JSON snapshot
@@ -51,8 +57,9 @@ Only continue when the result shows:
 - an empty `missing_facilitators` list
 - expected values for `workbook_students`, `matched`, and `changes_needed`
 
-`database_only_count` is informational. Database-only students are not deleted
-or modified by this command.
+`database_only_count` is informational. `move_to_pending_count` shows how many
+unlisted component students will be removed from their existing section folder.
+They remain in the database and retain their account and related records.
 
 ## Apply
 

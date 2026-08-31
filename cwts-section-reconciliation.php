@@ -93,10 +93,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn,
                 strtolower($selectedComponent) . '_masterlist_reconciled',
                 sprintf(
-                    'Applied %s masterlist: %d matched, %d updated, %d sections.',
+                    'Applied exact %s masterlist roster: %d matched, %d updated, %d moved to pending, %d sections.',
                     $selectedComponent,
                     (int) ($report['matched'] ?? 0),
                     (int) ($report['updated_students'] ?? 0),
+                    (int) ($report['moved_to_pending'] ?? 0),
                     (int) ($report['sheet_count'] ?? 0)
                 )
             );
@@ -159,6 +160,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                     <div class="alert alert-success">
                         <strong>Reconciliation completed.</strong>
                         <?php echo (int) ($report['updated_students'] ?? 0); ?> student assignment(s) were updated.
+                        <?php echo (int) ($report['moved_to_pending'] ?? 0); ?> unlisted student(s) were moved out of section folders and into the component pending list.
                         Run Preview again to confirm that Changes Needed is zero.
                     </div>
                 <?php elseif (is_array($report) && $action === 'apply' && empty($report['applied'])): ?>
@@ -173,7 +175,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars((string) $_SESSION['cwts_reconciliation_csrf']); ?>">
                                 <div class="card-body">
                                     <div class="alert alert-info">
-                                        Each worksheet determines the student's current <?php echo htmlspecialchars($selectedComponent); ?> section and facilitator. Preview does not change the database.
+                                        The workbook is the authoritative folder roster. Listed students are placed in the exact worksheet section and facilitator; component students not listed in the workbook are removed from section folders and moved to the pending list. Preview does not change the database.
                                     </div>
                                     <div class="form-group">
                                         <label for="component">Component</label>
@@ -212,6 +214,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                                 <ul class="mb-0">
                                     <li>Workbook Students and Matched must be equal and greater than zero.</li>
                                     <li>Unmatched, Ambiguous, and Missing Facilitators must all be zero.</li>
+                                    <li>Move to Pending shows database students currently inside a component folder but absent from the workbook; they are not deleted.</li>
                                     <li>After applying, upload the workbook again and Preview; Changes Needed must be zero.</li>
                                 </ul>
                             </div>
@@ -226,6 +229,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                             ['Workbook Students', (int) ($report['workbook_students'] ?? 0), false],
                             ['Matched', (int) ($report['matched'] ?? 0), false],
                             ['Changes Needed', (int) ($report['changes_needed'] ?? 0), true],
+                            ['Move to Pending', (int) ($report['move_to_pending_count'] ?? 0), true],
                             ['Unmatched', (int) ($report['unmatched_count'] ?? 0), true],
                             ['Ambiguous', (int) ($report['ambiguous_count'] ?? 0), true],
                             ['Missing Facilitators', count($report['missing_facilitators'] ?? []), true],
@@ -264,6 +268,18 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                             <div class="card-body table-responsive p-0"><table class="table table-sm table-striped mb-0"><thead><tr><th>Status</th><th>Workbook name</th><th>Program</th><th>Target</th></tr></thead><tbody>
                             <?php foreach (array_slice($report['unmatched'] ?? [], 0, 100) as $item): ?><tr><td><span class="badge badge-danger">Unmatched</span></td><td><?php echo htmlspecialchars((string) $item['name']); ?></td><td><?php echo htmlspecialchars((string) $item['program']); ?></td><td><?php echo htmlspecialchars((string) $item['section']); ?></td></tr><?php endforeach; ?>
                             <?php foreach (array_slice($report['ambiguous'] ?? [], 0, 100) as $item): ?><tr><td><span class="badge badge-warning">Ambiguous</span></td><td><?php echo htmlspecialchars((string) $item['name']); ?></td><td><?php echo htmlspecialchars((string) $item['program']); ?></td><td><?php echo htmlspecialchars((string) $item['section']); ?></td></tr><?php endforeach; ?>
+                            </tbody></table></div>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (!empty($report['database_only'])): ?>
+                        <div class="card card-warning card-outline">
+                            <div class="card-header"><h3 class="card-title">Component students absent from the workbook</h3></div>
+                            <div class="card-body">
+                                <p class="text-muted">Students marked “Move to pending” will be removed from their current section folder without deleting their account, registration, QR code, attendance, or grades.</p>
+                            </div>
+                            <div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>Student</th><th>Current section</th><th>Exact-sync action</th></tr></thead><tbody>
+                            <?php foreach (array_slice($report['database_only'], 0, 100) as $item): ?><tr><td><?php echo htmlspecialchars((string) $item['name']); ?></td><td><?php echo htmlspecialchars((string) $item['section']); ?></td><td><?php if (!empty($item['will_move_to_pending'])): ?><span class="badge badge-warning">Move to pending</span><?php else: ?><span class="badge badge-secondary">Already pending</span><?php endif; ?></td></tr><?php endforeach; ?>
                             </tbody></table></div>
                         </div>
                     <?php endif; ?>
