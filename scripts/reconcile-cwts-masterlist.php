@@ -28,9 +28,8 @@ foreach ($args as $arg) {
         $component = strtoupper(trim(substr($arg, strlen('--component='))));
         continue;
     }
-    if (strncmp($arg, '--', 2) !== 0) {
+    if ($file === null && strncmp($arg, '--', 2) !== 0) {
         $file = $arg;
-        break;
     }
 }
 

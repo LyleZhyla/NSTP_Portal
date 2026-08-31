@@ -308,11 +308,11 @@ if (isset($_SESSION['user_id'])) {
                     </a>
                 </li>
                 <?php endif; ?>
-                <?php if (isset($_SESSION['role']) && ($_SESSION['role'] === 'super_admin' || ($_SESSION['role'] === 'coordinator' && strtoupper((string) ($_SESSION['program'] ?? '')) === 'CWTS'))): ?>
+                <?php if (isset($_SESSION['role']) && ($_SESSION['role'] === 'super_admin' || ($_SESSION['role'] === 'coordinator' && in_array(strtoupper((string) ($_SESSION['program'] ?? '')), ['CWTS', 'LTS'], true)))): ?>
                 <li class="nav-item">
-                    <a href="cwts-section-reconciliation.php" class="nav-link <?= ($currentPage == 'cwts-section-reconciliation.php') ? 'active' : '' ?>">
+                    <a href="section-reconciliation.php" class="nav-link <?= in_array($currentPage, ['section-reconciliation.php', 'cwts-section-reconciliation.php'], true) ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-people-arrows"></i>
-                        <p>CWTS Reconciliation</p>
+                        <p>Section Reconciliation</p>
                     </a>
                 </li>
                 <?php endif; ?>

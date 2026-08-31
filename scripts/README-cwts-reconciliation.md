@@ -1,8 +1,8 @@
-# CWTS masterlist reconciliation
+# CWTS and LTS masterlist reconciliation
 
-`reconcile-cwts-masterlist.php` aligns each existing CWTS student's current
-section and facilitator with the section worksheets in an exported student
-masterlist.
+`reconcile-cwts-masterlist.php` aligns each existing CWTS or LTS student's
+current section and facilitator with the section worksheets in an exported
+student masterlist.
 
 The command is intentionally fail-closed. It does not apply changes when a
 student is unmatched or ambiguous, or when a facilitator from the workbook is
@@ -21,14 +21,14 @@ of the affected database records to `backups/`.
 
 ### Recommended: website admin page
 
-After deployment, sign in as Super Admin or the CWTS Coordinator and open
-`cwts-section-reconciliation.php` from the **CWTS Reconciliation** sidebar
-item. Upload the workbook and click **Preview**. The page shows the match and
-validation totals without changing the database.
+After deployment, sign in as Super Admin or the matching CWTS/LTS Coordinator
+and open `section-reconciliation.php` from the **Section Reconciliation**
+sidebar item. Select the component, upload its workbook, and click **Preview**.
+The page shows the match and validation totals without changing the database.
 
 When all required safety totals are zero, select the workbook again, type
-`APPLY CWTS`, and click **Apply corrections**. Upload it one final time and
-click **Preview** to verify that `Changes Needed` is zero.
+`APPLY CWTS` or `APPLY LTS`, and click **Apply corrections**. Upload it one
+final time and click **Preview** to verify that `Changes Needed` is zero.
 
 ### Alternative: server command line
 
@@ -36,6 +36,12 @@ Upload the workbook privately to the server, then run from the project root:
 
 ```sh
 php scripts/reconcile-cwts-masterlist.php /private/path/student-masterlist-cwts.xlsx --production --json
+```
+
+For LTS, add `--component=LTS`:
+
+```sh
+php scripts/reconcile-cwts-masterlist.php /private/path/student-masterlist-lts.xlsx --component=LTS --production --json
 ```
 
 Only continue when the result shows:
@@ -54,6 +60,8 @@ or modified by this command.
 php scripts/reconcile-cwts-masterlist.php /private/path/student-masterlist-cwts.xlsx --production --apply --json
 ```
 
+Use the same `--component=LTS` option when applying an LTS workbook.
+
 The result must show `applied: true`. The backup path is returned in
 `backup_file`.
 
@@ -65,6 +73,6 @@ Run the dry-run again:
 php scripts/reconcile-cwts-masterlist.php /private/path/student-masterlist-cwts.xlsx --production --json
 ```
 
-After a correct apply, `changes_needed` must be `0` and all 925 workbook rows
-must still match. Verify the CWTS A-W counts in the website before allowing
-normal section-management activity to resume.
+After a correct apply, `changes_needed` must be `0` and every workbook row must
+still match. Verify the component's section counts in the website before
+allowing normal section-management activity to resume.

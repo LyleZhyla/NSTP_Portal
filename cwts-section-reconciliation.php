@@ -7,10 +7,11 @@ require_once __DIR__ . '/conn/conn.php';
 require_once __DIR__ . '/include/user-permissions.php';
 
 $currentUser = getCurrentUserRecord($conn);
+$actorProgram = normalizeProgram($currentUser['program'] ?? null);
 $isAllowed = $currentUser
     && (
         ($currentUser['role'] ?? '') === 'super_admin'
-        || (($currentUser['role'] ?? '') === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) === 'CWTS')
+        || (($currentUser['role'] ?? '') === 'coordinator' && in_array($actorProgram, ['CWTS', 'LTS'], true))
     );
 if (!$isAllowed) {
     http_response_code(403);
@@ -24,6 +25,10 @@ if (empty($_SESSION['cwts_reconciliation_csrf'])) {
 $report = null;
 $errorMessage = '';
 $action = '';
+$selectedComponent = strtoupper((string) ($_POST['component'] ?? $_GET['component'] ?? $actorProgram ?? 'CWTS'));
+if (!in_array($selectedComponent, ['CWTS', 'LTS'], true)) {
+    $selectedComponent = 'CWTS';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -36,10 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($action, ['preview', 'apply'], true)) {
             throw new InvalidArgumentException('Invalid reconciliation action.');
         }
+        if (!in_array($selectedComponent, ['CWTS', 'LTS'], true)) {
+            throw new InvalidArgumentException('Select CWTS or LTS.');
+        }
+        if (($currentUser['role'] ?? '') === 'coordinator' && $selectedComponent !== $actorProgram) {
+            throw new RuntimeException('Coordinators can reconcile only their assigned component.');
+        }
 
         $upload = $_FILES['masterlist'] ?? null;
         if (!$upload || (int) ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('Select the CWTS masterlist Excel file first.');
+            throw new RuntimeException('Select the ' . $selectedComponent . ' masterlist Excel file first.');
         }
         if ((int) ($upload['size'] ?? 0) <= 0 || (int) $upload['size'] > 10 * 1024 * 1024) {
             throw new RuntimeException('The workbook must be smaller than 10 MB.');
@@ -55,18 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('The uploaded workbook could not be verified.');
         }
 
-        if ($action === 'apply' && trim((string) ($_POST['confirmation'] ?? '')) !== 'APPLY CWTS') {
-            throw new RuntimeException('Type APPLY CWTS to confirm the production update.');
+        if ($action === 'apply' && trim((string) ($_POST['confirmation'] ?? '')) !== 'APPLY ' . $selectedComponent) {
+            throw new RuntimeException('Type APPLY ' . $selectedComponent . ' to confirm the production update.');
         }
 
         if (!defined('CWTS_RECONCILIATION_WEB')) {
             define('CWTS_RECONCILIATION_WEB', true);
         }
-        $GLOBALS['cwtsReconciliationArgs'] = [$temporaryPath, '--json'];
+        $GLOBALS['cwtsReconciliationArgs'] = [$temporaryPath, '--json', '--component=' . $selectedComponent];
         if ($action === 'apply') {
             $GLOBALS['cwtsReconciliationArgs'][] = '--apply';
         }
         $GLOBALS['cwtsReconciliationActorId'] = (int) $currentUser['user_id'];
+        $GLOBALS['cwtsReconciliationComponent'] = $selectedComponent;
         $GLOBALS['cwtsReconciliationReport'] = null;
 
         require __DIR__ . '/scripts/reconcile-cwts-masterlist.php';
@@ -79,9 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             markSharedDataChanged($conn);
             logSystemEvent(
                 $conn,
-                'cwts_masterlist_reconciled',
+                strtolower($selectedComponent) . '_masterlist_reconciled',
                 sprintf(
-                    'Applied CWTS masterlist: %d matched, %d updated, %d sections.',
+                    'Applied %s masterlist: %d matched, %d updated, %d sections.',
+                    $selectedComponent,
                     (int) ($report['matched'] ?? 0),
                     (int) ($report['updated_students'] ?? 0),
                     (int) ($report['sheet_count'] ?? 0)
@@ -107,7 +120,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CWTS Section Reconciliation - TAU-NSTP</title>
+    <title><?php echo htmlspecialchars($selectedComponent); ?> Section Reconciliation - TAU-NSTP</title>
     <?php include __DIR__ . '/include/theme-loader.php'; ?>
     <link rel="icon" type="image/png" href="include/logo.png">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
@@ -130,8 +143,8 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
         <div class="content-header">
             <div class="container-fluid">
                 <div class="row mb-2">
-                    <div class="col-sm-7"><h1 class="m-0"><i class="fas fa-people-arrows mr-2"></i>CWTS Section Reconciliation</h1></div>
-                    <div class="col-sm-5"><ol class="breadcrumb float-sm-right"><li class="breadcrumb-item"><a href="index.php">Home</a></li><li class="breadcrumb-item active">CWTS Reconciliation</li></ol></div>
+                    <div class="col-sm-7"><h1 class="m-0"><i class="fas fa-people-arrows mr-2"></i><?php echo htmlspecialchars($selectedComponent); ?> Section Reconciliation</h1></div>
+                    <div class="col-sm-5"><ol class="breadcrumb float-sm-right"><li class="breadcrumb-item"><a href="index.php">Home</a></li><li class="breadcrumb-item active">Section Reconciliation</li></ol></div>
                 </div>
             </div>
         </div>
@@ -160,15 +173,26 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars((string) $_SESSION['cwts_reconciliation_csrf']); ?>">
                                 <div class="card-body">
                                     <div class="alert alert-info">
-                                        Each worksheet determines the student's current CWTS section and facilitator. Preview does not change the database.
+                                        Each worksheet determines the student's current <?php echo htmlspecialchars($selectedComponent); ?> section and facilitator. Preview does not change the database.
                                     </div>
                                     <div class="form-group">
-                                        <label for="masterlist">CWTS masterlist (.xlsx)</label>
+                                        <label for="component">Component</label>
+                                        <select class="form-control" id="component" name="component" <?php echo ($currentUser['role'] ?? '') === 'coordinator' ? 'disabled' : ''; ?>>
+                                            <?php foreach (['CWTS', 'LTS'] as $componentOption): ?>
+                                                <?php if (($currentUser['role'] ?? '') === 'super_admin' || $componentOption === $actorProgram): ?>
+                                                    <option value="<?php echo $componentOption; ?>" <?php echo $selectedComponent === $componentOption ? 'selected' : ''; ?>><?php echo $componentOption; ?></option>
+                                                <?php endif; ?>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <?php if (($currentUser['role'] ?? '') === 'coordinator'): ?><input type="hidden" name="component" value="<?php echo htmlspecialchars((string) $actorProgram); ?>"><?php endif; ?>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="masterlist"><?php echo htmlspecialchars($selectedComponent); ?> masterlist (.xlsx)</label>
                                         <input type="file" class="form-control-file" id="masterlist" name="masterlist" accept=".xlsx" required>
                                     </div>
                                     <div class="form-group">
                                         <label for="confirmation">Apply confirmation</label>
-                                        <input type="text" class="form-control" id="confirmation" name="confirmation" placeholder="Type APPLY CWTS only when applying" autocomplete="off">
+                                        <input type="text" class="form-control" id="confirmation" name="confirmation" placeholder="Type APPLY <?php echo htmlspecialchars($selectedComponent); ?> only when applying" autocomplete="off">
                                         <small class="form-text text-muted">Always Preview first. Apply is blocked if any required match is unsafe.</small>
                                     </div>
                                     <a class="btn btn-outline-secondary" href="endpoint/backup-database.php"><i class="fas fa-download mr-1"></i>Download full DB backup</a>
@@ -186,8 +210,7 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
                             <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-halved mr-2"></i>Required safe result</h3></div>
                             <div class="card-body">
                                 <ul class="mb-0">
-                                    <li>Expected workbook rows: <strong>925</strong> across <strong>23</strong> sheets.</li>
-                                    <li>Matched should be 925.</li>
+                                    <li>Workbook Students and Matched must be equal and greater than zero.</li>
                                     <li>Unmatched, Ambiguous, and Missing Facilitators must all be zero.</li>
                                     <li>After applying, upload the workbook again and Preview; Changes Needed must be zero.</li>
                                 </ul>
@@ -253,6 +276,13 @@ $inactivityTimeoutMinutes = (int) getSystemSetting($conn, 'inactivity_timeout_mi
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script>
+$(function() {
+    $('#component').on('change', function() {
+        const component = String($(this).val() || 'CWTS').toUpperCase();
+        $('#confirmation').attr('placeholder', 'Type APPLY ' + component + ' only when applying');
+    });
+});
+</script>
 </body>
 </html>
-
