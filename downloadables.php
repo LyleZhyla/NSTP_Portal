@@ -1277,6 +1277,39 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                     </div>
 
                     <div class="col-12 mb-3">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-shirt-size-summary.php">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-shirt mr-2"></i>Shirt Size Summary</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="shirtSizeSummaryComponent">Component</label>
+                                    <?php if ($role === 'super_admin'): ?>
+                                    <select class="form-control" id="shirtSizeSummaryComponent" name="component">
+                                        <option value="">All Components</option>
+                                        <option value="CWTS">CWTS</option>
+                                        <option value="LTS">LTS</option>
+                                        <option value="ROTC">ROTC</option>
+                                    </select>
+                                    <?php else: ?>
+                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($program ?: 'N/A'); ?>" disabled>
+                                    <input type="hidden" name="component" value="<?php echo htmlspecialchars($program ?: ''); ?>">
+                                    <?php endif; ?>
+                                </div>
+                                <p class="muted-note">Excel summary showing the count of XS, S, M, L, XL, 2XL, 3XL, custom sizes, and students without a saved size for each component.</p>
+                                <button type="submit" class="btn btn-success btn-block">
+                                    <i class="fas fa-file-excel mr-1"></i> Download Size Summary
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-attendance-excel.php">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>Attendance Report</h3>

@@ -1,0 +1,5 @@
+# Reconciliation exports contain student information and database snapshots.
+backups/
+student-masterlist-*.xlsx
+reconcile-report*.json
+

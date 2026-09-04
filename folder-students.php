@@ -439,6 +439,11 @@ $canBulkAssignComponent = $scope === 'no_component' && $role === 'super_admin';
 $canBulkEditComponent = $scope === 'component' && $component && $role === 'super_admin';
 $canBulkEditRotcMsLevel = $scope === 'component' && $component === 'ROTC' && $role === 'super_admin';
 $showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditComponent || $canBulkEditRotcMsLevel;
+$canRemoveStudentsFromFolder =
+    ($scope === 'student_folder' && in_array($role, ['super_admin', 'coordinator'], true))
+    || ($scope === 'coordinator' && $role === 'coordinator')
+    || ($scope === 'facilitator' && $role === 'facilitator')
+    || ($scope === 'super_facilitator' && $role === 'super_admin');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -810,11 +815,14 @@ $showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditComponent || 
                                                     <?php echo htmlspecialchars($columnLabel); ?>
                                                 </th>
                                             <?php endforeach; ?>
+                                            <?php if ($canRemoveStudentsFromFolder): ?>
+                                                <th style="width: 145px;" class="text-center">Actions</th>
+                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php foreach ($students as $index => $student): ?>
-                                            <tr>
+                                            <tr data-student-id="<?php echo (int) $student['tbl_student_id']; ?>">
                                                 <td><?php echo $index + 1; ?></td>
                                                 <?php if ($showBulkStudentSelection): ?>
                                                     <td class="text-center">
@@ -861,6 +869,16 @@ $showBulkStudentSelection = $canBulkAssignComponent || $canBulkEditComponent || 
                                                         <?php endif; ?>
                                                     </td>
                                                 <?php endforeach; ?>
+                                                <?php if ($canRemoveStudentsFromFolder): ?>
+                                                    <td class="text-center text-nowrap">
+                                                        <button type="button"
+                                                                class="btn btn-sm btn-outline-danger remove-student-from-folder"
+                                                                data-student-id="<?php echo (int) $student['tbl_student_id']; ?>"
+                                                                data-student-name="<?php echo htmlspecialchars($student['student_name'] ?? 'Student', ENT_QUOTES, 'UTF-8'); ?>">
+                                                            <i class="fas fa-user-minus mr-1"></i> Remove
+                                                        </button>
+                                                    </td>
+                                                <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -933,9 +951,14 @@ $(function() {
             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
             pagingType: 'simple_numbers',
             order: [[<?php echo $showBulkStudentSelection ? 2 : 1; ?>, 'asc']],
-            columnDefs: <?php echo $showBulkStudentSelection
-                ? "[{ orderable: false, targets: 1 }]"
-                : '[]'; ?>,
+            columnDefs: [
+                <?php if ($showBulkStudentSelection): ?>
+                { orderable: false, targets: 1 },
+                <?php endif; ?>
+                <?php if ($canRemoveStudentsFromFolder): ?>
+                { orderable: false, searchable: false, targets: <?php echo count($detailColumns) + ($showBulkStudentSelection ? 2 : 1); ?> },
+                <?php endif; ?>
+            ],
             language: {
                 lengthMenu: 'Show _MENU_ students',
                 info: 'Showing _START_ to _END_ of _TOTAL_ students',
@@ -1146,6 +1169,39 @@ $(function() {
         }).always(function() {
             saveButton.html('<i class="fas fa-right-left mr-1"></i> Change Component');
             updateBulkComponentControls();
+        });
+    });
+
+    $(document).on('click', '.remove-student-from-folder', function() {
+        const removeButton = $(this);
+        const studentId = Number(removeButton.data('student-id'));
+        const studentName = String(removeButton.data('student-name') || 'this student');
+
+        if (!studentId || !window.confirm(`Remove ${studentName} from this folder? The student record and attendance history will be kept and moved to the component pending list.`)) {
+            return;
+        }
+
+        const originalHtml = removeButton.html();
+        removeButton.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Removing...');
+
+        $.ajax({
+            url: './endpoint/remove-student-from-folder.php',
+            method: 'POST',
+            data: {
+                student_id: studentId,
+                folder: <?php echo json_encode($folder, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>
+            },
+            dataType: 'json'
+        }).done(function(response) {
+            if (response.success) {
+                window.location.reload();
+                return;
+            }
+            alert(response.message || 'Unable to remove the student from this folder.');
+        }).fail(function() {
+            alert('Unable to remove the student from this folder. Please try again.');
+        }).always(function() {
+            removeButton.prop('disabled', false).html(originalHtml);
         });
     });
 

@@ -1,6 +1,44 @@
 <?php
 require_once __DIR__ . '/auth_check.php';
 require_once __DIR__ . '/conn/conn.php';
+require_once __DIR__ . '/include/learning-materials.php';
+
+if (!learningMaterialSessionActive($conn)) {
+    header('Location: endpoint/logout.php?reason=timeout');
+    exit;
+}
+$materialActor = getCurrentUserRecord($conn);
+if (!$materialActor) {
+    header('Location: endpoint/logout.php');
+    exit;
+}
+$canUploadMaterials = canUploadLearningMaterials($materialActor);
+$materialFlash = $_SESSION['learning_material_flash'] ?? null;
+$materialOld = $_SESSION['learning_material_old'] ?? [];
+unset($_SESSION['learning_material_flash'], $_SESSION['learning_material_old']);
+if ($canUploadMaterials && empty($_SESSION['learning_material_csrf'])) {
+    $_SESSION['learning_material_csrf'] = bin2hex(random_bytes(32));
+}
+$materials = [];
+$materialsError = false;
+$materialPageCount = 1;
+$materialPage = max(1, (int) (filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1));
+try {
+    ensureLearningMaterialsTable($conn);
+    $materialCount = (int) $conn->query('SELECT COUNT(*) FROM tbl_learning_materials')->fetchColumn();
+    $materialPageCount = max(1, (int) ceil($materialCount / 20));
+    $materialPage = min($materialPage, $materialPageCount);
+    $offset = ($materialPage - 1) * 20;
+    $materials = $conn->query("SELECT m.material_id, m.title, m.description, m.original_name, m.file_size, m.created_at, u.full_name AS uploader_name
+        FROM tbl_learning_materials m LEFT JOIN tbl_users u ON u.user_id = m.uploaded_by
+        ORDER BY m.created_at DESC, m.material_id DESC LIMIT 20 OFFSET {$offset}")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $error) {
+    $materialsError = true;
+    error_log('Learning materials list failed: ' . $error->getMessage());
+}
+function materialEscape($value) {
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
 
 $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials' : 'assessment';
 ?>
@@ -30,6 +68,8 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
         }
         .dark-mode .learning-empty-icon { color: #75dba8; }
         .learning-empty p { max-width: 440px; margin: .75rem auto 0; }
+        .material-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+        .material-name { overflow-wrap: anywhere; }
         @media (max-width: 575px) {
             .learning-tabs .nav-item { flex: 1; text-align: center; }
             .learning-tabs .nav-link { padding: .8rem .5rem; height: 100%; }
@@ -87,11 +127,73 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                             </div>
                         </div>
                         <div id="learning-materials-panel" role="tabpanel" aria-labelledby="learning-materials-tab" tabindex="0" <?= $activeTab !== 'learning-materials' ? 'hidden' : '' ?>>
+                            <?php if ($materialFlash): ?>
+                                <div class="alert alert-<?= $materialFlash['type'] === 'success' ? 'success' : 'danger' ?>" role="alert"><?= materialEscape($materialFlash['message']) ?></div>
+                            <?php endif; ?>
+                            <?php if ($materialsError): ?>
+                                <div class="alert alert-warning" role="alert">Learning materials are temporarily unavailable. Please try again later.</div>
+                            <?php else: ?>
+                            <?php if ($canUploadMaterials): ?>
+                            <div class="card card-outline card-success mb-4">
+                                <div class="card-header"><h2 class="card-title"><i class="fas fa-upload mr-2" aria-hidden="true"></i>Upload Material</h2></div>
+                                <form action="endpoint/upload-learning-material.php" method="post" enctype="multipart/form-data" id="material-upload-form">
+                                    <div class="card-body">
+                                        <p class="text-muted">Uploaded materials are available to all signed-in accounts.</p>
+                                        <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
+                                        <input type="hidden" name="MAX_FILE_SIZE" value="<?= learningMaterialUploadLimit() ?>">
+                                        <div class="form-group">
+                                            <label for="material-title">Title <span class="text-danger" aria-hidden="true">*</span></label>
+                                            <input class="form-control" type="text" id="material-title" name="title" maxlength="180" required value="<?= materialEscape($materialOld['title'] ?? '') ?>">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="material-description">Description <span class="text-muted font-weight-normal">(optional)</span></label>
+                                            <textarea class="form-control" id="material-description" name="description" rows="3" maxlength="5000"><?= materialEscape($materialOld['description'] ?? '') ?></textarea>
+                                        </div>
+                                        <div class="form-group mb-0">
+                                            <label for="material-file">File <span class="text-danger" aria-hidden="true">*</span></label>
+                                            <input class="form-control-file" type="file" id="material-file" name="material" accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg" aria-describedby="material-file-help" required>
+                                            <small id="material-file-help" class="form-text text-muted">PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG. Maximum <?= materialEscape(learningMaterialSize(learningMaterialUploadLimit())) ?> per file. Office macros are not supported.</small>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer">
+                                        <button class="btn btn-success" type="submit" id="material-upload-button"><i class="fas fa-upload mr-1" aria-hidden="true"></i> Upload Material</button>
+                                        <span id="material-upload-status" class="ml-2" role="status"></span>
+                                    </div>
+                                </form>
+                            </div>
+                            <?php endif; ?>
+                            <?php if (empty($materials)): ?>
                             <div class="learning-empty">
                                 <span class="learning-empty-icon"><i class="fas fa-book-reader" aria-hidden="true"></i></span>
                                 <h2 class="h4">No learning materials yet</h2>
                                 <p class="text-muted">There are no modules, reading materials, or lesson resources available at this time.</p>
                             </div>
+                            <?php else: ?>
+                            <h2 class="h5 mb-3">Available Materials <span class="text-muted">(<?= $materialCount ?>)</span></h2>
+                            <?php foreach ($materials as $material): ?>
+                            <article class="border rounded p-3 mb-3">
+                                <h3 class="h5 material-name"><?= materialEscape($material['title']) ?></h3>
+                                <?php if ($material['description'] !== ''): ?>
+                                    <p class="material-description"><?= materialEscape($material['description']) ?></p>
+                                <?php endif; ?>
+                                <p class="text-muted small mb-2 material-name">
+                                    <?= materialEscape($material['original_name']) ?> &middot; <?= materialEscape(learningMaterialSize($material['file_size'])) ?><br>
+                                    Uploaded by <?= materialEscape($material['uploader_name'] ?: 'Staff') ?> &middot; <?= materialEscape(date('M j, Y, g:i A', strtotime($material['created_at']))) ?>
+                                </p>
+                                <a class="btn btn-outline-success btn-sm" href="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>" aria-label="<?= materialEscape('Download ' . $material['title']) ?>"><i class="fas fa-download mr-1" aria-hidden="true"></i> Download</a>
+                            </article>
+                            <?php endforeach; ?>
+                            <?php if ($materialPageCount > 1): ?>
+                            <nav class="d-flex align-items-center justify-content-between" aria-label="Learning materials pages">
+                                <span>Page <?= $materialPage ?> of <?= $materialPageCount ?></span>
+                                <div>
+                                    <?php if ($materialPage > 1): ?><a class="btn btn-outline-secondary btn-sm" href="?tab=learning-materials&amp;page=<?= $materialPage - 1 ?>">Previous</a><?php endif; ?>
+                                    <?php if ($materialPage < $materialPageCount): ?><a class="btn btn-outline-secondary btn-sm" href="?tab=learning-materials&amp;page=<?= $materialPage + 1 ?>">Next</a><?php endif; ?>
+                                </div>
+                            </nav>
+                            <?php endif; ?>
+                            <?php endif; ?>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -104,6 +206,21 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script>
 (function () {
+    const uploadForm = document.getElementById('material-upload-form');
+    if (uploadForm) {
+        const fileInput = document.getElementById('material-file');
+        fileInput.addEventListener('change', function () {
+            fileInput.setCustomValidity(fileInput.files[0] && fileInput.files[0].size > <?= learningMaterialUploadLimit() ?> ? 'The file exceeds the maximum upload size.' : '');
+        });
+        uploadForm.addEventListener('submit', function () {
+            document.getElementById('material-upload-button').disabled = true;
+            document.getElementById('material-upload-status').textContent = 'Uploading material. Please wait...';
+        });
+        window.addEventListener('pageshow', function () {
+            document.getElementById('material-upload-button').disabled = false;
+            document.getElementById('material-upload-status').textContent = '';
+        });
+    }
     const tabs = Array.from(document.querySelectorAll('#learning-tabs [role="tab"]'));
     function selectTab(tab) {
         tabs.forEach(function (item) {
