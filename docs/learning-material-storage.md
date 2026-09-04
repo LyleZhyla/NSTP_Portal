@@ -31,7 +31,24 @@ database-only backup does not include uploaded files. Cancel Upload removes the
 unfinished file. Starting an upload cleans up to 20 unfinished uploads last active
 more than 24 hours ago; published files are not cleaned up.
 
-## Component audience
+## Video materials
+
+Admins and coordinators can upload MP4, WebM, and MOV videos through the same
+chunk uploader, with the same 10 GB limit. File content is checked with fileinfo;
+renaming text or HTML to a video extension does not make it valid.
+
+Video materials have a native player with controls and no automatic preload.
+Playback uses the authenticated download endpoint with `play=1`, an inline video
+content type, and the existing byte-range support for seeking. Component and MS
+level restrictions apply to playback as well as downloads. The Download button
+still sends an attachment. Playback depends on the browser and the video codec;
+unsupported videos can be downloaded. The server does not transcode video.
+
+Run `php tests/learning-material-video.php` to verify container type detection,
+guarded-storage offsets, size limits, and disguised-file rejection. These small
+header fixtures do not test actual codec playback or a full 10 GB transfer.
+
+## Component audience rules
 
 Uploaders select one or more of CWTS, LTS and ROTC. ROTC also requires one or more
 of the system's MS-1, MS-31 and MS-41 student levels. Selecting CWTS and ROTC shares

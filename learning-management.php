@@ -157,8 +157,8 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                             include __DIR__ . '/include/learning-material-audience-form.php';
                                             ?>
                                             <label for="material-file">File <span class="text-danger" aria-hidden="true">*</span></label>
-                                            <input class="form-control-file" type="file" id="material-file" name="material" accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg" aria-describedby="material-file-help" required>
-                                            <small id="material-file-help" class="form-text text-muted">PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG. Maximum <?= materialEscape(learningMaterialSize(learningMaterialUploadLimit())) ?> per file. Keep this page open until the upload finishes. Office macros are not supported.</small>
+                                            <input class="form-control-file" type="file" id="material-file" name="material" accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg,.mp4,.webm,.mov" aria-describedby="material-file-help" required>
+                                            <small id="material-file-help" class="form-text text-muted">PDF, DOCX, PPTX, XLSX, TXT, PNG, JPG, MP4, WebM, or MOV. Maximum <?= materialEscape(learningMaterialSize(learningMaterialUploadLimit())) ?> per file. Keep this page open until the upload finishes. Office macros are not supported.</small>
                                         </div>
                                     </div>
                                     <div class="card-footer">
@@ -190,6 +190,13 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                     <?= materialEscape($material['original_name']) ?> &middot; <?= materialEscape(learningMaterialSize($material['file_size'])) ?><br>
                                     Uploaded by <?= materialEscape($material['uploader_name'] ?: 'Staff') ?> &middot; <?= materialEscape(date('M j, Y, g:i A', strtotime($material['created_at']))) ?>
                                 </p>
+                                <?php if (learningMaterialVideoMime($material['original_name'])): ?>
+                                <video class="w-100 mb-2" style="max-height:480px;background:#111" controls preload="none" playsinline aria-label="<?= materialEscape($material['title']) ?>">
+                                    <source src="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>&amp;play=1" type="<?= materialEscape(learningMaterialVideoMime($material['original_name'])) ?>">
+                                    Your browser does not support video playback. Use Download below.
+                                </video>
+                                <p class="small text-muted">If this video cannot play in your browser, use Download to watch it on your device.</p>
+                                <?php endif; ?>
                                 <a class="btn btn-outline-success btn-sm" href="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>" aria-label="<?= materialEscape('Download ' . $material['title']) ?>"><i class="fas fa-download mr-1" aria-hidden="true"></i> Download</a>
                                 <?php if ($canUploadMaterials && ($materialActor['role'] === 'super_admin' || (int) $material['uploaded_by'] === (int) $materialActor['user_id'])): ?>
                                 <details class="mt-3">

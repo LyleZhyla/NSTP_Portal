@@ -205,7 +205,11 @@ function learningMaterialOfficeEntries($path, $offset, $size, $stream = null) {
     } finally { if (!$stream) fclose($handle); }
 }
 
-function validateLearningMaterialFile($path, $name, $limit, $offset = 0, $stream = null) {
+function learningMaterialVideoMime($name) {
+    return ['mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime'][strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? null;
+}
+
+function validateLearningMaterialFile($path, $name, $limit, $offset = 0, $stream = null, $allowVideo = false) {
     clearstatcache(true, $path);
     $size = filesize($path);
     if ($size !== false) $size -= $offset;
@@ -223,12 +227,13 @@ function validateLearningMaterialFile($path, $name, $limit, $offset = 0, $stream
         'pdf' => ['application/pdf'], 'txt' => ['text/plain'],
         'png' => ['image/png'], 'jpg' => ['image/jpeg'], 'jpeg' => ['image/jpeg'],
     ];
+    if ($allowVideo) $types += ['mp4' => ['video/mp4'], 'webm' => ['video/webm'], 'mov' => ['video/quicktime']];
     $office = ['docx' => 'word/document.xml', 'pptx' => 'ppt/presentation.xml', 'xlsx' => 'xl/workbook.xml'];
     if (isset($office[$extension])) {
         $names = learningMaterialOfficeEntries($path, $offset, $size, $stream);
         if (!isset($names['[Content_Types].xml'], $names[$office[$extension]])) throw new InvalidArgumentException('The file content does not match its Office extension.');
     } elseif (!isset($types[$extension]) || !in_array($mime, $types[$extension], true)) {
-        throw new InvalidArgumentException('Upload a valid PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG file.');
+        throw new InvalidArgumentException($allowVideo ? 'Upload a valid PDF, DOCX, PPTX, XLSX, TXT, PNG, JPG, MP4, WebM, or MOV file.' : 'Upload a valid PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG file.');
     }
     return (int) $size;
 }

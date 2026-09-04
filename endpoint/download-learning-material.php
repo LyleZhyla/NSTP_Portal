@@ -77,11 +77,12 @@ if (isset($_SERVER['HTTP_RANGE'])) {
     http_response_code(206);
     header("Content-Range: bytes {$start}-{$end}/{$size}");
 }
-header('Content-Type: application/octet-stream');
+$videoMime = ($_GET['play'] ?? '') === '1' ? learningMaterialVideoMime($material['original_name']) : null;
+header('Content-Type: ' . ($videoMime ?: 'application/octet-stream'));
 header('Accept-Ranges: bytes');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store');
-header('Content-Disposition: attachment; filename="learning-material"; filename*=UTF-8\'\'' . rawurlencode($material['original_name']));
+header('Content-Disposition: ' . ($videoMime ? 'inline' : 'attachment') . '; filename="learning-material"; filename*=UTF-8\'\'' . rawurlencode($material['original_name']));
 header('Content-Length: ' . ($end - $start + 1));
 if ($_SERVER['REQUEST_METHOD'] === 'HEAD') {
     if (is_resource($stream)) fclose($stream);

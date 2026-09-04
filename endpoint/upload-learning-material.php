@@ -49,7 +49,7 @@ try {
         $name = preg_replace('/[\x00-\x1F\x7F]/', '', $name);
         $total = filter_var($_POST['size'] ?? null, FILTER_VALIDATE_INT);
         if ($title === '' || mb_strlen($title) > 180 || mb_strlen($description) > 5000) throw new InvalidArgumentException('Enter a title up to 180 characters and a description up to 5,000 characters.');
-        if ($name === '' || !mb_check_encoding($name, 'UTF-8') || mb_strlen($name) > 255 || !preg_match('/\.(pdf|docx|pptx|xlsx|txt|png|jpe?g)$/iD', $name)) throw new InvalidArgumentException('Choose a PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG file.');
+        if ($name === '' || !mb_check_encoding($name, 'UTF-8') || mb_strlen($name) > 255 || !preg_match('/\.(pdf|docx|pptx|xlsx|txt|png|jpe?g|mp4|webm|mov)$/iD', $name)) throw new InvalidArgumentException('Choose a PDF, DOCX, PPTX, XLSX, TXT, PNG, JPG, MP4, WebM, or MOV file.');
         if (!$total || $total < 1 || $total > learningMaterialUploadLimit()) throw new InvalidArgumentException('Choose a non-empty file up to 10 GB.');
         $id = bin2hex(random_bytes(32));
         $path = learningMaterialStoragePath($id . '.php');
@@ -112,7 +112,7 @@ try {
             $result = ['received' => $received];
         } elseif ($action === 'finish') {
             if ($received !== $total) throw new InvalidArgumentException('The file is incomplete. Finish uploading all parts first.');
-            $size = validateLearningMaterialFile($path, $upload['original_name'], learningMaterialUploadLimit(), $guardSize, $handle);
+            $size = validateLearningMaterialFile($path, $upload['original_name'], learningMaterialUploadLimit(), $guardSize, $handle, true);
             if ($size !== $total) throw new InvalidArgumentException('Uploaded size does not match the original file.');
             $conn->beginTransaction();
             $insert = $conn->prepare("INSERT INTO tbl_learning_materials (title, description, original_name, file_size, file_content, storage_name, uploaded_by, audience_components, audience_rotc_levels) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?)");
