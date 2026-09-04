@@ -656,6 +656,8 @@ $(document).ready(function() {
     ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(function(eventName) {
         document.addEventListener(eventName, resetInactivityTimer, { passive: true });
     });
+    // A long-running material upload is active work, even without mouse input.
+    document.addEventListener('nstp:upload-activity', resetInactivityTimer);
     resetInactivityTimer();
 
     // Add active state to current page

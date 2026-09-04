@@ -1,79 +1,129 @@
 <?php
 session_start();
-if (empty($_SESSION['user_id'])) {
-    header('Location: ../landing_page.php');
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+function materialUploadReply($status, array $body) {
+    http_response_code($status);
+    echo json_encode($body);
     exit;
 }
+if (empty($_SESSION['user_id'])) materialUploadReply(401, ['message' => 'Please sign in again.']);
 require_once __DIR__ . '/../conn/conn.php';
 require_once __DIR__ . '/../include/learning-materials.php';
-
-if (!learningMaterialSessionActive($conn)) {
-    header('Location: logout.php?reason=timeout');
-    exit;
-}
+if (!learningMaterialSessionActive($conn)) materialUploadReply(401, ['message' => 'Your session expired. Please sign in again.']);
 $actor = getCurrentUserRecord($conn);
-if (!$actor || !canUploadLearningMaterials($actor)) {
-    http_response_code(403);
-    exit('Only administrators and coordinators can upload learning materials.');
-}
+if (!$actor || !canUploadLearningMaterials($actor)) materialUploadReply(403, ['message' => 'Only administrators and coordinators can upload materials.']);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Allow: POST');
-    http_response_code(405);
-    exit('Use the upload form in Learning Materials.');
+    materialUploadReply(405, ['message' => 'Use the upload form in Learning Materials.']);
 }
-
+if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) materialUploadReply(413, ['message' => 'This upload part exceeds the server request limit.']);
+$csrf = $_POST['csrf_token'] ?? null;
+if (!is_string($csrf) || empty($_SESSION['learning_material_csrf']) || !hash_equals($_SESSION['learning_material_csrf'], $csrf)) {
+    materialUploadReply(403, ['message' => 'Reload Learning Materials and try again.']);
+}
+session_write_close();
+$handle = null;
+$deletePath = null;
 try {
-    if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
-        throw new InvalidArgumentException('The upload exceeds the server request limit. Choose a smaller file.');
-    }
-    $token = $_POST['csrf_token'] ?? null;
-    if (!is_string($token) || empty($_SESSION['learning_material_csrf']) || !hash_equals($_SESSION['learning_material_csrf'], $token)) {
-        http_response_code(403);
-        exit('Your form has expired. Reload Learning Materials and try again.');
-    }
-    $title = is_string($_POST['title'] ?? null) ? trim($_POST['title']) : '';
-    $description = is_string($_POST['description'] ?? null) ? trim($_POST['description']) : '';
-    if ($title === '' || mb_strlen($title) > 180 || mb_strlen($description) > 5000) {
-        throw new InvalidArgumentException('Enter a title up to 180 characters and a description up to 5,000 characters.');
-    }
-    $file = $_FILES['material'] ?? null;
-    if (!is_array($file) || !isset($file['error']) || is_array($file['error'])) {
-        throw new InvalidArgumentException('Choose a file to upload.');
-    }
-    if (in_array($file['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
-        throw new InvalidArgumentException('The file is too large. Maximum size: ' . learningMaterialSize(learningMaterialUploadLimit()) . '.');
-    }
-    if ($file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
-        throw new InvalidArgumentException('The file could not be uploaded. Choose the file and try again.');
-    }
-    $name = basename(str_replace('\\', '/', $file['name']));
-    $name = preg_replace('/[\x00-\x1F\x7F]/', '', $name);
-    if ($name === '' || !mb_check_encoding($name, 'UTF-8') || mb_strlen($name) > 255) {
-        throw new InvalidArgumentException('Use a file name up to 255 characters.');
-    }
-    $size = validateLearningMaterialFile($file['tmp_name'], $name, learningMaterialUploadLimit());
-    $content = file_get_contents($file['tmp_name']);
-    if ($content === false) throw new RuntimeException('Cannot read uploaded material.');
+    if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
-    $stmt = $conn->prepare('INSERT INTO tbl_learning_materials (title, description, original_name, file_size, file_content, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)');
-    $stmt->bindValue(1, $title);
-    $stmt->bindValue(2, $description);
-    $stmt->bindValue(3, $name);
-    $stmt->bindValue(4, $size, PDO::PARAM_INT);
-    $stmt->bindValue(5, $content, PDO::PARAM_LOB);
-    $stmt->bindValue(6, (int) $actor['user_id'], PDO::PARAM_INT);
-    $stmt->execute();
-    $_SESSION['learning_material_flash'] = ['type' => 'success', 'message' => 'Learning material uploaded successfully.'];
-    unset($_SESSION['learning_material_old']);
-} catch (Throwable $error) {
-    $message = 'Unable to save the learning material. Please try again or contact your administrator.';
-    if ($error instanceof InvalidArgumentException) {
-        $message = $error->getMessage();
+    $action = $_POST['action'] ?? '';
+    if ($action === 'start') {
+        cleanupLearningMaterialUploads($conn);
+        $title = is_string($_POST['title'] ?? null) ? trim($_POST['title']) : '';
+        $description = is_string($_POST['description'] ?? null) ? trim($_POST['description']) : '';
+        $name = is_string($_POST['name'] ?? null) ? basename(str_replace('\\', '/', $_POST['name'])) : '';
+        $name = preg_replace('/[\x00-\x1F\x7F]/', '', $name);
+        $total = filter_var($_POST['size'] ?? null, FILTER_VALIDATE_INT);
+        if ($title === '' || mb_strlen($title) > 180 || mb_strlen($description) > 5000) throw new InvalidArgumentException('Enter a title up to 180 characters and a description up to 5,000 characters.');
+        if ($name === '' || !mb_check_encoding($name, 'UTF-8') || mb_strlen($name) > 255 || !preg_match('/\.(pdf|docx|pptx|xlsx|txt|png|jpe?g)$/iD', $name)) throw new InvalidArgumentException('Choose a PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG file.');
+        if (!$total || $total < 1 || $total > learningMaterialUploadLimit()) throw new InvalidArgumentException('Choose a non-empty file up to 10 GB.');
+        $id = bin2hex(random_bytes(32));
+        $path = learningMaterialStoragePath($id . '.php');
+        $free = disk_free_space(dirname($path));
+        if ($free !== false && $free < $total + 10485760) throw new InvalidArgumentException('The server does not have enough free disk space for this file.');
+        $handle = fopen($path, 'xb');
+        if (!$handle) throw new RuntimeException('Cannot create material file.');
+        $deletePath = $path;
+        if (fwrite($handle, learningMaterialFileGuard()) !== strlen(learningMaterialFileGuard())) throw new RuntimeException('Cannot prepare material file.');
+        fclose($handle); $handle = null;
+        $stmt = $conn->prepare('INSERT INTO tbl_learning_material_uploads (upload_id, uploaded_by, title, description, original_name, total_size) VALUES (?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$id, $actor['user_id'], $title, $description, $name, $total]);
+        $deletePath = null;
+        $result = ['upload_id' => $id, 'received' => 0, 'chunk_size' => learningMaterialChunkLimit()];
     } else {
-        error_log('Learning material upload failed: ' . $error->getMessage());
+        $id = $_POST['upload_id'] ?? '';
+        if (!is_string($id) || !preg_match('/^[a-f0-9]{64}$/D', $id)) throw new InvalidArgumentException('Invalid upload.');
+        $stmt = $conn->prepare('SELECT * FROM tbl_learning_material_uploads WHERE upload_id = ? AND uploaded_by = ?');
+        $stmt->execute([$id, $actor['user_id']]);
+        $upload = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$upload) {
+            // A repeated finish after a lost response must not publish twice.
+            $done = $conn->prepare('SELECT material_id FROM tbl_learning_materials WHERE storage_name = ? AND uploaded_by = ?');
+            $done->execute([$id . '.php', $actor['user_id']]);
+            $materialId = $done->fetchColumn();
+            if ($action === 'finish' && $materialId) materialUploadReply(200, ['success' => true, 'material_id' => (int) $materialId]);
+            throw new InvalidArgumentException('Upload unavailable or expired. Choose the file and start again.');
+        }
+        $path = learningMaterialStoragePath($id . '.php');
+        $handle = fopen($path, 'r+b');
+        if (!$handle || !flock($handle, LOCK_EX)) throw new RuntimeException('Cannot lock upload file.');
+        // Re-read under the file lock to serialize concurrent/retried chunks.
+        $stmt->execute([$id, $actor['user_id']]);
+        $upload = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$upload) throw new InvalidArgumentException('Upload is no longer active.');
+        $received = (int) $upload['received_size'];
+        $total = (int) $upload['total_size'];
+        $guardSize = strlen(learningMaterialFileGuard());
+        if ($action === 'chunk') {
+            $offset = filter_var($_POST['offset'] ?? null, FILTER_VALIDATE_INT);
+            $file = $_FILES['chunk'] ?? [];
+            if (($file['error'] ?? null) !== UPLOAD_ERR_OK || !is_string($file['tmp_name'] ?? null) || !is_uploaded_file($file['tmp_name'])) throw new InvalidArgumentException('Upload part failed. Please retry.');
+            $length = filesize($file['tmp_name']);
+            if ($offset === false || $offset < 0 || !$length || $length > learningMaterialChunkLimit() || $offset + $length > $total) throw new InvalidArgumentException('Invalid upload part or file exceeds its declared size.');
+            if ($offset === $received) {
+                // Discard uncommitted bytes left by an interrupted write.
+                $storedSize = fstat($handle)['size'];
+                if ($storedSize < $guardSize + $received) throw new RuntimeException('Upload file is incomplete. Please cancel and start again.');
+                if (($storedSize > $guardSize + $received && !ftruncate($handle, $guardSize + $received)) || fseek($handle, $guardSize + $received) !== 0) throw new RuntimeException('Cannot seek in upload.');
+                $source = fopen($file['tmp_name'], 'rb');
+                if (!$source) throw new RuntimeException('Cannot read upload part.');
+                try { $written = stream_copy_to_stream($source, $handle, $length); } finally { fclose($source); }
+                if ($written !== $length || !fflush($handle)) throw new RuntimeException('Not enough disk space or write failed.');
+                $received += $length;
+                $update = $conn->prepare('UPDATE tbl_learning_material_uploads SET received_size = ?, updated_at = CURRENT_TIMESTAMP WHERE upload_id = ?');
+                $update->execute([$received, $id]);
+            } elseif ($offset > $received || $offset + $length > $received) {
+                throw new InvalidArgumentException('Upload parts arrived out of order.');
+            }
+            $result = ['received' => $received];
+        } elseif ($action === 'finish') {
+            if ($received !== $total) throw new InvalidArgumentException('The file is incomplete. Finish uploading all parts first.');
+            $size = validateLearningMaterialFile($path, $upload['original_name'], learningMaterialUploadLimit(), $guardSize, $handle);
+            if ($size !== $total) throw new InvalidArgumentException('Uploaded size does not match the original file.');
+            $conn->beginTransaction();
+            $insert = $conn->prepare("INSERT INTO tbl_learning_materials (title, description, original_name, file_size, file_content, storage_name, uploaded_by) VALUES (?, ?, ?, ?, '', ?, ?)");
+            $insert->execute([$upload['title'], $upload['description'], $upload['original_name'], $size, $id . '.php', $actor['user_id']]);
+            $materialId = (int) $conn->lastInsertId();
+            $conn->prepare('DELETE FROM tbl_learning_material_uploads WHERE upload_id = ?')->execute([$id]);
+            $conn->commit();
+            $result = ['success' => true, 'material_id' => $materialId];
+        } elseif ($action === 'cancel') {
+            $conn->prepare('DELETE FROM tbl_learning_material_uploads WHERE upload_id = ?')->execute([$id]);
+            $deletePath = $path;
+            $result = ['success' => true];
+        } else {
+            throw new InvalidArgumentException('Unknown upload action.');
+        }
     }
-    $_SESSION['learning_material_flash'] = ['type' => 'danger', 'message' => $message];
-    $_SESSION['learning_material_old'] = ['title' => mb_substr($title ?? '', 0, 180), 'description' => mb_substr($description ?? '', 0, 5000)];
+} catch (Throwable $error) {
+    if ($conn->inTransaction()) $conn->rollBack();
+    $status = $error instanceof InvalidArgumentException ? 400 : 500;
+    $result = ['message' => $status === 400 ? $error->getMessage() : 'Unable to save this upload part. Check server storage and try again.'];
+    if ($status === 500) error_log('Learning material upload: ' . $error->getMessage());
+} finally {
+    if (is_resource($handle)) { flock($handle, LOCK_UN); fclose($handle); }
+    if ($deletePath && is_file($deletePath)) unlink($deletePath);
 }
-header('Location: ../learning-management.php?tab=learning-materials', true, 303);
-exit;
+materialUploadReply($status ?? 200, $result);

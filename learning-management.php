@@ -136,11 +136,10 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                             <?php if ($canUploadMaterials): ?>
                             <div class="card card-outline card-success mb-4">
                                 <div class="card-header"><h2 class="card-title"><i class="fas fa-upload mr-2" aria-hidden="true"></i>Upload Material</h2></div>
-                                <form action="endpoint/upload-learning-material.php" method="post" enctype="multipart/form-data" id="material-upload-form">
+                                <form action="endpoint/upload-learning-material.php" method="post" enctype="multipart/form-data" id="material-upload-form" data-max-size="<?= learningMaterialUploadLimit() ?>">
                                     <div class="card-body">
                                         <p class="text-muted">Uploaded materials are available to all signed-in accounts.</p>
                                         <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
-                                        <input type="hidden" name="MAX_FILE_SIZE" value="<?= learningMaterialUploadLimit() ?>">
                                         <div class="form-group">
                                             <label for="material-title">Title <span class="text-danger" aria-hidden="true">*</span></label>
                                             <input class="form-control" type="text" id="material-title" name="title" maxlength="180" required value="<?= materialEscape($materialOld['title'] ?? '') ?>">
@@ -152,12 +151,15 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                         <div class="form-group mb-0">
                                             <label for="material-file">File <span class="text-danger" aria-hidden="true">*</span></label>
                                             <input class="form-control-file" type="file" id="material-file" name="material" accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg" aria-describedby="material-file-help" required>
-                                            <small id="material-file-help" class="form-text text-muted">PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG. Maximum <?= materialEscape(learningMaterialSize(learningMaterialUploadLimit())) ?> per file. Office macros are not supported.</small>
+                                            <small id="material-file-help" class="form-text text-muted">PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG. Maximum <?= materialEscape(learningMaterialSize(learningMaterialUploadLimit())) ?> per file. Keep this page open until the upload finishes. Office macros are not supported.</small>
                                         </div>
                                     </div>
                                     <div class="card-footer">
-                                        <button class="btn btn-success" type="submit" id="material-upload-button"><i class="fas fa-upload mr-1" aria-hidden="true"></i> Upload Material</button>
+                                        <button class="btn btn-success" type="submit" id="material-upload-button" disabled><i class="fas fa-upload mr-1" aria-hidden="true"></i> Upload Material</button>
+                                        <button class="btn btn-outline-secondary" type="button" id="material-upload-cancel" hidden>Cancel Upload</button>
                                         <span id="material-upload-status" class="ml-2" role="status"></span>
+                                        <progress id="material-upload-progress" class="w-100 mt-2" value="0" max="100" aria-label="Upload progress" hidden></progress>
+                                        <noscript><p class="text-danger mt-2">Enable JavaScript to upload learning materials.</p></noscript>
                                     </div>
                                 </form>
                             </div>
@@ -204,23 +206,9 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script src="include/learning-material-upload.js"></script>
 <script>
 (function () {
-    const uploadForm = document.getElementById('material-upload-form');
-    if (uploadForm) {
-        const fileInput = document.getElementById('material-file');
-        fileInput.addEventListener('change', function () {
-            fileInput.setCustomValidity(fileInput.files[0] && fileInput.files[0].size > <?= learningMaterialUploadLimit() ?> ? 'The file exceeds the maximum upload size.' : '');
-        });
-        uploadForm.addEventListener('submit', function () {
-            document.getElementById('material-upload-button').disabled = true;
-            document.getElementById('material-upload-status').textContent = 'Uploading material. Please wait...';
-        });
-        window.addEventListener('pageshow', function () {
-            document.getElementById('material-upload-button').disabled = false;
-            document.getElementById('material-upload-status').textContent = '';
-        });
-    }
     const tabs = Array.from(document.querySelectorAll('#learning-tabs [role="tab"]'));
     function selectTab(tab) {
         tabs.forEach(function (item) {
