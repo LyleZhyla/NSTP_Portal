@@ -21,6 +21,7 @@ function ensureLearningMaterialsTable(PDO $conn) {
     if (!isset($columns['storage_name'])) {
         $conn->exec('ALTER TABLE tbl_learning_materials ADD storage_name VARCHAR(68) NULL');
     }
+    if (!isset($columns['is_open'])) $conn->exec('ALTER TABLE tbl_learning_materials ADD is_open TINYINT(1) NOT NULL DEFAULT 1');
     $conn->exec("CREATE TABLE IF NOT EXISTS tbl_learning_material_uploads (
         upload_id CHAR(64) PRIMARY KEY,
         uploaded_by INT NOT NULL,
@@ -83,6 +84,13 @@ function learningMaterialVisibilitySql(array $viewer) {
             (? <> 'ROTC' OR ? <> 'student' OR FIND_IN_SET(?, m.audience_rotc_levels) > 0)))",
         'params' => [(int) $viewer['user_id'], $viewer['program'] ?? '', $viewer['program'] ?? '', $viewer['role'] ?? '', $viewer['ms_level'] ?? ''],
     ];
+}
+
+// Quiz audiences reuse the component filter; material availability is separate.
+function learningMaterialAccessSql(array $viewer) {
+    $filter = learningMaterialVisibilitySql($viewer);
+    if (($viewer['role'] ?? '') === 'student') $filter['sql'] = 'm.is_open = 1 AND (' . $filter['sql'] . ')';
+    return $filter;
 }
 
 function learningMaterialAudienceLabel(array $material) {

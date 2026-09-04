@@ -22,7 +22,7 @@ if (!$id) {
 }
 try {
     ensureLearningMaterialsTable($conn);
-    $visibility = learningMaterialVisibilitySql(learningMaterialViewer($conn, $materialActor));
+    $visibility = learningMaterialAccessSql(learningMaterialViewer($conn, $materialActor));
     $stmt = $conn->prepare('SELECT m.original_name, m.file_size, m.storage_name FROM tbl_learning_materials m WHERE m.material_id = ? AND ' . $visibility['sql']);
     $stmt->execute(array_merge([$id], $visibility['params']));
     $material = $stmt->fetch(PDO::FETCH_ASSOC);

@@ -20,6 +20,30 @@
         group.addEventListener('change', update);
         update();
     });
+    document.querySelectorAll('.material-availability').forEach(form => {
+        const toggle = form.querySelector('[role="switch"]');
+        form.addEventListener('submit', event => event.preventDefault());
+        toggle.addEventListener('change', async () => {
+            const desired = toggle.checked;
+            const status = form.querySelector('.availability-status');
+            const body = new FormData(form);
+            body.set('is_open', desired ? '1' : '0');
+            toggle.disabled = true;
+            status.textContent = 'Saving...';
+            try {
+                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin'});
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Unable to update availability.');
+                toggle.checked = Number(data.is_open) === 1;
+                const label = toggle.checked ? 'Open to eligible students' : 'Closed to students';
+                form.closest('article').querySelector('.material-availability-label').textContent = label;
+                status.textContent = label + '.';
+            } catch (error) {
+                toggle.checked = !desired;
+                status.textContent = (error.message || 'Unable to update availability.') + ' Reload to verify the saved status before retrying.';
+            } finally { toggle.disabled = false; }
+        });
+    });
     document.querySelectorAll('.material-audience-edit').forEach(form => {
         form.addEventListener('submit', async event => {
             event.preventDefault();

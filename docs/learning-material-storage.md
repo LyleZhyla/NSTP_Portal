@@ -31,7 +31,21 @@ database-only backup does not include uploaded files. Cancel Upload removes the
 unfinished file. Starting an upload cleans up to 20 unfinished uploads last active
 more than 24 hours ago; published files are not cleaned up.
 
-## Video materials
+## Open/close student access
+
+Each material has an **Allow student access** switch for super admins and its
+uploading coordinator. Existing and newly uploaded materials start open. Turning
+the switch off hides the material from student lists and counts and rejects new
+student download, playback, HEAD and range requests, including legacy materials.
+Staff retain their existing audience-based access. Reopening restores student
+access subject to the original component/MS-level selection. The automatic schema
+upgrade adds `is_open` with a default of 1. Already downloaded or buffered content
+and transfers authorized before closure cannot be recalled.
+
+`python tests/quiz-http.py` includes isolated HTTP checks for material closing,
+reopening, ownership, CSRF, legacy records and blocked video range requests.
+
+## Video upload and playback
 
 Admins and coordinators can upload MP4, WebM, and MOV videos through the same
 chunk uploader, with the same 10 GB limit. File content is checked with fileinfo;

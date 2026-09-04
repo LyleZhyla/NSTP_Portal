@@ -29,7 +29,17 @@ try {
     if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
     $action = $_POST['action'] ?? '';
-    if ($action === 'update_audience') {
+    if ($action === 'set_availability') {
+        $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $open = $_POST['is_open'] ?? null;
+        if (!$materialId || !in_array($open, ['0', '1'], true)) throw new InvalidArgumentException('Invalid material availability.');
+        $stmt = $conn->prepare('SELECT uploaded_by FROM tbl_learning_materials WHERE material_id=?');
+        $stmt->execute([$materialId]);
+        $owner = $stmt->fetchColumn();
+        if ($owner === false || ($actor['role'] !== 'super_admin' && (int)$owner !== (int)$actor['user_id'])) materialUploadReply(403, ['message'=>'You cannot open or close this material.']);
+        $conn->prepare('UPDATE tbl_learning_materials SET is_open=? WHERE material_id=?')->execute([(int)$open,$materialId]);
+        $result = ['success'=>true, 'is_open'=>(int)$open];
+    } elseif ($action === 'update_audience') {
         $audience = normalizeLearningMaterialAudience($_POST['components'] ?? null, $_POST['rotc_levels'] ?? []);
         $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if (!$materialId) throw new InvalidArgumentException('Invalid material.');

@@ -4,6 +4,7 @@ Run: python tests/quiz-http.py. --keep-server leaves a successful fixture for UI
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import socket
 import sqlite3
@@ -22,8 +23,11 @@ root = pathlib.Path(tempfile.mkdtemp(prefix='nstp-quiz-test-')).resolve()
 assert root.parent == pathlib.Path(tempfile.gettempdir()).resolve()
 for name in ['conn', 'include', 'endpoint', 'sessions', 'storage/learning-materials']:
     (root / name).mkdir(parents=True, exist_ok=True)
-for name in ['quiz.php', 'auth_check.php', 'include/quizzes.php', 'include/quiz-grades.php', 'include/learning-materials.php', 'include/user-permissions.php', 'include/theme-loader.php', 'include/theme.css', 'include/quizzes.css', 'include/quiz-renderer.js', 'include/quiz-builder.js', 'include/quiz-player.js', 'include/quiz-app.js', 'endpoint/quiz.php']:
+for name in ['quiz.php', 'auth_check.php', 'include/quizzes.php', 'include/quiz-grades.php', 'include/learning-materials.php', 'include/user-permissions.php', 'include/theme-loader.php', 'include/theme.css', 'include/quizzes.css', 'include/quiz-renderer.js', 'include/quiz-builder.js', 'include/quiz-player.js', 'include/quiz-app.js', 'endpoint/quiz.php', 'endpoint/upload-learning-material.php', 'endpoint/download-learning-material.php']:
     shutil.copyfile(repo / name, root / name)
+# Stub only MySQL schema migration in this SQLite fixture.
+material_helper = root / 'include/learning-materials.php'
+material_helper.write_text(re.sub(r'function ensureLearningMaterialsTable\(PDO \$conn\) \{.*?\n\}\n', 'function ensureLearningMaterialsTable(PDO $conn) {}\n', material_helper.read_text(), count=1, flags=re.S))
 (root / 'include/grade-schema.php').write_text('<?php function ensureGradeTables(PDO $conn) {} function seedDefaultGradeColumns(PDO $conn) {}')
 (root / 'adminlte-sidebar.php').write_text('<aside class="main-sidebar sidebar-dark-primary"><a class="brand-link" href="/quiz.php?mode=edit">TAU NSTP (test)</a><div class="sidebar"><a class="nav-link text-white" href="/quiz.php?mode=edit">Learning Management</a></div></aside>')
 for name in ['footer.php', 'include/theme-toggle.php']:
@@ -56,6 +60,8 @@ CREATE TABLE tbl_quiz_responses(response_id INTEGER PRIMARY KEY AUTOINCREMENT,qu
 CREATE TABLE tbl_grade_columns(grade_column_id INTEGER PRIMARY KEY,label TEXT,group_label TEXT,max_score NUMERIC,program_scope TEXT,is_default INTEGER DEFAULT 0,created_by INTEGER,is_active INTEGER DEFAULT 1,sort_order INTEGER DEFAULT 0);
 INSERT INTO tbl_grade_columns(grade_column_id,label,group_label,max_score,program_scope,is_default,created_by) VALUES(1,'Quiz total','Written work',50,NULL,1,NULL),(2,'CWTS test','Written work',100,'CWTS',0,2),(3,'ROTC test','Written work',100,'ROTC',0,6);
 CREATE TABLE tbl_grade_scores(grade_score_id INTEGER PRIMARY KEY AUTOINCREMENT,grade_column_id INTEGER,tbl_student_id INTEGER,score NUMERIC,updated_by INTEGER,UNIQUE(grade_column_id,tbl_student_id));
+CREATE TABLE tbl_learning_materials(material_id INTEGER PRIMARY KEY,title TEXT,description TEXT,original_name TEXT,file_size INTEGER,file_content BLOB,storage_name TEXT,uploaded_by INTEGER,audience_components TEXT,audience_rotc_levels TEXT,is_open INTEGER DEFAULT 1);
+INSERT INTO tbl_learning_materials VALUES(1,'Video','','lesson.mp4',4,X'74657374',NULL,2,'CWTS','',1),(2,'Legacy','','lesson.txt',4,X'74657374',NULL,1,NULL,NULL,1);
 CREATE TABLE tbl_quiz_grade_links(quiz_id INTEGER PRIMARY KEY,grade_column_id INTEGER);
 CREATE TABLE tbl_quiz_files(file_id INTEGER PRIMARY KEY AUTOINCREMENT,response_id INTEGER,question_id TEXT,original_name TEXT,storage_name TEXT,file_size INTEGER);
 ''')
@@ -64,7 +70,7 @@ db.commit()
 // Test-only role fixture. It is outside the application and is never deployed.
 $user=(int)($_SERVER['HTTP_X_TEST_USER']??1);
 session_id('quiz-fixture-'.$user);session_start();
-if($user){$_SESSION['user_id']=$user;$_SESSION['last_activity']=time();$_SESSION['quiz_csrf']='test-token';}else $_SESSION=[];
+if($user){$_SESSION['user_id']=$user;$_SESSION['last_activity']=time();$_SESSION['quiz_csrf']='test-token';$_SESSION['learning_material_csrf']='test-token';}else $_SESSION=[];
 session_write_close();
 if($_SERVER['REQUEST_URI']==='/health'){echo 'ok';return true;}
 if($_SERVER['REQUEST_URI']==='/endpoint/touch-session.php'){echo '{}';return true;}
@@ -233,6 +239,20 @@ try:
     check(get('load', id=dup['id'], mode='edit')[1]['definition']['grade_column_id'] == 0, 'duplicate does not silently reuse grading destination')
     current = get('load', id=linked['id'], mode='edit')[1]
     check(api('save', 2, id=linked['id'], revision=current['revision'], definition=definition(grade_column_id=0))[0] == 403, 'destination locks once responses exist')
+    def availability(user, value, material=1, csrf='test-token'):
+        return request('/endpoint/upload-learning-material.php', user, urllib.parse.urlencode(dict(action='set_availability', material_id=material, is_open=value, csrf_token=csrf)).encode(), {'Content-Type': 'application/x-www-form-urlencoded'})[0]
+    video_url = '/endpoint/download-learning-material.php?id=1&play=1'
+    check(request(video_url, 4)[0] == 200, 'open video accessible to eligible student')
+    check(availability(4, 0) == 403 and availability(3, 0) == 403, 'student and facilitator cannot change availability')
+    check(availability(6, 0) == 403, 'coordinator cannot close another owner material')
+    check(availability(2, 0, csrf='wrong') == 403 and availability(2, 'invalid') == 400, 'availability validates CSRF and value')
+    check(availability(2, 0) == 200, 'owner coordinator can close material')
+    check(request(video_url, 4)[0] == 404 and request('/endpoint/download-learning-material.php?id=1', 4)[0] == 404, 'closed material rejects student playback and direct download')
+    check(request(video_url, 4, headers={'Range': 'bytes=0-1'})[0] == 404, 'closed video rejects seeking range requests')
+    check(request(video_url, 2)[0] == 200 and request(video_url, 1)[0] == 200, 'admin and owner retain closed material access')
+    check(availability(1, 1) == 200 and request(video_url, 4)[0] == 200, 'admin can reopen coordinator material')
+    check(request(video_url, 5)[0] == 404, 'reopening preserves component restrictions')
+    check(availability(1, 0, material=2) == 200 and request('/endpoint/download-learning-material.php?id=2', 4)[0] == 404, 'closed legacy materials cannot bypass student access check')
     print(json.dumps({'root': str(root), 'port': port, 'pid': process.pid, 'builder': f'http://127.0.0.1:{port}/quiz.php?id={copy["id"]}&mode=edit'}), flush=True)
     success = True
 finally:

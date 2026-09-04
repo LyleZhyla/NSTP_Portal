@@ -25,14 +25,14 @@ $materialPageCount = 1;
 $materialPage = max(1, (int) (filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1));
 try {
     ensureLearningMaterialsTable($conn);
-    $visibility = learningMaterialVisibilitySql(learningMaterialViewer($conn, $materialActor));
+    $visibility = learningMaterialAccessSql(learningMaterialViewer($conn, $materialActor));
     $countStmt = $conn->prepare('SELECT COUNT(*) FROM tbl_learning_materials m WHERE ' . $visibility['sql']);
     $countStmt->execute($visibility['params']);
     $materialCount = (int) $countStmt->fetchColumn();
     $materialPageCount = max(1, (int) ceil($materialCount / 20));
     $materialPage = min($materialPage, $materialPageCount);
     $offset = ($materialPage - 1) * 20;
-    $listStmt = $conn->prepare("SELECT m.material_id, m.title, m.description, m.original_name, m.file_size, m.created_at, m.uploaded_by, m.audience_components, m.audience_rotc_levels, u.full_name AS uploader_name
+    $listStmt = $conn->prepare("SELECT m.material_id, m.is_open, m.title, m.description, m.original_name, m.file_size, m.created_at, m.uploaded_by, m.audience_components, m.audience_rotc_levels, u.full_name AS uploader_name
         FROM tbl_learning_materials m LEFT JOIN tbl_users u ON u.user_id = m.uploaded_by
         WHERE {$visibility['sql']} ORDER BY m.created_at DESC, m.material_id DESC LIMIT 20 OFFSET {$offset}");
     $listStmt->execute($visibility['params']);
@@ -198,7 +198,20 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 <p class="small text-muted">If this video cannot play in your browser, use Download to watch it on your device.</p>
                                 <?php endif; ?>
                                 <a class="btn btn-outline-success btn-sm" href="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>" aria-label="<?= materialEscape('Download ' . $material['title']) ?>"><i class="fas fa-download mr-1" aria-hidden="true"></i> Download</a>
+                                <?php if ($materialActor['role'] !== 'student'): ?>
+                                <p class="small mt-2 material-availability-label"><?= (int)$material['is_open'] ? 'Open to eligible students' : 'Closed to students' ?></p>
+                                <?php endif; ?>
                                 <?php if ($canUploadMaterials && ($materialActor['role'] === 'super_admin' || (int) $material['uploaded_by'] === (int) $materialActor['user_id'])): ?>
+                                <form class="material-availability mt-3" action="endpoint/upload-learning-material.php" method="post">
+                                    <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
+                                    <input type="hidden" name="action" value="set_availability">
+                                    <input type="hidden" name="material_id" value="<?= (int)$material['material_id'] ?>">
+                                    <div class="custom-control custom-switch">
+                                        <input type="checkbox" role="switch" class="custom-control-input" id="material-open-<?= (int)$material['material_id'] ?>" <?= (int)$material['is_open'] ? 'checked' : '' ?>>
+                                        <label class="custom-control-label" for="material-open-<?= (int)$material['material_id'] ?>">Allow student access</label>
+                                    </div>
+                                    <small class="availability-status d-block" role="status">Turn off to close this material to students.</small>
+                                </form>
                                 <details class="mt-3">
                                     <summary>Change audience</summary>
                                     <form class="material-audience-edit mt-3" action="endpoint/upload-learning-material.php" method="post">
