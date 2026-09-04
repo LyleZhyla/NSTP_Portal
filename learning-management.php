@@ -125,11 +125,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                     </div>
                     <div class="card-body">
                         <div id="assessment-panel" role="tabpanel" aria-labelledby="assessment-tab" tabindex="0" <?= $activeTab !== 'assessment' ? 'hidden' : '' ?>>
-                            <div class="learning-empty">
-                                <span class="learning-empty-icon"><i class="fas fa-clipboard-check" aria-hidden="true"></i></span>
-                                <h2 class="h4">No assessments yet</h2>
-                                <p class="text-muted">There are no assessments available at this time.</p>
-                            </div>
+                            <?php include __DIR__ . '/include/assessment-list.php'; ?>
                         </div>
                         <div id="learning-materials-panel" role="tabpanel" aria-labelledby="learning-materials-tab" tabindex="0" <?= $activeTab !== 'learning-materials' ? 'hidden' : '' ?>>
                             <?php if ($materialFlash): ?>

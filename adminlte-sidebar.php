@@ -169,7 +169,7 @@ if (isset($_SESSION['user_id'])) {
                 <!-- Learning Management is available to every signed-in account. -->
                 <?php if (isset($_SESSION['user_id'])): ?>
                 <li class="nav-item">
-                    <a href="learning-management.php" class="nav-link <?= ($currentPage == 'learning-management.php') ? 'active' : '' ?>">
+                    <a href="learning-management.php" class="nav-link <?= in_array($currentPage, ['learning-management.php', 'quiz.php'], true) ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-book-open"></i>
                         <p>Learning Management</p>
                     </a>
