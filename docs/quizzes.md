@@ -51,8 +51,31 @@ be backed up with the database. Each is limited to at most 1 MiB (reduced to the
 server's PHP request limit), with PDF, DOCX, PPTX, XLSX, TXT, PNG, JPG supported.
 This attachment limit is separate from the 10 GB learning-material uploader.
 Up to 100 question/section items per quiz and 1 MiB of JSON per API request are
-supported. Responses do not automatically modify the existing Grade Computation
-module.
+supported.
+
+## Grading-sheet score destination
+
+Admin/coordinator authors select **Score destination in grading sheet** before
+students start. The list contains active columns with a positive maximum score;
+coordinators can select their own/default/shared columns in their program.
+Component-specific columns must match every selected audience component. Use a
+shared column for a quiz targeting multiple components. Choose **Do not send to
+grading sheet** for practice quizzes. Existing quizzes default to that option.
+Create additional destination columns in Grade Computation when needed.
+
+On submission or grade review, released responses with no pending manual grades
+are synchronized to the student's linked grading-sheet record. The cell is
+`sum(earned points) / sum(possible points) * column maximum`, rounded to two
+places, across all released quizzes mapped to that column. For example, 15/20
+maps to 37.5 in a 50-point column. Pending/unreleased quizzes are excluded;
+withdrawing release removes their contribution (blank if none remain).
+This replaces manual entries in the destination cell. Keep these columns for
+quiz scores; later manual sheet edits can be overwritten on the next quiz update.
+The destination locks after the first student draft, preserving existing score
+mappings. Duplicates reset the destination to practice/no sync. Inactive/deleted
+columns stop receiving updates. Changes to a column maximum take effect at the
+next submission or grade update. Quiz grade writes and sheet writes share one
+transaction. A student must have exactly one linked student record to sync.
 
 This is a native Google Forms-inspired workflow, not Google Forms integration.
 Google Sheets/Drive synchronization, Google add-ons, email notifications,

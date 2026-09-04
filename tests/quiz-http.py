@@ -200,6 +200,39 @@ try:
     api('status', id=quiz_id, status='published')
     check(get('load', 5, id=quiz_id)[0] == 200 and get('load', 7, id=quiz_id)[0] == 403, 'new audience gains access and excluded audience loses access')
     check(get('load', 4, id=quiz_id)[1]['accepting'] is False and get('response', 4, response_id=rid)[1]['released'], 'excluded respondent retains grades but cannot keep answering')
+    check(get('grade_columns', 4)[0] == 403, 'students cannot list grade destinations')
+    choices = get('grade_columns', 2)[1]['columns']
+    check({c['grade_column_id'] for c in choices} == {1, 2}, 'coordinator destinations respect column ownership and program')
+    check(api('save', 2, definition=definition(grade_column_id=3))[0] == 400, 'forged inaccessible destination rejected')
+    check(api('save', definition=definition(grade_column_id=2))[0] == 400, 'component-specific destination rejects mismatched quiz audience')
+    status, linked = api('save', 2, definition=definition([q('scored')], grade_column_id=1, release_immediately=True, allow_edit=True))
+    check(status == 200, 'coordinator saves grading-sheet destination')
+    api('status', 2, id=linked['id'], status='published')
+    status, linked_answer = api('submit', 4, id=linked['id'], answers={'scored': 'B'})
+    def sheet_score():
+        return db.execute('SELECT score FROM tbl_grade_scores WHERE grade_column_id=1 AND tbl_student_id=4').fetchone()
+    check(status == 200 and sheet_score() == (50,), 'released quiz score scales to grading column maximum')
+    api('submit', 4, id=linked['id'], answers={'scored': 'A'})
+    check(sheet_score() == (0,), 'edited submission updates existing grading cell without duplication')
+    status, second = api('save', definition=definition([q('second')], grade_column_id=1, release_immediately=True))
+    api('status', id=second['id'], status='published')
+    api('submit', 4, id=second['id'], answers={'second': 'B'})
+    check(sheet_score() == (25,), 'multiple quizzes aggregate earned and possible points in one column')
+    status, manual = api('save', definition=definition([q('essay', 'paragraph')], grade_column_id=1))
+    api('status', id=manual['id'], status='published')
+    status, manual_answer = api('submit', 4, id=manual['id'], answers={'essay': 'A considered response'})
+    check(status == 200 and sheet_score() == (25,), 'pending manual grades do not contribute')
+    detail = get('response', response_id=manual_answer['response_id'])[1]
+    api('grade', response_id=manual_answer['response_id'], answers_version=detail['answers_version'], grades={'essay': {'points': 2}}, release=False)
+    check(sheet_score() == (25,), 'held grades do not contribute')
+    api('grade', response_id=manual_answer['response_id'], answers_version=detail['answers_version'], grades={'essay': {'points': 2}}, release=True)
+    check(sheet_score() == (33.33,), 'manual release synchronizes aggregate score')
+    api('grade', response_id=manual_answer['response_id'], answers_version=detail['answers_version'], grades={'essay': {'points': 2}}, release=False)
+    check(sheet_score() == (25,), 'withdrawing release removes that quiz contribution')
+    dup = api('duplicate', id=manual['id'])[1]
+    check(get('load', id=dup['id'], mode='edit')[1]['definition']['grade_column_id'] == 0, 'duplicate does not silently reuse grading destination')
+    current = get('load', id=linked['id'], mode='edit')[1]
+    check(api('save', 2, id=linked['id'], revision=current['revision'], definition=definition(grade_column_id=0))[0] == 403, 'destination locks once responses exist')
     print(json.dumps({'root': str(root), 'port': port, 'pid': process.pid, 'builder': f'http://127.0.0.1:{port}/quiz.php?id={copy["id"]}&mode=edit'}), flush=True)
     success = True
 finally:
