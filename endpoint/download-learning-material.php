@@ -10,7 +10,8 @@ if (!learningMaterialSessionActive($conn)) {
     header('Location: logout.php?reason=timeout');
     exit;
 }
-if (!getCurrentUserRecord($conn)) {
+$materialActor = getCurrentUserRecord($conn);
+if (!$materialActor) {
     http_response_code(403);
     exit('Account unavailable.');
 }
@@ -21,8 +22,9 @@ if (!$id) {
 }
 try {
     ensureLearningMaterialsTable($conn);
-    $stmt = $conn->prepare('SELECT original_name, file_size, storage_name FROM tbl_learning_materials WHERE material_id = ?');
-    $stmt->execute([$id]);
+    $visibility = learningMaterialVisibilitySql(learningMaterialViewer($conn, $materialActor));
+    $stmt = $conn->prepare('SELECT m.original_name, m.file_size, m.storage_name FROM tbl_learning_materials m WHERE m.material_id = ? AND ' . $visibility['sql']);
+    $stmt->execute(array_merge([$id], $visibility['params']));
     $material = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (Throwable $error) {
     error_log('Learning material download failed: ' . $error->getMessage());

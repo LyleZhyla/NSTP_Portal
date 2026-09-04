@@ -20,7 +20,10 @@
             const body = new FormData();
             body.append('csrf_token', form.elements.csrf_token.value);
             body.append('action', action);
-            Object.entries(values).forEach(([key, value]) => body.append(key, value));
+            Object.entries(values).forEach(([key, value]) => {
+                if (Array.isArray(value)) value.forEach(item => body.append(key, item));
+                else body.append(key, value);
+            });
             controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 90000);
             try {
@@ -44,6 +47,7 @@
     }
     function lockFields(locked) {
         fileInput.disabled = title.disabled = description.disabled = locked;
+        form.querySelector('.material-audience').disabled = locked;
     }
     fileInput.addEventListener('change', () => {
         const file = fileInput.files[0];
@@ -66,7 +70,7 @@
         try {
             if (!upload) {
                 status.textContent = 'Preparing upload...';
-                upload = await send('start', {title: title.value, description: description.value, name: file.name, size: file.size});
+                upload = await send('start', {title: title.value, description: description.value, name: file.name, size: file.size, ...window.learningMaterialAudienceValues(form)});
                 if (!Number.isInteger(upload.chunk_size) || upload.chunk_size <= 0) throw new Error('The server upload limit is too small. Contact your administrator.');
             }
             while (!cancelled && upload.received < file.size) {

@@ -30,3 +30,18 @@ Back up both the database and the material storage directory. A Git push or a
 database-only backup does not include uploaded files. Cancel Upload removes the
 unfinished file. Starting an upload cleans up to 20 unfinished uploads last active
 more than 24 hours ago; published files are not cleaned up.
+
+## Component audience
+
+Uploaders select one or more of CWTS, LTS and ROTC. ROTC also requires one or more
+of the system's MS-1, MS-31 and MS-41 student levels. Selecting CWTS and ROTC shares
+one material with both components. ROTC staff see all levels selected for ROTC;
+ROTC students see only materials for their resolved MS level. The list, pagination
+count, direct downloads, HEAD requests and range downloads use the same filter.
+
+Super admins can see all materials and edit any material's audience. Coordinators
+can edit their own uploads, and uploaders retain access to their own materials.
+Existing materials (NULL audience) remain available to all accounts until their
+audience is changed using Change audience. Empty or invalid new selections are
+rejected on the server. Audience metadata is saved at upload start and retained
+through chunk retries and finalization.

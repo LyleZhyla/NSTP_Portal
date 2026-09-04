@@ -32,6 +32,64 @@ function ensureLearningMaterialsTable(PDO $conn) {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_upload_updated (updated_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    foreach (['tbl_learning_materials', 'tbl_learning_material_uploads'] as $table) {
+        $audienceColumns = $conn->query("SHOW COLUMNS FROM {$table}")->fetchAll(PDO::FETCH_UNIQUE | PDO::FETCH_ASSOC);
+        foreach (['audience_components' => 'VARCHAR(20)', 'audience_rotc_levels' => 'VARCHAR(30)'] as $column => $type) {
+            if (!isset($audienceColumns[$column])) $conn->exec("ALTER TABLE {$table} ADD {$column} {$type} NULL");
+        }
+    }
+}
+
+function normalizeLearningMaterialAudience($components, $levels) {
+    if (!is_array($components) || !$components || count($components) > 3) throw new InvalidArgumentException('Select at least one component.');
+    foreach ($components as $component) {
+        if (!is_string($component) || !in_array($component, ['CWTS', 'LTS', 'ROTC'], true)) throw new InvalidArgumentException('Invalid component selection.');
+    }
+    if (!is_array($levels) || count($levels) > 3) throw new InvalidArgumentException('Invalid ROTC MS level selection.');
+    foreach ($levels as $level) {
+        if (!is_string($level) || !in_array($level, getRotcMsLevels(), true)) throw new InvalidArgumentException('Invalid ROTC MS level selection.');
+    }
+    if (in_array('ROTC', $components, true) && !$levels) throw new InvalidArgumentException('Select at least one ROTC MS level.');
+    return [
+        'components' => implode(',', array_values(array_intersect(['CWTS', 'LTS', 'ROTC'], $components))),
+        'levels' => in_array('ROTC', $components, true) ? implode(',', array_values(array_intersect(getRotcMsLevels(), $levels))) : '',
+    ];
+}
+
+function learningMaterialViewer(PDO $conn, array $actor) {
+    $actor['program'] = normalizeProgram($actor['program'] ?? null);
+    $actor['ms_level'] = null;
+    if (($actor['role'] ?? '') !== 'student') return $actor;
+    $stmt = $conn->prepare('SELECT s.*, creator.role AS creator_role, creator.program AS creator_program FROM tbl_student s LEFT JOIN tbl_users creator ON creator.user_id = s.created_by WHERE s.user_id = ? ORDER BY s.tbl_student_id DESC LIMIT 1');
+    $stmt->execute([$actor['user_id']]);
+    $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $number = $student['student_number'] ?? '';
+    $stmt = $conn->prepare("SELECT component, rotc_ms_level FROM tbl_public_student_registrations WHERE user_id = ? OR (? <> '' AND student_number = ?) ORDER BY registration_id DESC LIMIT 1");
+    $stmt->execute([$actor['user_id'], $number, $number]);
+    $registration = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $actor['program'] = resolveStudentComponentFromSources($actor['program'], $registration['component'] ?? null, $student['course_section'] ?? '', $student['creator_role'] ?? null, $student['creator_program'] ?? null);
+    if ($actor['program'] === 'ROTC') {
+        $actor['ms_level'] = ($student ? getRotcStudentMsLevel($conn, $student) : normalizeRotcMsLevel($registration['rotc_ms_level'] ?? null)) ?: 'MS-1';
+    }
+    return $actor;
+}
+
+// Use the exact same filter for the list, its count, and direct downloads.
+function learningMaterialVisibilitySql(array $viewer) {
+    if (($viewer['role'] ?? '') === 'super_admin') return ['sql' => '1=1', 'params' => []];
+    return [
+        'sql' => "(m.audience_components IS NULL OR m.uploaded_by = ? OR
+            (FIND_IN_SET(?, m.audience_components) > 0 AND
+            (? <> 'ROTC' OR ? <> 'student' OR FIND_IN_SET(?, m.audience_rotc_levels) > 0)))",
+        'params' => [(int) $viewer['user_id'], $viewer['program'] ?? '', $viewer['program'] ?? '', $viewer['role'] ?? '', $viewer['ms_level'] ?? ''],
+    ];
+}
+
+function learningMaterialAudienceLabel(array $material) {
+    if ($material['audience_components'] === null) return 'All accounts (legacy material)';
+    $label = str_replace(',', ', ', $material['audience_components']);
+    if (in_array('ROTC', explode(',', $material['audience_components']), true)) $label .= ' | ROTC students: ' . str_replace(',', ', ', $material['audience_rotc_levels'] ?? '');
+    return $label;
 }
 
 function canUploadLearningMaterials(array $user) {

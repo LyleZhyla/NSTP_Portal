@@ -25,13 +25,18 @@ $materialPageCount = 1;
 $materialPage = max(1, (int) (filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1));
 try {
     ensureLearningMaterialsTable($conn);
-    $materialCount = (int) $conn->query('SELECT COUNT(*) FROM tbl_learning_materials')->fetchColumn();
+    $visibility = learningMaterialVisibilitySql(learningMaterialViewer($conn, $materialActor));
+    $countStmt = $conn->prepare('SELECT COUNT(*) FROM tbl_learning_materials m WHERE ' . $visibility['sql']);
+    $countStmt->execute($visibility['params']);
+    $materialCount = (int) $countStmt->fetchColumn();
     $materialPageCount = max(1, (int) ceil($materialCount / 20));
     $materialPage = min($materialPage, $materialPageCount);
     $offset = ($materialPage - 1) * 20;
-    $materials = $conn->query("SELECT m.material_id, m.title, m.description, m.original_name, m.file_size, m.created_at, u.full_name AS uploader_name
+    $listStmt = $conn->prepare("SELECT m.material_id, m.title, m.description, m.original_name, m.file_size, m.created_at, m.uploaded_by, m.audience_components, m.audience_rotc_levels, u.full_name AS uploader_name
         FROM tbl_learning_materials m LEFT JOIN tbl_users u ON u.user_id = m.uploaded_by
-        ORDER BY m.created_at DESC, m.material_id DESC LIMIT 20 OFFSET {$offset}")->fetchAll(PDO::FETCH_ASSOC);
+        WHERE {$visibility['sql']} ORDER BY m.created_at DESC, m.material_id DESC LIMIT 20 OFFSET {$offset}");
+    $listStmt->execute($visibility['params']);
+    $materials = $listStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $error) {
     $materialsError = true;
     error_log('Learning materials list failed: ' . $error->getMessage());
@@ -138,7 +143,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 <div class="card-header"><h2 class="card-title"><i class="fas fa-upload mr-2" aria-hidden="true"></i>Upload Material</h2></div>
                                 <form action="endpoint/upload-learning-material.php" method="post" enctype="multipart/form-data" id="material-upload-form" data-max-size="<?= learningMaterialUploadLimit() ?>">
                                     <div class="card-body">
-                                        <p class="text-muted">Uploaded materials are available to all signed-in accounts.</p>
+                                        <p class="text-muted">Choose which components can see and download this material.</p>
                                         <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
                                         <div class="form-group">
                                             <label for="material-title">Title <span class="text-danger" aria-hidden="true">*</span></label>
@@ -149,6 +154,12 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                             <textarea class="form-control" id="material-description" name="description" rows="3" maxlength="5000"><?= materialEscape($materialOld['description'] ?? '') ?></textarea>
                                         </div>
                                         <div class="form-group mb-0">
+                                            <?php
+                                            $audienceFormId = 'upload';
+                                            $audienceComponents = [];
+                                            $audienceLevels = [];
+                                            include __DIR__ . '/include/learning-material-audience-form.php';
+                                            ?>
                                             <label for="material-file">File <span class="text-danger" aria-hidden="true">*</span></label>
                                             <input class="form-control-file" type="file" id="material-file" name="material" accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg" aria-describedby="material-file-help" required>
                                             <small id="material-file-help" class="form-text text-muted">PDF, DOCX, PPTX, XLSX, TXT, PNG, or JPG. Maximum <?= materialEscape(learningMaterialSize(learningMaterialUploadLimit())) ?> per file. Keep this page open until the upload finishes. Office macros are not supported.</small>
@@ -175,6 +186,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                             <?php foreach ($materials as $material): ?>
                             <article class="border rounded p-3 mb-3">
                                 <h3 class="h5 material-name"><?= materialEscape($material['title']) ?></h3>
+                                <p class="small text-muted material-audience-label">Visible to: <?= materialEscape(learningMaterialAudienceLabel($material)) ?></p>
                                 <?php if ($material['description'] !== ''): ?>
                                     <p class="material-description"><?= materialEscape($material['description']) ?></p>
                                 <?php endif; ?>
@@ -183,6 +195,24 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                     Uploaded by <?= materialEscape($material['uploader_name'] ?: 'Staff') ?> &middot; <?= materialEscape(date('M j, Y, g:i A', strtotime($material['created_at']))) ?>
                                 </p>
                                 <a class="btn btn-outline-success btn-sm" href="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>" aria-label="<?= materialEscape('Download ' . $material['title']) ?>"><i class="fas fa-download mr-1" aria-hidden="true"></i> Download</a>
+                                <?php if ($canUploadMaterials && ($materialActor['role'] === 'super_admin' || (int) $material['uploaded_by'] === (int) $materialActor['user_id'])): ?>
+                                <details class="mt-3">
+                                    <summary>Change audience</summary>
+                                    <form class="material-audience-edit mt-3" action="endpoint/upload-learning-material.php" method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
+                                        <input type="hidden" name="action" value="update_audience">
+                                        <input type="hidden" name="material_id" value="<?= (int) $material['material_id'] ?>">
+                                        <?php
+                                        $audienceFormId = 'edit-' . (int) $material['material_id'];
+                                        $audienceComponents = $material['audience_components'] === null ? ['CWTS', 'LTS', 'ROTC'] : explode(',', $material['audience_components']);
+                                        $audienceLevels = $material['audience_components'] === null ? getRotcMsLevels() : explode(',', $material['audience_rotc_levels'] ?? '');
+                                        include __DIR__ . '/include/learning-material-audience-form.php';
+                                        ?>
+                                        <button class="btn btn-success btn-sm" type="submit">Save Audience</button>
+                                        <span class="audience-save-status ml-2" role="status"></span>
+                                    </form>
+                                </details>
+                                <?php endif; ?>
                             </article>
                             <?php endforeach; ?>
                             <?php if ($materialPageCount > 1): ?>
@@ -206,6 +236,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script src="include/learning-material-audience.js"></script>
 <script src="include/learning-material-upload.js"></script>
 <script>
 (function () {

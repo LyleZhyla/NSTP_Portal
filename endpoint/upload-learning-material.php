@@ -29,7 +29,19 @@ try {
     if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
     $action = $_POST['action'] ?? '';
-    if ($action === 'start') {
+    if ($action === 'update_audience') {
+        $audience = normalizeLearningMaterialAudience($_POST['components'] ?? null, $_POST['rotc_levels'] ?? []);
+        $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if (!$materialId) throw new InvalidArgumentException('Invalid material.');
+        $stmt = $conn->prepare('SELECT uploaded_by FROM tbl_learning_materials WHERE material_id = ?');
+        $stmt->execute([$materialId]);
+        $owner = $stmt->fetchColumn();
+        if ($owner === false || ($actor['role'] !== 'super_admin' && (int) $owner !== (int) $actor['user_id'])) materialUploadReply(403, ['message' => 'You cannot change the audience of this material.']);
+        $stmt = $conn->prepare('UPDATE tbl_learning_materials SET audience_components = ?, audience_rotc_levels = ? WHERE material_id = ?');
+        $stmt->execute([$audience['components'], $audience['levels'], $materialId]);
+        $result = ['success' => true];
+    } elseif ($action === 'start') {
+        $audience = normalizeLearningMaterialAudience($_POST['components'] ?? null, $_POST['rotc_levels'] ?? []);
         cleanupLearningMaterialUploads($conn);
         $title = is_string($_POST['title'] ?? null) ? trim($_POST['title']) : '';
         $description = is_string($_POST['description'] ?? null) ? trim($_POST['description']) : '';
@@ -48,8 +60,8 @@ try {
         $deletePath = $path;
         if (fwrite($handle, learningMaterialFileGuard()) !== strlen(learningMaterialFileGuard())) throw new RuntimeException('Cannot prepare material file.');
         fclose($handle); $handle = null;
-        $stmt = $conn->prepare('INSERT INTO tbl_learning_material_uploads (upload_id, uploaded_by, title, description, original_name, total_size) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->execute([$id, $actor['user_id'], $title, $description, $name, $total]);
+        $stmt = $conn->prepare('INSERT INTO tbl_learning_material_uploads (upload_id, uploaded_by, title, description, original_name, total_size, audience_components, audience_rotc_levels) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$id, $actor['user_id'], $title, $description, $name, $total, $audience['components'], $audience['levels']]);
         $deletePath = null;
         $result = ['upload_id' => $id, 'received' => 0, 'chunk_size' => learningMaterialChunkLimit()];
     } else {
@@ -103,8 +115,8 @@ try {
             $size = validateLearningMaterialFile($path, $upload['original_name'], learningMaterialUploadLimit(), $guardSize, $handle);
             if ($size !== $total) throw new InvalidArgumentException('Uploaded size does not match the original file.');
             $conn->beginTransaction();
-            $insert = $conn->prepare("INSERT INTO tbl_learning_materials (title, description, original_name, file_size, file_content, storage_name, uploaded_by) VALUES (?, ?, ?, ?, '', ?, ?)");
-            $insert->execute([$upload['title'], $upload['description'], $upload['original_name'], $size, $id . '.php', $actor['user_id']]);
+            $insert = $conn->prepare("INSERT INTO tbl_learning_materials (title, description, original_name, file_size, file_content, storage_name, uploaded_by, audience_components, audience_rotc_levels) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?)");
+            $insert->execute([$upload['title'], $upload['description'], $upload['original_name'], $size, $id . '.php', $actor['user_id'], $upload['audience_components'], $upload['audience_rotc_levels']]);
             $materialId = (int) $conn->lastInsertId();
             $conn->prepare('DELETE FROM tbl_learning_material_uploads WHERE upload_id = ?')->execute([$id]);
             $conn->commit();
