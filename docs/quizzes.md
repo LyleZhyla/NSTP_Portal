@@ -81,7 +81,27 @@ This is a native Google Forms-inspired workflow, not Google Forms integration.
 Google Sheets/Drive synchronization, Google add-ons, email notifications,
 collaborative live editing, and import of external Google Forms are not included.
 
-## Verification
+## Optional tab/focus monitoring
+
+Enable **Monitor tab/focus changes** in the builder before students start. It is
+off by default, including existing quizzes. Students see the rule before starting.
+Each departure from the tab/window counts once even when both blur and visibility
+events fire: first warning, second final warning, third automatic submission.
+Monitoring runs only during student answering, never staff previews. System and
+file-picker dialogs can also lose focus; leave monitoring off when unsuitable.
+
+Counts are stored on the server and survive refresh. Event IDs prevent retry
+double-counting; pending events and answer snapshots are retained in sessionStorage
+and retried while the page remains open. At the third departure, valid partial work
+is graded; missing/invalid answers get zero. Manual grading and score-release rules
+still apply. Forced submissions cannot be edited. Managers see violation counts in
+the response list and review page. This is browser-event monitoring, not lockdown
+or proof of cheating: client scripts can be disabled, other devices are undetected,
+and offline events require reconnection while the page/session remains available.
+
+`node tests/quiz-focus.js` checks event deduplication, retry and lifecycle behavior.
+
+## Test commands
 
 `php tests/quizzes.php` checks definition validation, scoring, branching,
 required questions, safe media links and answer-key redaction.

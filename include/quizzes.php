@@ -3,6 +3,11 @@ require_once __DIR__ . '/learning-materials.php';
 require_once __DIR__ . '/quiz-grades.php';
 
 function ensureQuizTables(PDO $conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS tbl_quiz_focus_events (
+        response_id INT NOT NULL, event_id VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(response_id,event_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $conn->exec("CREATE TABLE IF NOT EXISTS tbl_quiz_grade_links (
         quiz_id INT PRIMARY KEY, grade_column_id INT NOT NULL,
         INDEX idx_quiz_grade_column (grade_column_id)
@@ -88,7 +93,7 @@ function quizDefinition($input) {
     $column = $input['grade_column_id'] ?? 0;
     if (filter_var($column, FILTER_VALIDATE_INT) === false || (int)$column < 0) throw new InvalidArgumentException('Invalid score destination.');
     $d['grade_column_id'] = (int)$column;
-    foreach (['shuffle_questions', 'shuffle_options', 'allow_edit', 'release_immediately'] as $key) $d[$key] = ($input[$key] ?? false) === true;
+    foreach (['shuffle_questions', 'shuffle_options', 'allow_edit', 'release_immediately', 'monitor_focus'] as $key) $d[$key] = ($input[$key] ?? false) === true;
     foreach (['opens_at', 'closes_at'] as $key) {
         $value = $input[$key] ?? '';
         if (!is_string($value) || ($value !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/D', $value) || !strtotime($value)))) throw new InvalidArgumentException('Invalid opening or closing date.');
@@ -244,4 +249,24 @@ function quizCheckFiles(PDO $conn, $responseId, array $questions, array $answers
         $stmt->execute([$value['file_id'], $responseId, $q['id']]);
         if (!$stmt->fetchColumn()) throw new InvalidArgumentException('The attachment does not belong to this response.');
     }
+}
+
+function quizFocusCount(PDO $conn, $responseId) {
+    $stmt=$conn->prepare('SELECT COUNT(*) FROM tbl_quiz_focus_events WHERE response_id=?');
+    $stmt->execute([$responseId]); return (int)$stmt->fetchColumn();
+}
+function quizForcedAnswers(array $d, array $answers) {
+    // Preserve valid partial work; invalid/incomplete entries count as unanswered.
+    foreach ($d['questions'] as $q) {
+        if ($q['type']==='section') continue;
+        $single=$d; $q['next']=[]; $single['questions']=[$q];
+        try { quizGrade($single, [$q['id']=>$answers[$q['id']]??''], false); }
+        catch (InvalidArgumentException $error) { unset($answers[$q['id']]); }
+    }
+    return $answers;
+}
+
+function quizFocusIds(PDO $conn, $responseId) {
+    $stmt=$conn->prepare('SELECT event_id FROM tbl_quiz_focus_events WHERE response_id=?');
+    $stmt->execute([$responseId]); return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }

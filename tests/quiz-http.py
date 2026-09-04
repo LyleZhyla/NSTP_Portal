@@ -23,7 +23,7 @@ root = pathlib.Path(tempfile.mkdtemp(prefix='nstp-quiz-test-')).resolve()
 assert root.parent == pathlib.Path(tempfile.gettempdir()).resolve()
 for name in ['conn', 'include', 'endpoint', 'sessions', 'storage/learning-materials']:
     (root / name).mkdir(parents=True, exist_ok=True)
-for name in ['quiz.php', 'auth_check.php', 'include/quizzes.php', 'include/quiz-grades.php', 'include/learning-materials.php', 'include/user-permissions.php', 'include/theme-loader.php', 'include/theme.css', 'include/quizzes.css', 'include/quiz-renderer.js', 'include/quiz-builder.js', 'include/quiz-player.js', 'include/quiz-app.js', 'endpoint/quiz.php', 'endpoint/upload-learning-material.php', 'endpoint/download-learning-material.php']:
+for name in ['quiz.php', 'auth_check.php', 'include/quizzes.php', 'include/quiz-grades.php', 'include/learning-materials.php', 'include/user-permissions.php', 'include/theme-loader.php', 'include/theme.css', 'include/quizzes.css', 'include/quiz-renderer.js', 'include/quiz-builder.js', 'include/quiz-player.js', 'include/quiz-focus.js', 'include/quiz-app.js', 'endpoint/quiz.php', 'endpoint/upload-learning-material.php', 'endpoint/download-learning-material.php']:
     shutil.copyfile(repo / name, root / name)
 # Stub only MySQL schema migration in this SQLite fixture.
 material_helper = root / 'include/learning-materials.php'
@@ -63,6 +63,7 @@ CREATE TABLE tbl_grade_scores(grade_score_id INTEGER PRIMARY KEY AUTOINCREMENT,g
 CREATE TABLE tbl_learning_materials(material_id INTEGER PRIMARY KEY,title TEXT,description TEXT,original_name TEXT,file_size INTEGER,file_content BLOB,storage_name TEXT,uploaded_by INTEGER,audience_components TEXT,audience_rotc_levels TEXT,is_open INTEGER DEFAULT 1);
 INSERT INTO tbl_learning_materials VALUES(1,'Video','','lesson.mp4',4,X'74657374',NULL,2,'CWTS','',1),(2,'Legacy','','lesson.txt',4,X'74657374',NULL,1,NULL,NULL,1);
 CREATE TABLE tbl_quiz_grade_links(quiz_id INTEGER PRIMARY KEY,grade_column_id INTEGER);
+CREATE TABLE tbl_quiz_focus_events(response_id INTEGER,event_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(response_id,event_id));
 CREATE TABLE tbl_quiz_files(file_id INTEGER PRIMARY KEY AUTOINCREMENT,response_id INTEGER,question_id TEXT,original_name TEXT,storage_name TEXT,file_size INTEGER);
 ''')
 db.commit()
@@ -253,6 +254,25 @@ try:
     check(availability(1, 1) == 200 and request(video_url, 4)[0] == 200, 'admin can reopen coordinator material')
     check(request(video_url, 5)[0] == 404, 'reopening preserves component restrictions')
     check(availability(1, 0, material=2) == 200 and request('/endpoint/download-learning-material.php?id=2', 4)[0] == 404, 'closed legacy materials cannot bypass student access check')
+    monitored = api('save', definition=definition(monitor_focus=True, allow_edit=True))[1]
+    api('status', id=monitored['id'], status='published')
+    started = api('start', 4, id=monitored['id'])[1]
+    def focus(event, **values):
+        return api('focus_event', 4, id=monitored['id'], event_id=event, **values)
+    check(api('focus_event', 3, id=monitored['id'], event_id='a'*32)[0] == 403, 'staff cannot log student focus violations')
+    check(api('focus_event', 4, id=files['id'], event_id='a'*32)[0] == 403, 'focus events rejected when monitoring disabled')
+    check(focus('a'*32, answers={'choice':'B'})[1]['violations'] == 1, 'first focus departure recorded')
+    check(focus('a'*32, answers={})[1]['violations'] == 1, 'retried event does not double count')
+    check(focus('b'*32, answers={})[1]['violations'] == 2, 'second focus departure recorded')
+    resumed = get('load',4,id=monitored['id'])[1]['response']
+    check(resumed['violations'] == 2 and len(resumed['focus_events']) == 2, 'refresh retains violation history')
+    status, forced = focus('c'*32, answers={'choice':'B','short':['invalid partial']})
+    check(status == 200 and forced['forced'] and forced['violations'] == 3, 'third departure auto-submits incomplete answers')
+    result = get('response', response_id=forced['response_id'])[1]
+    check(result['state'] == 'submitted' and float(result['score']) == 2 and result['violations'] == 3, 'forced submission keeps valid answers and scores blanks zero')
+    check(focus('c'*32, answers={})[1]['response_id'] == forced['response_id'], 'forced submission retry is idempotent')
+    check(api('draft',4,id=monitored['id'],answers={})[0] == 403 and api('start',4,id=monitored['id'])[0] == 403, 'forced response cannot reopen despite allow edit')
+    check(get('responses',id=monitored['id'])[1]['responses'][0]['violations'] == 3, 'manager sees focus count in response list')
     print(json.dumps({'root': str(root), 'port': port, 'pid': process.pid, 'builder': f'http://127.0.0.1:{port}/quiz.php?id={copy["id"]}&mode=edit'}), flush=True)
     success = True
 finally:

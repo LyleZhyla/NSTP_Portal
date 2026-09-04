@@ -27,5 +27,5 @@ $boot=['id'=>max(0,(int)($_GET['id']??0)),'responseId'=>max(0,(int)($_GET['respo
 </div></section></main><?php include __DIR__.'/footer.php'; ?></div>
 <script>window.quizBoot=<?= json_encode($boot,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
-<script src="include/quiz-renderer.js"></script><script src="include/quiz-builder.js"></script><script src="include/quiz-player.js"></script><script src="include/quiz-app.js"></script>
+<script src="include/quiz-renderer.js"></script><script src="include/quiz-builder.js"></script><script src="include/quiz-focus.js"></script><script src="include/quiz-player.js"></script><script src="include/quiz-app.js"></script>
 </body></html>

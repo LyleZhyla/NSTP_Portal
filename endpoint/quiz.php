@@ -113,7 +113,7 @@ try {
         $released=$manager || (bool)$response['released'];
         $definition=json_decode($quiz['definition_json'],true);
         $stmt=$conn->prepare('SELECT file_id,original_name,question_id FROM tbl_quiz_files WHERE response_id=?');$stmt->execute([$responseId]);
-        quizReply(200,['response_id'=>$responseId,'name'=>$response['full_name'],'username'=>$response['username'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),
+        quizReply(200,['response_id'=>$responseId,'name'=>$response['full_name'],'username'=>$response['username'],'violations'=>quizFocusCount($conn,$responseId),'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),
             'answers_version'=>$manager?$response['answers_json']:null,'grades'=>$released?json_decode($response['grades_json'],true):null,'score'=>$released?$response['score']:null,'total'=>$response['total_points'],'released'=>(bool)$response['released'],'needs_review'=>(bool)$response['needs_review'],
             'definition'=>$released?$definition:quizPublicDefinition($definition),'files'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
     }
@@ -130,7 +130,7 @@ try {
         }
         $page=max(1,min(100000,(int)($_GET['page']??1)));$offset=($page-1)*50;
         $stmt=$conn->prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS pending, AVG(score) AS average_score FROM tbl_quiz_responses WHERE quiz_id=? AND state='submitted'");$stmt->execute([$id]);$summary=$stmt->fetch(PDO::FETCH_ASSOC);
-        $stmt=$conn->prepare("SELECT r.response_id,r.score,r.total_points,r.needs_review,r.released,r.submitted_at,u.full_name,u.username FROM tbl_quiz_responses r JOIN tbl_users u ON u.user_id=r.user_id WHERE r.quiz_id=? AND r.state='submitted' ORDER BY r.response_id DESC LIMIT 50 OFFSET {$offset}");$stmt->execute([$id]);
+        $stmt=$conn->prepare("SELECT r.response_id,(SELECT COUNT(*) FROM tbl_quiz_focus_events f WHERE f.response_id=r.response_id) AS violations,r.score,r.total_points,r.needs_review,r.released,r.submitted_at,u.full_name,u.username FROM tbl_quiz_responses r JOIN tbl_users u ON u.user_id=r.user_id WHERE r.quiz_id=? AND r.state='submitted' ORDER BY r.response_id DESC LIMIT 50 OFFSET {$offset}");$stmt->execute([$id]);
         quizReply(200,['title'=>$quiz['title'],'summary'=>$summary,'responses'=>$stmt->fetchAll(PDO::FETCH_ASSOC),'page'=>$page]);
     }
     if (!quizVisible($conn,$actor,$quiz,$viewer) && !($action==='load' && quizResponse($conn,$id,$actor['user_id']))) throw new DomainException('This quiz is not available to your account.');
@@ -139,9 +139,9 @@ try {
         $response=quizResponse($conn,$id,$actor['user_id']);$count=$conn->prepare('SELECT COUNT(*) FROM tbl_quiz_responses WHERE quiz_id=?');$count->execute([$id]);
         $accepting=true;$acceptingMessage='';try{if(!quizVisible($conn,$actor,$quiz,$viewer))throw new InvalidArgumentException('This quiz is no longer available to your component.');quizAccepting($quiz,$d);}catch(InvalidArgumentException $error){$accepting=false;$acceptingMessage=$error->getMessage();}
         quizReply(200,['id'=>$id,'status'=>$quiz['status'],'revision'=>(int)$quiz['revision'],'manager'=>$manager,'locked'=>(int)$count->fetchColumn()>0,'accepting'=>$accepting,'accepting_message'=>$acceptingMessage,'definition'=>$edit?$d:quizPublicDefinition($d),
-            'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released']]:null]);
+            'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released'],'violations'=>quizFocusCount($conn,$response['response_id']),'focus_events'=>quizFocusIds($conn,$response['response_id'])]:null]);
     }
-    if (!in_array($action,['start','draft','submit','upload_file'],true)) throw new InvalidArgumentException('Unknown action.');
+    if (!in_array($action,['start','draft','submit','upload_file','focus_event'],true)) throw new InvalidArgumentException('Unknown action.');
     if ($actor['role']!=='student') throw new DomainException('Only students submit quiz responses. Use Preview to test your quiz.');
     $conn->beginTransaction();$quiz=quizFind($conn,$id,true);$d=json_decode($quiz['definition_json'],true);
     if (!quizVisible($conn,$actor,$quiz,$viewer)) throw new DomainException('This quiz is no longer available.');
@@ -150,11 +150,34 @@ try {
     if (!$response) {
         $conn->prepare("INSERT INTO tbl_quiz_responses (quiz_id,user_id,answers_json,grades_json) VALUES (?,?,'{}','{}')")->execute([$id,$actor['user_id']]);$response=quizResponse($conn,$id,$actor['user_id']);
     }
-    if ($response['state']==='submitted'&&!$d['allow_edit']) {
+    $violations=quizFocusCount($conn,$response['response_id']);
+    if ($action==='focus_event' && $response['state']==='submitted' && $violations>=3) {
+        $conn->commit(); quizReply(200,['response_id'=>(int)$response['response_id'],'violations'=>$violations,'forced'=>true]);
+    }
+    if ($response['state']==='submitted'&&(!$d['allow_edit']||$violations>=3)) {
         if ($action==='submit') {$conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'message'=>'Response already submitted.']);}
         throw new DomainException('You already submitted this quiz.');
     }
-    if ($action==='start') {$conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true)]);}
+    $forced=false;
+    if ($action==='focus_event') {
+        if (empty($d['monitor_focus'])) throw new DomainException('Focus monitoring is disabled for this quiz.');
+        $eventId=$data['event_id']??'';
+        if (!is_string($eventId)||!preg_match('/^[a-zA-Z0-9_-]{16,64}$/D',$eventId)) throw new InvalidArgumentException('Invalid focus event.');
+        $exists=$conn->prepare('SELECT COUNT(*) FROM tbl_quiz_focus_events WHERE response_id=? AND event_id=?');
+        $exists->execute([$response['response_id'],$eventId]);
+        if (!(int)$exists->fetchColumn()) {
+            $conn->prepare('INSERT INTO tbl_quiz_focus_events (response_id,event_id) VALUES (?,?)')->execute([$response['response_id'],$eventId]);
+        }
+        $violations=quizFocusCount($conn,$response['response_id']);
+        if ($violations<3) { $conn->commit(); quizReply(200,['violations'=>$violations,'forced'=>false]); }
+        $forced=true; $action='submit';
+        $data['answers']=quizForcedAnswers($d, is_array($data['answers']??null)?$data['answers']:json_decode($response['answers_json'],true));
+        foreach ($d['questions'] as $q) if ($q['type']==='file' && isset($data['answers'][$q['id']])) {
+            try { quizCheckFiles($conn,$response['response_id'],[$q],$data['answers']); }
+            catch (InvalidArgumentException $error) { unset($data['answers'][$q['id']]); }
+        }
+    }
+    if ($action==='start') {$events=quizFocusIds($conn,$response['response_id']);$conn->commit();quizReply(200,['violations'=>$violations,'focus_events'=>$events,'response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true)]);}
     if ($action==='upload_file') {
         $qid=$data['question_id']??'';$question=null;foreach($d['questions'] as $q)if($q['id']===$qid&&$q['type']==='file')$question=$q;
         if(!$question)throw new InvalidArgumentException('Invalid file question.');
@@ -169,7 +192,7 @@ try {
     }
     $answers=$data['answers']??null;if(!is_array($answers)||count($answers)>100)throw new InvalidArgumentException('Invalid answers.');
     quizCheckFiles($conn,$response['response_id'],$d['questions'],$answers);
-    $graded=$action==='submit'?quizGrade($d,$answers):null;
+    $graded=$action==='submit'?quizGrade($d,$answers,!$forced):null;
     if($action==='draft') {
         if($response['state']==='submitted')throw new DomainException('Use Submit changes to update a submitted response.');
         $draft=array_intersect_key($answers,array_flip(array_column($d['questions'],'id')));
@@ -179,7 +202,7 @@ try {
         $conn->prepare("UPDATE tbl_quiz_responses SET answers_json=?,grades_json=?,state='submitted',score=?,total_points=?,needs_review=?,released=?,submitted_at=CURRENT_TIMESTAMP WHERE response_id=?")->execute([quizJson($graded['answers']),quizJson($graded['grades']),$graded['score'],$graded['total'],$graded['needs_review']?1:0,$release?1:0,$response['response_id']]);
     }
     if ($action === 'submit') quizSyncGrade($conn, $quiz, $actor['user_id']);
-    $conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'message'=>$action==='submit'?$d['confirmation']:'Draft saved.']);
+    $conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'forced'=>$forced,'violations'=>$violations,'message'=>$action==='submit'?$d['confirmation']:'Draft saved.']);
 } catch (Throwable $error) {
     if (isset($conn)&&$conn->inTransaction())$conn->rollBack();
     if(isset($path)&&$action==='upload_file'&&is_file($path))unlink($path);
