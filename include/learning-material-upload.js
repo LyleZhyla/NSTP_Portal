@@ -58,6 +58,17 @@
         if (busy) return;
         const file = fileInput.files[0];
         if (!file || file.size === 0 || file.size > Number(form.dataset.maxSize)) return;
+        // Capture metadata while the controls are enabled. Disabled controls are
+        // omitted by FormData-based audience readers (including cached versions).
+        let metadata = null;
+        if (!upload) {
+            const components = Array.from(form.querySelectorAll('.audience-component:checked'), input => input.value);
+            const levels = components.includes('ROTC') ? Array.from(form.querySelectorAll('.audience-level:checked'), input => input.value) : [];
+            if (!components.length) { status.textContent = 'Select at least one component.'; return; }
+            if (components.includes('ROTC') && !levels.length) { status.textContent = 'Select at least one ROTC MS level.'; return; }
+            if (!form.reportValidity()) return;
+            metadata = {title: title.value, description: description.value, name: file.name, size: file.size, 'components[]': components, 'rotc_levels[]': levels};
+        }
         busy = true;
         cancelled = false;
         button.disabled = true;
@@ -70,7 +81,7 @@
         try {
             if (!upload) {
                 status.textContent = 'Preparing upload...';
-                upload = await send('start', {title: title.value, description: description.value, name: file.name, size: file.size, ...window.learningMaterialAudienceValues(form)});
+                upload = await send('start', metadata);
                 if (!Number.isInteger(upload.chunk_size) || upload.chunk_size <= 0) throw new Error('The server upload limit is too small. Contact your administrator.');
             }
             while (!cancelled && upload.received < file.size) {
