@@ -4,6 +4,7 @@ header('Content-Type: application/json'); // Always return JSON
 include("../conn/conn.php");
 require_once "../include/user-permissions.php";
 require_once "../include/student-account-automation.php";
+require_once "../include/section-folders.php";
 
 $response = ['success' => false, 'message' => ''];
 
@@ -61,6 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student = $checkStmt->fetch(PDO::FETCH_ASSOC);
             $studentUserId = (int) ($student['user_id'] ?? 0);
             $currentStudentNumber = preg_replace('/\D/', '', (string) ($student['student_number'] ?? ''));
+
+            if (trim((string) ($student['course_section'] ?? '')) !== $studentCourse) {
+                assertSectionFolderUnlocked($conn, null, $student['course_section'] ?? '');
+            }
             
             // Check permission
             if ($userRole === 'coordinator') {

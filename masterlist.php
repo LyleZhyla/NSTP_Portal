@@ -25,6 +25,9 @@ if (!$user_program) {
 $canonicalComponentCounts = canonicalStudentComponentCounts($conn);
 $isRotcFacilitator = $user_role === 'facilitator' && $user_program === 'ROTC';
 ensureRotcAttendanceSchema($conn);
+if (empty($_SESSION['folder_lock_csrf'])) {
+    $_SESSION['folder_lock_csrf'] = bin2hex(random_bytes(32));
+}
 
 if (!canAccessStaffTools($user_role)) {
     header("Location: profile.php");
@@ -406,6 +409,7 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
             f.folder_id,
             f.program,
             f.course_section,
+            f.is_locked,
             f.created_at,
             assigned.user_id AS facilitator_id,
             assigned.full_name AS facilitator_name,
@@ -421,7 +425,7 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
            AND assigned.program = f.program
         LEFT JOIN tbl_student s ON s.course_section = f.course_section
         WHERE f.program = ?
-        GROUP BY f.folder_id, f.program, f.course_section, f.created_at, assigned.user_id, assigned.full_name, assigned.username
+        GROUP BY f.folder_id, f.program, f.course_section, f.is_locked, f.created_at, assigned.user_id, assigned.full_name, assigned.username
         ORDER BY f.course_section ASC
     ");
     $stmt->execute([$coordinatorProgram]);
@@ -432,6 +436,7 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
             f.folder_id,
             f.program,
             f.course_section,
+            f.is_locked,
             f.created_at,
             assigned.user_id AS facilitator_id,
             assigned.full_name AS facilitator_name,
@@ -446,7 +451,7 @@ if ($user_role === 'coordinator' && $coordinatorProgram) {
         ) ON ads.course_section = f.course_section
            AND assigned.program = f.program
         LEFT JOIN tbl_student s ON s.course_section = f.course_section
-        GROUP BY f.folder_id, f.program, f.course_section, f.created_at, assigned.user_id, assigned.full_name, assigned.username
+        GROUP BY f.folder_id, f.program, f.course_section, f.is_locked, f.created_at, assigned.user_id, assigned.full_name, assigned.username
         ORDER BY FIELD(f.program, 'CWTS', 'LTS', 'ROTC'), f.course_section ASC
     ");
     $stmt->execute();
@@ -1605,6 +1610,7 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                                     </thead>
                                     <tbody>
                                         <?php foreach ($studentManagementFolders as $folder): ?>
+                                            <?php $isFolderLocked = (int) ($folder['is_locked'] ?? 1) === 1; ?>
                                             <tr class="folder-summary-row"
                                                 data-folder-name="<?php echo htmlspecialchars(strtolower((string) $folder['course_section']), ENT_QUOTES, 'UTF-8'); ?>"
                                                 data-folder-program="<?php echo htmlspecialchars(strtolower((string) $folder['program']), ENT_QUOTES, 'UTF-8'); ?>"
@@ -1615,6 +1621,7 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                                                            value="<?php echo (int) $folder['folder_id']; ?>"
                                                            data-folder-name="<?php echo htmlspecialchars($folder['course_section'], ENT_QUOTES, 'UTF-8'); ?>"
                                                            data-student-count="<?php echo (int) $folder['student_count']; ?>"
+                                                           <?php echo $isFolderLocked ? 'disabled' : ''; ?>
                                                            aria-label="Select <?php echo htmlspecialchars($folder['course_section'], ENT_QUOTES, 'UTF-8'); ?>">
                                                 </td>
                                                 <td><span class="badge badge-primary"><?php echo htmlspecialchars($folder['program']); ?></span></td>
@@ -1623,6 +1630,9 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                                                         <i class="fas fa-folder-open text-warning mr-1"></i>
                                                         <?php echo htmlspecialchars($folder['course_section']); ?>
                                                     </a>
+                                                    <span class="badge badge-<?php echo $isFolderLocked ? 'danger' : 'success'; ?> ml-1">
+                                                        <i class="fas fa-<?php echo $isFolderLocked ? 'lock' : 'lock-open'; ?> mr-1"></i><?php echo $isFolderLocked ? 'Locked' : 'Unlocked'; ?>
+                                                    </span>
                                                 </td>
                                                 <td>
                                                     <span class="badge badge-info">
@@ -1642,11 +1652,21 @@ $rotcMsTotal = array_sum($rotcMsCounts);
                                                     <a class="btn btn-sm btn-outline-info mr-1" href="folder-students.php?scope=student_folder&folder=<?php echo urlencode($folder['course_section']); ?>">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
+                                                    <?php if ($user_role === 'super_admin'): ?>
+                                                        <button type="button"
+                                                                class="btn btn-sm <?php echo $isFolderLocked ? 'btn-warning' : 'btn-outline-danger'; ?> mr-1 folder-lock-toggle"
+                                                                data-folder-id="<?php echo (int) $folder['folder_id']; ?>"
+                                                                data-lock="<?php echo $isFolderLocked ? '0' : '1'; ?>"
+                                                                title="<?php echo $isFolderLocked ? 'Unlock folder' : 'Lock folder'; ?>">
+                                                            <i class="fas fa-<?php echo $isFolderLocked ? 'lock-open' : 'lock'; ?>"></i>
+                                                        </button>
+                                                    <?php endif; ?>
                                                     <button type="button"
                                                             class="btn btn-sm btn-outline-danger mr-1 delete-student-folder"
                                                             data-folder-id="<?php echo (int) $folder['folder_id']; ?>"
                                                             data-folder-name="<?php echo htmlspecialchars($folder['course_section']); ?>"
-                                                            data-student-count="<?php echo (int) $folder['student_count']; ?>">
+                                                            data-student-count="<?php echo (int) $folder['student_count']; ?>"
+                                                            <?php echo $isFolderLocked ? 'disabled title="Unlock this folder before deleting it"' : ''; ?>>
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                     <form class="assign-folder-to-facilitator-form d-inline-flex align-items-center" style="gap: 8px;">
@@ -3413,6 +3433,46 @@ $(document).ready(function() {
         });
     });
 
+    $('.folder-lock-toggle').on('click', function() {
+        const button = $(this);
+        const shouldLock = Number(button.data('lock')) === 1;
+        const action = shouldLock ? 'lock' : 'unlock';
+
+        Swal.fire({
+            icon: 'warning',
+            title: `${shouldLock ? 'Lock' : 'Unlock'} folder?`,
+            text: shouldLock
+                ? 'Students in this folder can no longer be removed, moved, or deleted.'
+                : 'Students in this folder can be removed, moved, or deleted until you lock it again.',
+            showCancelButton: true,
+            confirmButtonText: shouldLock ? 'Lock Folder' : 'Unlock Folder'
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+            button.prop('disabled', true);
+            $.ajax({
+                url: './endpoint/set-section-folder-lock.php',
+                method: 'POST',
+                dataType: 'json',
+                data: {
+                    folder_id: button.data('folder-id'),
+                    is_locked: shouldLock ? 1 : 0,
+                    csrf_token: <?php echo json_encode($_SESSION['folder_lock_csrf']); ?>
+                }
+            }).done(function(response) {
+                if (response.success) {
+                    Swal.fire({ icon: 'success', title: shouldLock ? 'Folder Locked' : 'Folder Unlocked', text: response.message, timer: 1400, showConfirmButton: false })
+                        .then(() => location.reload());
+                    return;
+                }
+                Swal.fire('Unable to Update Folder', response.message || `Unable to ${action} the folder.`, 'error');
+                button.prop('disabled', false);
+            }).fail(function() {
+                Swal.fire('Request Failed', `Unable to ${action} the folder. Please try again.`, 'error');
+                button.prop('disabled', false);
+            });
+        });
+    });
+
     $('.delete-student-folder').on('click', function() {
         const button = $(this);
         const folderId = button.data('folder-id');
@@ -3492,7 +3552,7 @@ $(document).ready(function() {
     }
 
     function getStudentFolderChecks() {
-        return $('.student-folder-check');
+        return $('.student-folder-check:not(:disabled)');
     }
 
     function updateBulkDeleteFolderState() {

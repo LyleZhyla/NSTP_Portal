@@ -36,7 +36,7 @@ try {
     ensureSectionFoldersTable($conn);
     $placeholders = implode(',', array_fill(0, count($folderIds), '?'));
     $stmt = $conn->prepare("
-        SELECT folder_id, program, course_section
+        SELECT folder_id, program, course_section, is_locked
         FROM tbl_section_folders
         WHERE folder_id IN ($placeholders)
     ");
@@ -56,6 +56,9 @@ try {
 
         if (($currentUser['role'] ?? '') === 'coordinator' && normalizeProgram($currentUser['program'] ?? null) !== $program) {
             throw new RuntimeException('You are not allowed to delete this folder.');
+        }
+        if ((int) ($folder['is_locked'] ?? 1) === 1) {
+            throw new RuntimeException('This folder is locked. The Super Admin must unlock it before it can be deleted.');
         }
     }
 

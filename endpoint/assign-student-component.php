@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/section-folders.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || ($currentUser['role'] ?? '') !== 'super_admin') {
@@ -35,6 +36,7 @@ if ($component === 'ROTC' && !$rotcMsLevel) {
 
 try {
     ensureRotcAttendanceSchema($conn);
+    ensureSectionFoldersTable($conn);
     $conn->beginTransaction();
     $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
 
@@ -87,6 +89,7 @@ try {
                 ($student['student_name'] ?? 'A selected student') . ' is already assigned to ' . $component . '.'
             );
         }
+        assertSectionFolderUnlocked($conn, $currentComponent, $student['course_section'] ?? '');
     }
 
     $studentStmt = $conn->prepare("

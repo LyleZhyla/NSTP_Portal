@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/section-folders.php';
 
 $response = ['success' => false, 'message' => ''];
 
@@ -44,6 +45,8 @@ try {
     if (!canManageUserRecord($currentUser, $folder)) {
         throw new RuntimeException('You are not allowed to delete this folder.');
     }
+
+    assertSectionFolderUnlocked($conn, $folder['program'] ?? null, $folder['course_section'] ?? '');
 
     $conn->beginTransaction();
 

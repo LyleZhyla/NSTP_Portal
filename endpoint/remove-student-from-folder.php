@@ -116,6 +116,8 @@ try {
         removeStudentFromFolderResponse(false, 'This student is already in the component pending list.');
     }
 
+    assertSectionFolderUnlocked($conn, $component, $folder);
+
     $conn->beginTransaction();
 
     $updateStmt = $conn->prepare("

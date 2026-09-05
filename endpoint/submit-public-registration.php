@@ -10,6 +10,9 @@ require_once '../include/student-account-automation.php';
 require_once '../include/attendance-settings.php';
 require_once '../include/religions.php';
 require_once '../include/automatic-sectioning.php';
+require_once '../include/section-folders.php';
+
+ensureSectionFoldersTable($conn);
 
 $response = ['success' => false, 'message' => ''];
 $studentRegistrationLockAcquired = false;
@@ -526,6 +529,9 @@ function ensurePublicRegistrationStudent(PDO $conn, array $registration) {
             ");
             $stmt->execute([$studentName, $originalSection, $student['tbl_student_id']]);
         } else {
+            if (trim((string) ($student['course_section'] ?? '')) !== $courseSection) {
+                assertSectionFolderUnlocked($conn, null, $student['course_section'] ?? '');
+            }
             $stmt = $conn->prepare("
                 UPDATE tbl_student
                 SET student_name = ?, original_section = ?, course_section = ?

@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/section-folders.php';
 
 function resetComponentColumnExists(PDO $conn, $tableName, $columnName) {
     $stmt = $conn->prepare("
@@ -29,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    ensureSectionFoldersTable($conn);
     $conn->beginTransaction();
 
     $hasRotcMsLevel = resetComponentColumnExists($conn, 'tbl_public_student_registrations', 'rotc_ms_level');
@@ -123,6 +125,12 @@ try {
     }
 
     if (!empty($studentWhere)) {
+        $lockedFolderStmt = $conn->prepare("\n            SELECT DISTINCT course_section\n            FROM tbl_student\n            WHERE created_by IS NULL\n              AND (" . implode(' OR ', $studentWhere) . ")\n        ");
+        $lockedFolderStmt->execute($studentParams);
+        foreach ($lockedFolderStmt->fetchAll(PDO::FETCH_COLUMN) as $courseSection) {
+            assertSectionFolderUnlocked($conn, null, $courseSection);
+        }
+
         $studentStmt = $conn->prepare("
             UPDATE tbl_student
             SET course_section = 'PENDING',

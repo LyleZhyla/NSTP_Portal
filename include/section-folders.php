@@ -14,6 +14,7 @@ function ensureSectionFoldersTable(PDO $conn) {
             program VARCHAR(20) NOT NULL,
             course_section VARCHAR(255) NOT NULL,
             created_by INT NULL,
+            is_locked TINYINT(1) NOT NULL DEFAULT 1,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY unique_program_folder (program, course_section),
@@ -22,7 +23,44 @@ function ensureSectionFoldersTable(PDO $conn) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $columnStmt = $conn->prepare("\n        SELECT COUNT(*)\n        FROM INFORMATION_SCHEMA.COLUMNS\n        WHERE TABLE_SCHEMA = DATABASE()\n          AND TABLE_NAME = 'tbl_section_folders'\n          AND COLUMN_NAME = 'is_locked'\n    ");
+    $columnStmt->execute();
+    if ((int) $columnStmt->fetchColumn() === 0) {
+        $conn->exec("ALTER TABLE tbl_section_folders ADD COLUMN is_locked TINYINT(1) NOT NULL DEFAULT 1 AFTER created_by");
+    }
+
     $ensured = true;
+}
+
+function sectionFolderRecord(PDO $conn, $program, $courseSection) {
+    ensureSectionFoldersTable($conn);
+
+    $rawProgram = strtoupper(trim((string) $program));
+    $normalizedProgram = normalizeProgram($program) ?: ($rawProgram === 'PUBLIC' ? 'PUBLIC' : null);
+    $courseSection = trim((string) $courseSection);
+    if ($courseSection === '') {
+        return null;
+    }
+
+    if ($normalizedProgram) {
+        $stmt = $conn->prepare("\n            SELECT folder_id, program, course_section, is_locked\n            FROM tbl_section_folders\n            WHERE program = ? AND course_section = ?\n            LIMIT 1\n        ");
+        $stmt->execute([$normalizedProgram, $courseSection]);
+    } else {
+        $stmt = $conn->prepare("\n            SELECT folder_id, program, course_section, is_locked\n            FROM tbl_section_folders\n            WHERE course_section = ?\n            ORDER BY folder_id ASC\n            LIMIT 1\n        ");
+        $stmt->execute([$courseSection]);
+    }
+
+    $folder = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $folder ?: null;
+}
+
+function assertSectionFolderUnlocked(PDO $conn, $program, $courseSection) {
+    $folder = sectionFolderRecord($conn, $program, $courseSection);
+    if ($folder && (int) ($folder['is_locked'] ?? 1) === 1) {
+        throw new RuntimeException('This folder is locked. The Super Admin must unlock it before a student can be removed, moved, or deleted.');
+    }
+
+    return $folder;
 }
 
 function syncSectionFoldersFromExisting(PDO $conn) {

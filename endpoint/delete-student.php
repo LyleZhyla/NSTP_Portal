@@ -2,6 +2,7 @@
 session_start(); // Add session start
 include('../conn/conn.php');
 require_once '../include/user-permissions.php';
+require_once '../include/section-folders.php';
 
 if (!isset($_SESSION['user_id'])) {
     echo "
@@ -20,7 +21,7 @@ if (isset($_GET['student'])) {
 
     try {
         // First, check if student exists and user has permission
-        $checkStmt = $conn->prepare("SELECT tbl_student_id, student_name, created_by FROM tbl_student WHERE tbl_student_id = ?");
+        $checkStmt = $conn->prepare("SELECT tbl_student_id, student_name, created_by, course_section FROM tbl_student WHERE tbl_student_id = ?");
         $checkStmt->execute([$studentId]);
         
         if ($checkStmt->rowCount() === 0) {
@@ -55,6 +56,8 @@ if (isset($_GET['student'])) {
             ";
             exit();
         }
+
+        assertSectionFolderUnlocked($conn, null, $student['course_section'] ?? '');
 
         if (function_exists('ensureSystemLogsTable')) {
             ensureSystemLogsTable($conn);

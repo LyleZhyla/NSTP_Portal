@@ -3,6 +3,7 @@ session_start();
 require_once '../conn/conn.php'; // Fixed path
 require_once '../include/user-permissions.php';
 require_once '../include/profile-picture-utils.php';
+require_once '../include/section-folders.php';
 
 function deleteAdminTableExists(PDO $conn, $tableName) {
     $stmt = $conn->prepare("
@@ -87,6 +88,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         ensureSystemLogsTable($conn);
+        ensureSectionFoldersTable($conn);
+
+        if ($user['role'] === 'student' && deleteAdminTableExists($conn, 'tbl_student')) {
+            $folderStmt = $conn->prepare("\n                SELECT DISTINCT course_section\n                FROM tbl_student\n                WHERE user_id = ? OR student_number = ?\n            ");
+            $folderStmt->execute([$user_id, $user['username']]);
+            foreach ($folderStmt->fetchAll(PDO::FETCH_COLUMN) as $courseSection) {
+                assertSectionFolderUnlocked($conn, null, $courseSection);
+            }
+        }
 
         // Start transaction
         $conn->beginTransaction();
@@ -177,12 +187,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'message' => ucfirst(str_replace('_', ' ', $user['role'])) . ' account and all linked database data deleted successfully'
         ]);
         
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         // Rollback transaction on error
         if ($conn->inTransaction()) {
             $conn->rollBack();
         }
-        echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
     
 } else {

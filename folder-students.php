@@ -19,6 +19,10 @@ if (!$currentUser || !canAccessStaffTools($role)) {
     exit();
 }
 ensureRotcAttendanceSchema($conn);
+ensureSectionFoldersTable($conn);
+if (empty($_SESSION['folder_lock_csrf'])) {
+    $_SESSION['folder_lock_csrf'] = bin2hex(random_bytes(32));
+}
 
 $scope = trim((string) ($_GET['scope'] ?? 'facilitator'));
 $folder = trim((string) ($_GET['folder'] ?? ''));
@@ -28,6 +32,8 @@ $pageTitle = 'Folder Students';
 $folderMeta = '';
 $students = [];
 $facilitatorFolderCards = [];
+$folderProgram = null;
+$folderRecord = null;
 
 function folderStudentsTableExists(PDO $conn, $tableName) {
     try {
@@ -288,6 +294,7 @@ try {
         $folderMeta = $program . ' Facilitator';
     } elseif ($scope === 'coordinator' && $role === 'coordinator') {
         $program = normalizeProgram($currentUser['program'] ?? null);
+        $folderProgram = $program;
         if ($facilitatorId <= 0 || $folder === '' || !$program) {
             throw new RuntimeException('Invalid facilitator folder.');
         }
@@ -320,6 +327,7 @@ try {
         $pageTitle = $folder;
         $folderMeta = 'Facilitator: ' . ($facilitator['full_name'] ?: $facilitator['username']);
     } elseif ($scope === 'facilitator' && $role === 'facilitator') {
+        $folderProgram = normalizeProgram($currentUser['program'] ?? null);
         if ($folder === '') {
             throw new RuntimeException('Invalid folder.');
         }
@@ -355,6 +363,7 @@ try {
         if (!$facilitator) {
             throw new RuntimeException('Facilitator folder not found.');
         }
+        $folderProgram = normalizeProgram($facilitator['program'] ?? null);
 
         $stmt = $conn->prepare("SELECT COUNT(*) FROM tbl_admin_sections WHERE user_id = ? AND course_section = ?");
         $stmt->execute([$facilitatorId, $folder]);
@@ -396,6 +405,10 @@ try {
     $pageTitle = 'Folder Unavailable';
     $folderMeta = $error->getMessage();
     $students = [];
+}
+
+if ($folder !== '' && $folderProgram) {
+    $folderRecord = sectionFolderRecord($conn, $folderProgram, $folder);
 }
 
 $students = attachLatestRegistrationDetails($conn, $students);
@@ -444,6 +457,8 @@ $canRemoveStudentsFromFolder =
     || ($scope === 'coordinator' && $role === 'coordinator')
     || ($scope === 'facilitator' && $role === 'facilitator')
     || ($scope === 'super_facilitator' && $role === 'super_admin');
+$folderIsLocked = $folderRecord && (int) ($folderRecord['is_locked'] ?? 1) === 1;
+$canRemoveStudentsFromFolder = $canRemoveStudentsFromFolder && !$folderIsLocked;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -631,6 +646,21 @@ $canRemoveStudentsFromFolder =
                     </div>
                     <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
                         <span class="student-count-pill"><i class="fas fa-users"></i><?php echo count($students); ?> students</span>
+                        <?php if ($folderRecord): ?>
+                            <span class="badge badge-<?php echo $folderIsLocked ? 'danger' : 'success'; ?> p-2">
+                                <i class="fas fa-<?php echo $folderIsLocked ? 'lock' : 'lock-open'; ?> mr-1"></i>
+                                <?php echo $folderIsLocked ? 'Locked' : 'Unlocked'; ?>
+                            </span>
+                            <?php if ($role === 'super_admin'): ?>
+                                <button type="button"
+                                        class="btn btn-sm <?php echo $folderIsLocked ? 'btn-warning' : 'btn-outline-danger'; ?> folder-lock-toggle"
+                                        data-folder-id="<?php echo (int) $folderRecord['folder_id']; ?>"
+                                        data-lock="<?php echo $folderIsLocked ? '0' : '1'; ?>">
+                                    <i class="fas fa-<?php echo $folderIsLocked ? 'lock-open' : 'lock'; ?> mr-1"></i>
+                                    <?php echo $folderIsLocked ? 'Unlock Folder' : 'Lock Folder'; ?>
+                                </button>
+                            <?php endif; ?>
+                        <?php endif; ?>
                         <?php if ($scope === 'facilitator' && $role === 'facilitator' && $folder !== ''): ?>
                             <a class="btn btn-sm btn-success" href="./endpoint/export-qr-zip.php?section=<?php echo urlencode($folder); ?>" target="_blank">
                                 <i class="fas fa-file-archive mr-1"></i> Export ZIP
@@ -638,6 +668,12 @@ $canRemoveStudentsFromFolder =
                         <?php endif; ?>
                     </div>
                 </div>
+                <?php if ($folderIsLocked): ?>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-lock mr-2"></i>
+                        This folder is locked. Students cannot be removed, moved, or deleted until the Super Admin unlocks it.
+                    </div>
+                <?php endif; ?>
             </div>
         </section>
 
@@ -932,6 +968,37 @@ $canRemoveStudentsFromFolder =
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
 $(function() {
+    $('.folder-lock-toggle').on('click', function() {
+        const button = $(this);
+        const shouldLock = Number(button.data('lock')) === 1;
+        const action = shouldLock ? 'lock' : 'unlock';
+        if (!window.confirm(`Are you sure you want to ${action} this folder?`)) {
+            return;
+        }
+
+        button.prop('disabled', true);
+        $.ajax({
+            url: './endpoint/set-section-folder-lock.php',
+            method: 'POST',
+            dataType: 'json',
+            data: {
+                folder_id: button.data('folder-id'),
+                is_locked: shouldLock ? 1 : 0,
+                csrf_token: <?php echo json_encode($_SESSION['folder_lock_csrf']); ?>
+            }
+        }).done(function(response) {
+            if (response.success) {
+                window.location.reload();
+                return;
+            }
+            alert(response.message || `Unable to ${action} the folder.`);
+            button.prop('disabled', false);
+        }).fail(function() {
+            alert(`Unable to ${action} the folder. Please try again.`);
+            button.prop('disabled', false);
+        });
+    });
+
     const basicColumns = new Set([
         'student_name',
         'course',

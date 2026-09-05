@@ -104,6 +104,9 @@ try {
             echo json_encode(['success' => false, 'message' => 'One or more selected students are not available for this coordinator']);
             exit();
         }
+        if (trim((string) ($student['course_section'] ?? '')) !== $courseSection) {
+            assertSectionFolderUnlocked($conn, $studentProgram, $student['course_section'] ?? '');
+        }
     }
 
     $conn->beginTransaction();
