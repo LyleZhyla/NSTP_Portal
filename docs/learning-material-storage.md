@@ -49,6 +49,9 @@ The delete form sends a neutral management operation code because some shared
 hosting web-application firewalls return a branded 404 for request values that
 contain destructive SQL/action terms. Authorization is still enforced by the
 server-side role, ownership, session, and CSRF checks.
+Deletion uses a normal confirmed form submission followed by a server-side 303
+redirect and success message. This avoids host/browser handling problems that can
+occur with AJAX deletion responses.
 
 ## Open/close student access
 

@@ -9,6 +9,13 @@ foreach (['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availabi
 if (strpos($source, 'name="operation" value="3"') === false) {
     throw new RuntimeException('Delete form must use the WAF-safe operation code.');
 }
+if (strpos($source, 'name="request_mode" value="form"') === false) {
+    throw new RuntimeException('Delete must use a server-redirected form submission.');
+}
+$script = file_get_contents(__DIR__ . '/../include/learning-material-audience.js');
+if (preg_match('/material-delete[\s\S]{0,1000}\bfetch\s*\(/', $script)) {
+    throw new RuntimeException('Delete must not use an AJAX fetch.');
+}
 if (substr_count($source, 'action="?tab=learning-materials"') !== 4) {
     throw new RuntimeException('Every material mutation form must use the routable page endpoint.');
 }

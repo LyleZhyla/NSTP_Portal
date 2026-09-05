@@ -21,6 +21,8 @@ if (!$materialActor) {
 }
 $canUploadMaterials = canUploadLearningMaterials($materialActor);
 $materialFlash = $_SESSION['learning_material_flash'] ?? null;
+if (isset($_GET['material_deleted'])) $materialFlash = ['type'=>'success', 'message'=>'Learning material deleted.'];
+if (isset($_GET['material_delete_failed'])) $materialFlash = ['type'=>'danger', 'message'=>'Unable to delete the learning material. Please try again.'];
 $materialOld = $_SESSION['learning_material_old'] ?? [];
 unset($_SESSION['learning_material_flash'], $_SESSION['learning_material_old']);
 if ($canUploadMaterials && empty($_SESSION['learning_material_csrf'])) {
@@ -239,6 +241,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                     <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
                                     <input type="hidden" name="action" value="material_manage">
                                     <input type="hidden" name="operation" value="3">
+                                    <input type="hidden" name="request_mode" value="form">
                                     <input type="hidden" name="material_id" value="<?= (int)$material['material_id'] ?>">
                                     <button class="btn btn-outline-danger btn-sm" type="submit"><i class="fas fa-trash-alt mr-1" aria-hidden="true"></i> Delete Material</button>
                                     <span class="material-delete-status ml-2" role="status"></span>

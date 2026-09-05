@@ -25,6 +25,7 @@ if (!is_string($csrf) || empty($_SESSION['learning_material_csrf']) || !hash_equ
 session_write_close();
 $handle = null;
 $deletePath = null;
+$formDelete = ($_POST['action'] ?? '') === 'material_manage' && ($_POST['operation'] ?? '') === '3' && ($_POST['request_mode'] ?? '') === 'form';
 try {
     if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
@@ -39,8 +40,7 @@ try {
         $stmt->execute([$materialId]);
         $material = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$material || ($actor['role'] !== 'super_admin' && (int)$material['uploaded_by'] !== (int)$actor['user_id'])) {
-            $conn->rollBack();
-            materialUploadReply(403, ['message'=>'You cannot delete this material.']);
+            throw new DomainException('You cannot delete this material.');
         }
         $storedPath = !empty($material['storage_name']) ? learningMaterialStoragePath($material['storage_name']) : null;
         $conn->prepare('DELETE FROM tbl_learning_materials WHERE material_id=?')->execute([$materialId]);
@@ -160,11 +160,17 @@ try {
     }
 } catch (Throwable $error) {
     if ($conn->inTransaction()) $conn->rollBack();
-    $status = $error instanceof InvalidArgumentException ? 400 : 500;
-    $result = ['message' => $status === 400 ? $error->getMessage() : 'Unable to save this upload part. Check server storage and try again.'];
+    $status = $error instanceof DomainException ? 403 : ($error instanceof InvalidArgumentException ? 400 : 500);
+    $result = ['message' => $status < 500 ? $error->getMessage() : 'Unable to save this upload part. Check server storage and try again.'];
     if ($status === 500) error_log('Learning material upload: ' . $error->getMessage());
 } finally {
     if (is_resource($handle)) { flock($handle, LOCK_UN); fclose($handle); }
     if ($deletePath && is_file($deletePath)) unlink($deletePath);
+}
+if ($formDelete) {
+    $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    $returnPath = basename((string)$requestPath) === 'learning-management.php' ? $requestPath : '../learning-management.php';
+    header('Location: ' . $returnPath . '?tab=learning-materials&' . (($status ?? 200) === 200 ? 'material_deleted=1' : 'material_delete_failed=1'), true, 303);
+    exit;
 }
 materialUploadReply($status ?? 200, $result);
