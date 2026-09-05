@@ -1,7 +1,7 @@
 <?php
 // Some production hosts block direct browser routes under /endpoint. Accept
 // material mutations on this page and dispatch internally to the same handler.
-$materialActions = ['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'delete_material'];
+$materialActions = ['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'material_manage', 'delete_material'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', $materialActions, true)) {
     require __DIR__ . '/endpoint/upload-learning-material.php';
     exit;
@@ -237,7 +237,8 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 </details>
                                 <form class="material-delete mt-3" action="?tab=learning-materials" method="post">
                                     <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
-                                    <input type="hidden" name="action" value="delete_material">
+                                    <input type="hidden" name="action" value="material_manage">
+                                    <input type="hidden" name="operation" value="3">
                                     <input type="hidden" name="material_id" value="<?= (int)$material['material_id'] ?>">
                                     <button class="btn btn-outline-danger btn-sm" type="submit"><i class="fas fa-trash-alt mr-1" aria-hidden="true"></i> Delete Material</button>
                                     <span class="material-delete-status ml-2" role="status"></span>

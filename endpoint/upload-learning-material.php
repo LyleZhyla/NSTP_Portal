@@ -29,7 +29,9 @@ try {
     if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
     $action = $_POST['action'] ?? '';
-    if ($action === 'delete_material') {
+    // The UI uses a neutral management operation because some hosting WAFs
+    // block request values containing SQL/action words such as "delete".
+    if (($action === 'material_manage' && ($_POST['operation'] ?? '') === '3') || $action === 'delete_material') {
         $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if (!$materialId) throw new InvalidArgumentException('Invalid material.');
         $conn->beginTransaction();

@@ -1,10 +1,13 @@
 <?php
 $source = file_get_contents(__DIR__ . '/../learning-management.php');
 if ($source === false) throw new RuntimeException('Cannot read Learning Management.');
-foreach (['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'delete_material'] as $action) {
+foreach (['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'material_manage'] as $action) {
     if (!preg_match('/\$materialActions\s*=\s*\[[^\]]*[\'"]' . preg_quote($action, '/') . '[\'"]/s', $source)) {
         throw new RuntimeException("Missing page dispatch action: {$action}");
     }
+}
+if (strpos($source, 'name="operation" value="3"') === false) {
+    throw new RuntimeException('Delete form must use the WAF-safe operation code.');
 }
 if (substr_count($source, 'action="?tab=learning-materials"') !== 4) {
     throw new RuntimeException('Every material mutation form must use the routable page endpoint.');

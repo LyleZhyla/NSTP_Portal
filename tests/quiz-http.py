@@ -279,7 +279,7 @@ try:
     db.execute("INSERT INTO tbl_learning_materials VALUES(3,'Stored video','','stored.mp4',5,X'','%s',2,'CWTS','',1)" % stored_name)
     db.commit()
     def delete_material(user, material, csrf='test-token'):
-        body = urllib.parse.urlencode(dict(action='delete_material', material_id=material, csrf_token=csrf)).encode()
+        body = urllib.parse.urlencode(dict(action='material_manage', operation=3, material_id=material, csrf_token=csrf)).encode()
         return request('/learning-management.php?tab=learning-materials', user, body, {'Content-Type':'application/x-www-form-urlencoded'})
     check(delete_material(4, 3)[0] == 403 and delete_material(3, 3)[0] == 403, 'students and facilitators cannot delete materials')
     check(delete_material(6, 3)[0] == 403, 'coordinator cannot delete another uploader material')

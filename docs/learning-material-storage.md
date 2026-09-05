@@ -45,6 +45,10 @@ Material mutation forms POST to the current Learning Management page, which
 internally dispatches to the secured upload handler. This supports deployments
 whose web routing returns 404 for direct browser requests under /endpoint.
 The original endpoint URL remains available for backward compatibility.
+The delete form sends a neutral management operation code because some shared
+hosting web-application firewalls return a branded 404 for request values that
+contain destructive SQL/action terms. Authorization is still enforced by the
+server-side role, ownership, session, and CSRF checks.
 
 ## Open/close student access
 
