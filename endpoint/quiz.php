@@ -161,10 +161,7 @@ try {
     }
     $violations=quizFocusCount($conn,$response['response_id']);
     $timing=quizResponseTiming($response,$d);$timedOut=$timing&&$timing['expired'];
-    if ($action==='focus_event' && $response['state']==='submitted' && $violations>=3) {
-        $conn->commit(); quizReply(200,['response_id'=>(int)$response['response_id'],'violations'=>$violations,'forced'=>true]);
-    }
-    if ($response['state']==='submitted'&&(!$d['allow_edit']||$violations>=3||$timedOut)) {
+    if ($response['state']==='submitted'&&(!$d['allow_edit']||$timedOut)) {
         if (in_array($action,['submit','timeout_submit'],true)) {$conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'message'=>'Response already submitted.']);}
         throw new DomainException('You already submitted this quiz.');
     }
@@ -185,9 +182,7 @@ try {
             $conn->prepare('INSERT INTO tbl_quiz_focus_events (response_id,event_id) VALUES (?,?)')->execute([$response['response_id'],$eventId]);
         }
         $violations=quizFocusCount($conn,$response['response_id']);
-        if ($violations<3) { $conn->commit(); quizReply(200,['violations'=>$violations,'forced'=>false]); }
-        $forced=true; $action='submit';
-        $data['answers']=quizForcedSubmissionAnswers($conn,$response['response_id'],$d,is_array($data['answers']??null)?$data['answers']:json_decode($response['answers_json'],true));
+        $conn->commit(); quizReply(200,['violations'=>$violations,'forced'=>false]);
     }
     if ($action==='start') {$events=quizFocusIds($conn,$response['response_id']);$conn->commit();quizReply(200,['violations'=>$violations,'focus_events'=>$events,'response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true),'timing'=>$timing]);}
     if ($action==='upload_file') {

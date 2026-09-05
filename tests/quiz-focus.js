@@ -18,16 +18,15 @@ function surface() {
         setInterval: () => 1, clearInterval: () => {},
         sessionStorage: {getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v)}
     });
-    let requests = 0, locks = 0, finished = 0, fail = false;
+    let requests = 0, fail = false;
     const seen = new Set();
     const options = {
         responseId: 42, count: 0, seen: [], collect: () => ({answer:'Saved work'}), warn: () => {},
-        lock: () => locks++, finish: () => finished++,
         send: async item => {
             requests++;
             if (fail) throw Error('offline');
             seen.add(item.event_id);
-            return {violations: seen.size, forced: seen.size >= 3, response_id:42};
+            return {violations: seen.size, forced:false, response_id:42};
         }
     };
     let monitor = window.QuizFocusMonitor(options);
@@ -41,9 +40,11 @@ function surface() {
     monitor=window.QuizFocusMonitor({...options,count:1,seen:[...seen]});
     await monitor.flush(); assert.equal(seen.size, 2, 'reload retries pending departure');
     window.fire('blur');
-    await assert.rejects(monitor.flush(), /automatically submitted/);
-    assert.equal(seen.size, 3); assert.equal(finished, 1); assert.ok(locks>0);
+    await monitor.flush();
+    assert.equal(seen.size, 3, 'third violation is recorded without automatic submission');
+    document.hidden=false; window.fire('focus'); window.fire('blur');
+    await monitor.flush(); assert.equal(seen.size, 4, 'violations continue to be recorded after the third');
     monitor.stop(); window.fire('blur');
-    assert.equal(seen.size, 3, 'stop removes listeners');
-    console.log('PASS focus event deduplication, offline persistence, reload retry, third violation and cleanup');
+    assert.equal(seen.size, 4, 'stop removes listeners');
+    console.log('PASS focus event deduplication, offline persistence, reload retry, detection-only violations and cleanup');
 })().catch(error => { console.error(error); process.exitCode=1; });

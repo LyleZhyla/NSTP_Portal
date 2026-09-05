@@ -280,13 +280,17 @@ try:
     check(focus('b'*32, answers={})[1]['violations'] == 2, 'second focus departure recorded')
     resumed = get('load',4,id=monitored['id'])[1]['response']
     check(resumed['violations'] == 2 and len(resumed['focus_events']) == 2, 'refresh retains violation history')
-    status, forced = focus('c'*32, answers={'choice':'B','short':['invalid partial']})
-    check(status == 200 and forced['forced'] and forced['violations'] == 3, 'third departure auto-submits incomplete answers')
-    result = get('response', response_id=forced['response_id'])[1]
-    check(result['state'] == 'submitted' and float(result['score']) == 2 and result['violations'] == 3, 'forced submission keeps valid answers and scores blanks zero')
-    check(focus('c'*32, answers={})[1]['response_id'] == forced['response_id'], 'forced submission retry is idempotent')
-    check(api('draft',4,id=monitored['id'],answers={})[0] == 403 and api('start',4,id=monitored['id'])[0] == 403, 'forced response cannot reopen despite allow edit')
-    check(get('responses',id=monitored['id'])[1]['responses'][0]['violations'] == 3, 'manager sees focus count in response list')
+    status, recorded = focus('c'*32, answers={'choice':'B','short':['invalid partial']})
+    check(status == 200 and not recorded['forced'] and recorded['violations'] == 3, 'third departure is recorded without automatic submission')
+    resumed = get('load',4,id=monitored['id'])[1]['response']
+    check(resumed['state'] == 'draft' and resumed['violations'] == 3, 'focus violations leave the response open')
+    check(focus('d'*32, answers={})[1]['violations'] == 4, 'focus monitoring continues after the third violation')
+    status, submitted = api('submit',4,id=monitored['id'],answers={'choice':'B','short':'B','essay':'Manual submission'})
+    check(status == 200 and not submitted['forced'], 'student manually submits after focus violations')
+    result = get('response', response_id=submitted['response_id'])[1]
+    check(result['state'] == 'submitted' and result['violations'] == 4, 'manual submission retains the violation count')
+    check(api('start',4,id=monitored['id'])[0] == 200, 'violations do not block an allowed response edit')
+    check(get('responses',id=monitored['id'])[1]['responses'][0]['violations'] == 4, 'manager sees focus count in response list')
     timed = api('save', definition=definition([q('timed_choice'), q('timed_required', 'short_answer')], time_limit_minutes=1))[1]
     api('status', id=timed['id'], status='published')
     timed_start = api('start', 4, id=timed['id'])[1]

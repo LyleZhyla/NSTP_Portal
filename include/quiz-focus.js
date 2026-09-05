@@ -9,8 +9,7 @@
         function persist() { try { sessionStorage.setItem(key, JSON.stringify(pending)); } catch (_) {} }
         function warning() {
             const total = count + pending.length;
-            if (total >= 3) { options.lock(); options.warn('Third focus violation. Automatically submitting your answers. Keep this page open until submission is confirmed.'); }
-            else if (total) options.warn(total === 1 ? 'Warning 1 of 3: remain on the quiz tab.' : 'Final warning: the next tab/focus change will automatically submit your quiz.');
+            if (total) options.warn('Focus violation recorded (' + total + '). Please remain on the quiz tab.');
         }
         async function drain() {
             if (sending) { await sending; return drain(); }
@@ -21,7 +20,6 @@
                     const result = await options.send(item);
                     count = result.violations;
                     pending.shift(); persist();
-                    if (result.forced) { pending=[];persist();options.finish(result);return; }
                     warning();
                 }
             })();
@@ -29,7 +27,7 @@
         }
         function retry() { drain().catch(() => options.warn('Focus violation not yet saved. Reconnecting automatically; keep the quiz open.')); }
         function leave() {
-            if (stopped || away || count + pending.length >= 3) return;
+            if (stopped || away) return;
             away = true;
             const event_id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
             pending.push({event_id, answers: structuredClone(options.collect())}); persist(); warning(); retry();
@@ -43,7 +41,7 @@
         const timer = setInterval(retry, 3000);
         warning(); retry();
         return {
-            flush: async () => { await drain(); if (count >= 3) throw new Error('Your quiz was automatically submitted.'); },
+            flush: async () => { await drain(); },
             stop: () => {
                 stopped = true; clearInterval(timer);
                 window.removeEventListener('blur', leave); window.removeEventListener('focus', resume);
