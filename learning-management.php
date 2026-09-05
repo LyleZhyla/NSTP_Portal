@@ -1,4 +1,11 @@
 <?php
+// Some production hosts block direct browser routes under /endpoint. Accept
+// material mutations on this page and dispatch internally to the same handler.
+$materialActions = ['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'delete_material'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', $materialActions, true)) {
+    require __DIR__ . '/endpoint/upload-learning-material.php';
+    exit;
+}
 require_once __DIR__ . '/auth_check.php';
 require_once __DIR__ . '/conn/conn.php';
 require_once __DIR__ . '/include/learning-materials.php';
@@ -137,7 +144,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                             <?php if ($canUploadMaterials): ?>
                             <div class="card card-outline card-success mb-4">
                                 <div class="card-header"><h2 class="card-title"><i class="fas fa-upload mr-2" aria-hidden="true"></i>Upload Material</h2></div>
-                                <form action="endpoint/upload-learning-material.php" method="post" enctype="multipart/form-data" id="material-upload-form" data-max-size="<?= learningMaterialUploadLimit() ?>">
+                                <form action="?tab=learning-materials" method="post" enctype="multipart/form-data" id="material-upload-form" data-max-size="<?= learningMaterialUploadLimit() ?>">
                                     <div class="card-body">
                                         <p class="text-muted">Choose which components can see and download this material.</p>
                                         <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
@@ -202,7 +209,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 <p class="small mt-2 material-availability-label"><?= (int)$material['is_open'] ? 'Open to eligible students' : 'Closed to students' ?></p>
                                 <?php endif; ?>
                                 <?php if ($canUploadMaterials && ($materialActor['role'] === 'super_admin' || (int) $material['uploaded_by'] === (int) $materialActor['user_id'])): ?>
-                                <form class="material-availability mt-3" action="endpoint/upload-learning-material.php" method="post">
+                                <form class="material-availability mt-3" action="?tab=learning-materials" method="post">
                                     <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
                                     <input type="hidden" name="action" value="set_availability">
                                     <input type="hidden" name="material_id" value="<?= (int)$material['material_id'] ?>">
@@ -214,7 +221,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 </form>
                                 <details class="mt-3">
                                     <summary>Change audience</summary>
-                                    <form class="material-audience-edit mt-3" action="endpoint/upload-learning-material.php" method="post">
+                                    <form class="material-audience-edit mt-3" action="?tab=learning-materials" method="post">
                                         <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
                                         <input type="hidden" name="action" value="update_audience">
                                         <input type="hidden" name="material_id" value="<?= (int) $material['material_id'] ?>">
@@ -228,7 +235,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                         <span class="audience-save-status ml-2" role="status"></span>
                                     </form>
                                 </details>
-                                <form class="material-delete mt-3" action="endpoint/upload-learning-material.php" method="post">
+                                <form class="material-delete mt-3" action="?tab=learning-materials" method="post">
                                     <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
                                     <input type="hidden" name="action" value="delete_material">
                                     <input type="hidden" name="material_id" value="<?= (int)$material['material_id'] ?>">

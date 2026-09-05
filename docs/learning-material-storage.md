@@ -41,6 +41,11 @@ file is removed. Legacy database-backed materials have no separate file to remov
 Deleted materials disappear from lists and their download/playback links return
 not found. Deletion cannot recall copies that students already downloaded.
 
+Material mutation forms POST to the current Learning Management page, which
+internally dispatches to the secured upload handler. This supports deployments
+whose web routing returns 404 for direct browser requests under /endpoint.
+The original endpoint URL remains available for backward compatibility.
+
 ## Open/close student access
 
 Each material has an **Allow student access** switch for super admins and its

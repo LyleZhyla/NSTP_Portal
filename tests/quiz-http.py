@@ -23,7 +23,7 @@ root = pathlib.Path(tempfile.mkdtemp(prefix='nstp-quiz-test-')).resolve()
 assert root.parent == pathlib.Path(tempfile.gettempdir()).resolve()
 for name in ['conn', 'include', 'endpoint', 'sessions', 'storage/learning-materials']:
     (root / name).mkdir(parents=True, exist_ok=True)
-for name in ['quiz.php', 'auth_check.php', 'include/quizzes.php', 'include/quiz-grades.php', 'include/learning-materials.php', 'include/user-permissions.php', 'include/theme-loader.php', 'include/theme.css', 'include/quizzes.css', 'include/quiz-renderer.js', 'include/quiz-builder.js', 'include/quiz-player.js', 'include/quiz-focus.js', 'include/quiz-app.js', 'endpoint/quiz.php', 'endpoint/upload-learning-material.php', 'endpoint/download-learning-material.php']:
+for name in ['learning-management.php', 'quiz.php', 'auth_check.php', 'include/quizzes.php', 'include/quiz-grades.php', 'include/learning-materials.php', 'include/user-permissions.php', 'include/theme-loader.php', 'include/theme.css', 'include/quizzes.css', 'include/quiz-renderer.js', 'include/quiz-builder.js', 'include/quiz-player.js', 'include/quiz-focus.js', 'include/quiz-app.js', 'endpoint/quiz.php', 'endpoint/upload-learning-material.php', 'endpoint/download-learning-material.php']:
     shutil.copyfile(repo / name, root / name)
 # Stub only MySQL schema migration in this SQLite fixture.
 material_helper = root / 'include/learning-materials.php'
@@ -241,7 +241,7 @@ try:
     current = get('load', id=linked['id'], mode='edit')[1]
     check(api('save', 2, id=linked['id'], revision=current['revision'], definition=definition(grade_column_id=0))[0] == 403, 'destination locks once responses exist')
     def availability(user, value, material=1, csrf='test-token'):
-        return request('/endpoint/upload-learning-material.php', user, urllib.parse.urlencode(dict(action='set_availability', material_id=material, is_open=value, csrf_token=csrf)).encode(), {'Content-Type': 'application/x-www-form-urlencoded'})[0]
+        return request('/learning-management.php?tab=learning-materials', user, urllib.parse.urlencode(dict(action='set_availability', material_id=material, is_open=value, csrf_token=csrf)).encode(), {'Content-Type': 'application/x-www-form-urlencoded'})[0]
     video_url = '/endpoint/download-learning-material.php?id=1&play=1'
     check(request(video_url, 4)[0] == 200, 'open video accessible to eligible student')
     check(availability(4, 0) == 403 and availability(3, 0) == 403, 'student and facilitator cannot change availability')
@@ -280,7 +280,7 @@ try:
     db.commit()
     def delete_material(user, material, csrf='test-token'):
         body = urllib.parse.urlencode(dict(action='delete_material', material_id=material, csrf_token=csrf)).encode()
-        return request('/endpoint/upload-learning-material.php', user, body, {'Content-Type':'application/x-www-form-urlencoded'})
+        return request('/learning-management.php?tab=learning-materials', user, body, {'Content-Type':'application/x-www-form-urlencoded'})
     check(delete_material(4, 3)[0] == 403 and delete_material(3, 3)[0] == 403, 'students and facilitators cannot delete materials')
     check(delete_material(6, 3)[0] == 403, 'coordinator cannot delete another uploader material')
     check(delete_material(2, 3, 'wrong')[0] == 403, 'material deletion enforces CSRF')
