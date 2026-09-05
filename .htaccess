@@ -1,0 +1,7 @@
+RewriteEngine On
+
+# Emergency maintenance mode: keep all PHP routes away from the database.
+# Remove this block to reopen the portal.
+RewriteCond %{REQUEST_URI} !/maintenance\.html$
+RewriteCond %{REQUEST_URI} !/\.well-known/
+RewriteRule ^.*$ maintenance.html [L]
