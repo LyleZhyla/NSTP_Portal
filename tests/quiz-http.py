@@ -173,6 +173,11 @@ try:
     check(status == 200 and b"'=2+2" in body and b'choice' in body, 'CSV export and formula escaping')
     check(api('status', id=quiz_id, status='closed')[0] == 200 and api('start', 7, id=quiz_id)[0] == 403, 'closed quiz rejects new responses')
     check(get('load', 4, id=quiz_id)[1]['accepting'] is False, 'closed quiz retains student response')
+    locked_quiz = get('load', id=quiz_id, mode='edit')[1]
+    check(api('schedule', 4, id=quiz_id, revision=locked_quiz['revision'], opens_at='', closes_at='2030-01-01T00:00')[0] == 403, 'student cannot update quiz schedule')
+    status, scheduled = api('schedule', id=quiz_id, revision=locked_quiz['revision'], opens_at='', closes_at='2030-01-01T00:00')
+    scheduled_quiz = get('load', id=quiz_id, mode='edit')[1]
+    check(status == 200 and scheduled_quiz['locked'] is True and scheduled_quiz['definition']['closes_at'] == '2030-01-01T00:00', 'manager updates schedule while responses keep questions locked')
     check(api('duplicate', 2, id=quiz_id)[0] == 403, 'duplicate requires management access')
     status, copy = api('duplicate', id=quiz_id)
     check(status == 200 and get('load', id=copy['id'], mode='edit')[1]['locked'] is False, 'duplicate creates unlocked draft')

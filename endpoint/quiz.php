@@ -126,6 +126,37 @@ try {
             'message' => $deleted . ' student draft' . ($deleted === 1 ? '' : 's') . ' cleared.',
         ]);
     }
+    if ($action === 'schedule') {
+        $conn->beginTransaction();
+        $quiz = quizFind($conn, $id, true);
+        if (!quizCanManage($actor, $quiz)) throw new DomainException('You cannot manage this quiz.');
+        if ((int)($data['revision'] ?? 0) !== (int)$quiz['revision']) throw new DomainException('This quiz changed in another window. Reload before updating its schedule.');
+
+        $schedule = [];
+        foreach (['opens_at', 'closes_at'] as $key) {
+            $value = $data[$key] ?? '';
+            if (!is_string($value) || ($value !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/D', $value) || !strtotime($value)))) {
+                throw new InvalidArgumentException('Invalid opening or closing date.');
+            }
+            $schedule[$key] = $value;
+        }
+        if ($schedule['opens_at'] && $schedule['closes_at'] && strtotime($schedule['opens_at']) >= strtotime($schedule['closes_at'])) {
+            throw new InvalidArgumentException('Closing time must be after opening time.');
+        }
+
+        $definition = json_decode($quiz['definition_json'], true, 512, JSON_THROW_ON_ERROR);
+        $definition['opens_at'] = $schedule['opens_at'];
+        $definition['closes_at'] = $schedule['closes_at'];
+        $conn->prepare('UPDATE tbl_quizzes SET definition_json=?, revision=revision+1 WHERE quiz_id=?')->execute([quizJson($definition), $id]);
+        $revision = (int)$quiz['revision'] + 1;
+        $conn->commit();
+        quizReply(200, [
+            'revision' => $revision,
+            'opens_at' => $schedule['opens_at'],
+            'closes_at' => $schedule['closes_at'],
+            'message' => 'Quiz schedule updated.',
+        ]);
+    }
     if (in_array($action,['response','grade','attachment'],true)) {
         $responseId = (int)($post ? ($data['response_id']??0) : ($_GET['response_id']??0));
         $stmt=$conn->prepare('SELECT r.*,u.full_name,u.username FROM tbl_quiz_responses r JOIN tbl_users u ON u.user_id=r.user_id WHERE r.response_id=?'); $stmt->execute([$responseId]); $response=$stmt->fetch(PDO::FETCH_ASSOC);
