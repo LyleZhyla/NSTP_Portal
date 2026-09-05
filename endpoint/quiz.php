@@ -30,7 +30,6 @@ try {
         if (!is_string($csrf) || empty($_SESSION['quiz_csrf']) || !hash_equals($_SESSION['quiz_csrf'], $csrf)) quizReply(403, ['message' => 'Reload the page and try again.']);
     } elseif (!in_array($action, ['load','responses','response','export','attachment','grade_columns'], true)) quizReply(405, ['message' => 'Use POST for changes.']);
     session_write_close();
-    ensureQuizTables($conn);
     $id = (int) ($post ? ($data['id'] ?? 0) : ($_GET['id'] ?? 0));
     $viewer = learningMaterialViewer($conn, $actor);
 
@@ -145,21 +144,24 @@ try {
     if (!quizVisible($conn,$actor,$quiz,$viewer) && !($action==='load' && quizResponse($conn,$id,$actor['user_id']))) throw new DomainException('This quiz is not available to your account.');
     if ($action==='load') {
         $edit=($_GET['mode']??'')==='edit';if($edit&&!$manager)throw new DomainException('You cannot edit this quiz.');
-        $response=quizResponse($conn,$id,$actor['user_id']);$count=$conn->prepare('SELECT COUNT(*) FROM tbl_quiz_responses WHERE quiz_id=?');$count->execute([$id]);
+        $response=quizResponse($conn,$id,$actor['user_id']);$locked=false;
+        if($edit){$count=$conn->prepare('SELECT 1 FROM tbl_quiz_responses WHERE quiz_id=? LIMIT 1');$count->execute([$id]);$locked=(bool)$count->fetchColumn();}
         $accepting=true;$acceptingMessage='';try{if(!quizVisible($conn,$actor,$quiz,$viewer))throw new InvalidArgumentException('This quiz is no longer available to your component.');quizAccepting($quiz,$d);}catch(InvalidArgumentException $error){$accepting=false;$acceptingMessage=$error->getMessage();}
-        quizReply(200,['id'=>$id,'status'=>$quiz['status'],'revision'=>(int)$quiz['revision'],'manager'=>$manager,'locked'=>(int)$count->fetchColumn()>0,'accepting'=>$accepting,'accepting_message'=>$acceptingMessage,'definition'=>$edit?$d:quizPublicDefinition($d),
-            'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released'],'violations'=>quizFocusCount($conn,$response['response_id']),'focus_events'=>quizFocusIds($conn,$response['response_id']),'timing'=>quizResponseTiming($response,$d)]:null]);
+        $focusEvents=$response&&!empty($d['monitor_focus'])?quizFocusIds($conn,$response['response_id']):[];
+        $opensAt=!empty($d['opens_at'])?strtotime($d['opens_at']):false;
+        quizReply(200,['id'=>$id,'status'=>$quiz['status'],'revision'=>(int)$quiz['revision'],'manager'=>$manager,'locked'=>$locked,'accepting'=>$accepting,'accepting_message'=>$acceptingMessage,'server_time'=>time(),'opens_at_epoch'=>$opensAt===false?null:$opensAt,'definition'=>$edit?$d:quizPublicDefinition($d),
+            'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released'],'violations'=>count($focusEvents),'focus_events'=>$focusEvents,'timing'=>quizResponseTiming($response,$d)]:null]);
     }
     if (!in_array($action,['start','draft','submit','timeout_submit','upload_file','focus_event'],true)) throw new InvalidArgumentException('Unknown action.');
     if ($actor['role']!=='student') throw new DomainException('Only students submit quiz responses. Use Preview to test your quiz.');
-    $conn->beginTransaction();$quiz=quizFind($conn,$id,true);$d=json_decode($quiz['definition_json'],true);
+    $conn->beginTransaction();$quiz=quizFind($conn,$id);$d=json_decode($quiz['definition_json'],true);
     if (!quizVisible($conn,$actor,$quiz,$viewer)) throw new DomainException('This quiz is no longer available.');
     quizAccepting($quiz,$d);
-    $response=quizResponse($conn,$id,$actor['user_id']);
+    $response=quizResponse($conn,$id,$actor['user_id'],true);
     if (!$response) {
-        $conn->prepare("INSERT INTO tbl_quiz_responses (quiz_id,user_id,answers_json,grades_json,started_at) VALUES (?,?,'{}','{}',?)")->execute([$id,$actor['user_id'],date('Y-m-d H:i:s')]);$response=quizResponse($conn,$id,$actor['user_id']);
+        $conn->prepare("INSERT INTO tbl_quiz_responses (quiz_id,user_id,answers_json,grades_json,started_at) VALUES (?,?,'{}','{}',?)")->execute([$id,$actor['user_id'],date('Y-m-d H:i:s')]);$response=quizResponse($conn,$id,$actor['user_id'],true);
     }
-    $violations=quizFocusCount($conn,$response['response_id']);
+    $violations=0;
     $timing=quizResponseTiming($response,$d);$timedOut=$timing&&$timing['expired'];
     if ($response['state']==='submitted'&&(!$d['allow_edit']||$timedOut)) {
         if (in_array($action,['submit','timeout_submit'],true)) {$conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'message'=>'Response already submitted.']);}
@@ -184,7 +186,7 @@ try {
         $violations=quizFocusCount($conn,$response['response_id']);
         $conn->commit(); quizReply(200,['violations'=>$violations,'forced'=>false]);
     }
-    if ($action==='start') {$events=quizFocusIds($conn,$response['response_id']);$conn->commit();quizReply(200,['violations'=>$violations,'focus_events'=>$events,'response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true),'timing'=>$timing]);}
+    if ($action==='start') {$events=!empty($d['monitor_focus'])?quizFocusIds($conn,$response['response_id']):[];$conn->commit();quizReply(200,['violations'=>count($events),'focus_events'=>$events,'response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true),'timing'=>$timing]);}
     if ($action==='upload_file') {
         $qid=$data['question_id']??'';$question=null;foreach($d['questions'] as $q)if($q['id']===$qid&&$q['type']==='file')$question=$q;
         if(!$question)throw new InvalidArgumentException('Invalid file question.');
@@ -208,7 +210,7 @@ try {
         $release=$d['release_immediately']&&!$graded['needs_review'];
         $conn->prepare("UPDATE tbl_quiz_responses SET answers_json=?,grades_json=?,state='submitted',score=?,total_points=?,needs_review=?,released=?,submitted_at=CURRENT_TIMESTAMP WHERE response_id=?")->execute([quizJson($graded['answers']),quizJson($graded['grades']),$graded['score'],$graded['total'],$graded['needs_review']?1:0,$release?1:0,$response['response_id']]);
     }
-    if ($action === 'submit') quizSyncGrade($conn, $quiz, $actor['user_id']);
+    if ($action === 'submit') { quizSyncGrade($conn, $quiz, $actor['user_id']); if(!empty($d['monitor_focus']))$violations=quizFocusCount($conn,$response['response_id']); }
     $conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'forced'=>$forced,'timed_out'=>$forcedByTimeout,'violations'=>$violations,'message'=>$action==='submit'?$d['confirmation']:'Draft saved.']);
 } catch (Throwable $error) {
     if (isset($conn)&&$conn->inTransaction())$conn->rollBack();

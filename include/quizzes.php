@@ -258,8 +258,8 @@ function quizAccepting(array $quiz, array $d) {
     if ($d['opens_at'] && time() < strtotime($d['opens_at'])) throw new InvalidArgumentException('This quiz has not opened yet.');
     if ($d['closes_at'] && time() > strtotime($d['closes_at'])) throw new InvalidArgumentException('This quiz is closed. Your saved draft is retained.');
 }
-function quizResponse(PDO $conn, $quizId, $userId) {
-    $stmt = $conn->prepare('SELECT * FROM tbl_quiz_responses WHERE quiz_id = ? AND user_id = ?'); $stmt->execute([$quizId, $userId]);
+function quizResponse(PDO $conn, $quizId, $userId, $lock = false) {
+    $stmt = $conn->prepare('SELECT * FROM tbl_quiz_responses WHERE quiz_id = ? AND user_id = ?' . ($lock ? ' FOR UPDATE' : '')); $stmt->execute([$quizId, $userId]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 function quizResponseTiming(array $response, array $definition) {
@@ -303,6 +303,6 @@ function quizForcedAnswers(array $d, array $answers) {
 }
 
 function quizFocusIds(PDO $conn, $responseId) {
-    $stmt=$conn->prepare('SELECT event_id FROM tbl_quiz_focus_events WHERE response_id=?');
+    $stmt=$conn->prepare('SELECT event_id FROM tbl_quiz_focus_events WHERE response_id=? LIMIT 100');
     $stmt->execute([$responseId]); return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }

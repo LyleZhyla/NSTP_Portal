@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/quizzes.php';
 try {
-    ensureQuizTables($conn);
     $quizVisibility = learningMaterialVisibilitySql(learningMaterialViewer($conn, $materialActor));
     $quizPage = max(1, min(100000, (int) ($_GET['quiz_page'] ?? 1)));
     $quizOffset = ($quizPage - 1) * 20;

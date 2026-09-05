@@ -743,8 +743,6 @@ function ensureSystemLogsTable(PDO $conn) {
 
 function logSystemEvent(PDO $conn, $action, $details = '') {
     try {
-        ensureSystemLogsTable($conn);
-
         $stmt = $conn->prepare("
             INSERT INTO tbl_system_logs (user_id, username, role, action, details, ip_address)
             VALUES (?, ?, ?, ?, ?, ?)

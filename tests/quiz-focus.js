@@ -15,7 +15,7 @@ function surface() {
     document.hidden = false; document.hasFocus = () => !document.hidden;
     vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../include/quiz-focus.js'), 'utf8'), {
         window, document, crypto: webcrypto, structuredClone,
-        setInterval: () => 1, clearInterval: () => {},
+        setInterval: () => 1, clearInterval: () => {}, setTimeout, clearTimeout,
         sessionStorage: {getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v)}
     });
     let requests = 0, fail = false;

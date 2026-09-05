@@ -123,8 +123,6 @@ function notificationStudentEmail(PDO $conn, array $student) {
 }
 
 function createUserNotification(PDO $conn, $userId, $type, $title, $message, $relatedTable = null, $relatedId = null) {
-    ensureNotificationTables($conn);
-
     $userId = (int) $userId;
     $type = cleanNotificationText($type, 40);
     $title = cleanNotificationText($title, 180);
@@ -197,8 +195,6 @@ function sendLateAttendanceNotification(PDO $conn, array $student, array $attend
     }
 
     ensureAttendanceEmailTrackingSchema($conn);
-    ensureNotificationTables($conn);
-
     // Value 2 means another request is currently sending this email. This
     // prevents duplicate messages from double-clicks or concurrent requests.
     $claimStmt = $conn->prepare("
@@ -310,7 +306,6 @@ function studentHasAttendanceRecordForDate(PDO $conn, $studentId, $attendanceDat
 }
 
 function sendAbsentAttendanceNotification(PDO $conn, array $student, $attendanceDate, $cutoffDateTime, $notifyAfter, $graceHours = 5, $sendEmail = false) {
-    ensureNotificationTables($conn);
     ensureAbsentNotificationTable($conn);
 
     $studentId = (int) ($student['tbl_student_id'] ?? 0);
@@ -444,7 +439,6 @@ function sendPendingAbsentAttendanceEmail(PDO $conn, array $student, array $abse
         return false;
     }
 
-    ensureNotificationTables($conn);
     ensureAbsentNotificationTable($conn);
 
     // Value 2 reserves the row while SMTP is running and prevents duplicate
@@ -745,8 +739,6 @@ function announcementRecipients(PDO $conn, $scopeProgram = null, $createdBy = nu
 }
 
 function createAnnouncement(PDO $conn, array $actor, $title, $body, $scopeProgram = null, $recipientScope = 'all') {
-    ensureNotificationTables($conn);
-
     $actorRole = $actor['role'] ?? '';
     $scopeProgram = normalizeProgram($scopeProgram);
     $recipientScope = normalizeAnnouncementRecipientScope($recipientScope);
@@ -831,8 +823,6 @@ HTML;
 }
 
 function getUnreadNotifications(PDO $conn, $userId, $limit = 10) {
-    ensureNotificationTables($conn);
-
     $stmt = $conn->prepare("
         SELECT *
         FROM tbl_notifications
@@ -846,8 +836,6 @@ function getUnreadNotifications(PDO $conn, $userId, $limit = 10) {
 }
 
 function getUserNotifications(PDO $conn, $userId, $limit = 12) {
-    ensureNotificationTables($conn);
-
     $stmt = $conn->prepare("
         SELECT *
         FROM tbl_notifications
@@ -861,8 +849,6 @@ function getUserNotifications(PDO $conn, $userId, $limit = 12) {
 }
 
 function countUnreadNotifications(PDO $conn, $userId) {
-    ensureNotificationTables($conn);
-
     $stmt = $conn->prepare("
         SELECT COUNT(*)
         FROM tbl_notifications
@@ -874,8 +860,6 @@ function countUnreadNotifications(PDO $conn, $userId) {
 }
 
 function getRecentAnnouncements(PDO $conn, array $actor, $limit = 20) {
-    ensureNotificationTables($conn);
-
     $where = ["a.archived_at IS NULL"];
     $params = [];
     if (($actor['role'] ?? '') === 'coordinator') {
@@ -919,8 +903,6 @@ function announcementManageWhereClause(array $actor, array $announcementIds, arr
 }
 
 function archiveAnnouncements(PDO $conn, array $actor, array $announcementIds) {
-    ensureNotificationTables($conn);
-
     $whereParams = [];
     $where = announcementManageWhereClause($actor, $announcementIds, $whereParams);
     $params = array_merge([(int) ($actor['user_id'] ?? 0)], $whereParams);
@@ -937,8 +919,6 @@ function archiveAnnouncements(PDO $conn, array $actor, array $announcementIds) {
 }
 
 function deleteAnnouncements(PDO $conn, array $actor, array $announcementIds) {
-    ensureNotificationTables($conn);
-
     $params = [];
     $where = announcementManageWhereClause($actor, $announcementIds, $params);
 
