@@ -29,7 +29,24 @@ try {
     if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
     $action = $_POST['action'] ?? '';
-    if ($action === 'set_availability') {
+    if ($action === 'delete_material') {
+        $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if (!$materialId) throw new InvalidArgumentException('Invalid material.');
+        $conn->beginTransaction();
+        $stmt = $conn->prepare('SELECT uploaded_by, storage_name FROM tbl_learning_materials WHERE material_id=? FOR UPDATE');
+        $stmt->execute([$materialId]);
+        $material = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$material || ($actor['role'] !== 'super_admin' && (int)$material['uploaded_by'] !== (int)$actor['user_id'])) {
+            $conn->rollBack();
+            materialUploadReply(403, ['message'=>'You cannot delete this material.']);
+        }
+        $storedPath = !empty($material['storage_name']) ? learningMaterialStoragePath($material['storage_name']) : null;
+        $conn->prepare('DELETE FROM tbl_learning_materials WHERE material_id=?')->execute([$materialId]);
+        $conn->commit();
+        // Set this only after commit so a rolled-back deletion never removes its file.
+        $deletePath = $storedPath;
+        $result = ['success'=>true];
+    } elseif ($action === 'set_availability') {
         $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         $open = $_POST['is_open'] ?? null;
         if (!$materialId || !in_array($open, ['0', '1'], true)) throw new InvalidArgumentException('Invalid material availability.');

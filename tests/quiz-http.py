@@ -273,6 +273,21 @@ try:
     check(focus('c'*32, answers={})[1]['response_id'] == forced['response_id'], 'forced submission retry is idempotent')
     check(api('draft',4,id=monitored['id'],answers={})[0] == 403 and api('start',4,id=monitored['id'])[0] == 403, 'forced response cannot reopen despite allow edit')
     check(get('responses',id=monitored['id'])[1]['responses'][0]['violations'] == 3, 'manager sees focus count in response list')
+    stored_name = 'a' * 64 + '.php'
+    stored_path = root / 'storage/learning-materials' / stored_name
+    stored_path.write_bytes(b'<?php http_response_code(404); exit; __halt_compiler();\nvideo')
+    db.execute("INSERT INTO tbl_learning_materials VALUES(3,'Stored video','','stored.mp4',5,X'','%s',2,'CWTS','',1)" % stored_name)
+    db.commit()
+    def delete_material(user, material, csrf='test-token'):
+        body = urllib.parse.urlencode(dict(action='delete_material', material_id=material, csrf_token=csrf)).encode()
+        return request('/endpoint/upload-learning-material.php', user, body, {'Content-Type':'application/x-www-form-urlencoded'})
+    check(delete_material(4, 3)[0] == 403 and delete_material(3, 3)[0] == 403, 'students and facilitators cannot delete materials')
+    check(delete_material(6, 3)[0] == 403, 'coordinator cannot delete another uploader material')
+    check(delete_material(2, 3, 'wrong')[0] == 403, 'material deletion enforces CSRF')
+    check(delete_material(2, 3)[0] == 200 and not stored_path.exists(), 'owner coordinator deletes database record and protected stored file')
+    check(db.execute('SELECT COUNT(*) FROM tbl_learning_materials WHERE material_id=3').fetchone()[0] == 0 and request('/endpoint/download-learning-material.php?id=3', 2)[0] == 404, 'deleted material is no longer downloadable')
+    check(delete_material(2, 2)[0] == 403 and delete_material(1, 2)[0] == 200, 'admin can delete any material while coordinator remains owner-limited')
+    check(db.execute('SELECT COUNT(*) FROM tbl_learning_materials WHERE material_id=2').fetchone()[0] == 0, 'legacy database-backed material deletes without a storage file')
     print(json.dumps({'root': str(root), 'port': port, 'pid': process.pid, 'builder': f'http://127.0.0.1:{port}/quiz.php?id={copy["id"]}&mode=edit'}), flush=True)
     success = True
 finally:

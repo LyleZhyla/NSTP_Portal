@@ -31,6 +31,16 @@ database-only backup does not include uploaded files. Cancel Upload removes the
 unfinished file. Starting an upload cleans up to 20 unfinished uploads last active
 more than 24 hours ago; published files are not cleaned up.
 
+## Deleting materials
+
+Super admins can permanently delete any published material. A coordinator can
+delete only a material they uploaded. The UI requires a confirmation, and the
+server independently checks the session, CSRF token, role, and ownership. The
+database record is deleted in a transaction; after commit, its protected stored
+file is removed. Legacy database-backed materials have no separate file to remove.
+Deleted materials disappear from lists and their download/playback links return
+not found. Deletion cannot recall copies that students already downloaded.
+
 ## Open/close student access
 
 Each material has an **Allow student access** switch for super admins and its

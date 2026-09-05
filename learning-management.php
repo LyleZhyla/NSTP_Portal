@@ -228,6 +228,13 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                         <span class="audience-save-status ml-2" role="status"></span>
                                     </form>
                                 </details>
+                                <form class="material-delete mt-3" action="endpoint/upload-learning-material.php" method="post">
+                                    <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
+                                    <input type="hidden" name="action" value="delete_material">
+                                    <input type="hidden" name="material_id" value="<?= (int)$material['material_id'] ?>">
+                                    <button class="btn btn-outline-danger btn-sm" type="submit"><i class="fas fa-trash-alt mr-1" aria-hidden="true"></i> Delete Material</button>
+                                    <span class="material-delete-status ml-2" role="status"></span>
+                                </form>
                                 <?php endif; ?>
                             </article>
                             <?php endforeach; ?>

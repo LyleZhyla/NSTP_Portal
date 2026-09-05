@@ -70,4 +70,23 @@
             }
         });
     });
+    document.querySelectorAll('.material-delete').forEach(form => {
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!window.confirm('Delete this learning material permanently? This cannot be undone.')) return;
+            const button = form.querySelector('button[type="submit"]');
+            const status = form.querySelector('.material-delete-status');
+            button.disabled = true;
+            status.textContent = 'Deleting...';
+            try {
+                const response = await fetch(form.action, {method:'POST', body:new FormData(form), credentials:'same-origin'});
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Unable to delete material.');
+                window.location.reload();
+            } catch (error) {
+                status.textContent = error.message || 'Unable to delete material. Please retry.';
+                button.disabled = false;
+            }
+        });
+    });
 })();
