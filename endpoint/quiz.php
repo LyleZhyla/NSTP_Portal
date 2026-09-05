@@ -88,6 +88,44 @@ try {
         }
         $conn->commit(); quizReply(200,['id'=>$id,'revision'=>(int)quizFind($conn,$id)['revision']]);
     }
+    if ($action === 'clear_drafts') {
+        $conn->beginTransaction();
+        $quiz = quizFind($conn, $id, true);
+        if (!quizCanManage($actor, $quiz)) throw new DomainException('You cannot manage this quiz.');
+        if ($quiz['status'] === 'published') throw new DomainException('Close or unpublish the quiz before clearing student drafts.');
+
+        $fileStmt = $conn->prepare("SELECT f.storage_name
+            FROM tbl_quiz_files f
+            INNER JOIN tbl_quiz_responses r ON r.response_id = f.response_id
+            WHERE r.quiz_id = ? AND r.state = 'draft'");
+        $fileStmt->execute([$id]);
+        $storedFiles = $fileStmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $conn->prepare("DELETE FROM tbl_quiz_focus_events
+            WHERE response_id IN (SELECT response_id FROM tbl_quiz_responses WHERE quiz_id = ? AND state = 'draft')")->execute([$id]);
+        $conn->prepare("DELETE FROM tbl_quiz_files
+            WHERE response_id IN (SELECT response_id FROM tbl_quiz_responses WHERE quiz_id = ? AND state = 'draft')")->execute([$id]);
+        $deleteStmt = $conn->prepare("DELETE FROM tbl_quiz_responses WHERE quiz_id = ? AND state = 'draft'");
+        $deleteStmt->execute([$id]);
+        $deleted = $deleteStmt->rowCount();
+
+        $submittedStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_quiz_responses WHERE quiz_id = ? AND state = 'submitted'");
+        $submittedStmt->execute([$id]);
+        $submitted = (int)$submittedStmt->fetchColumn();
+        $conn->commit();
+
+        foreach ($storedFiles as $storageName) {
+            $path = learningMaterialStoragePath($storageName);
+            if (is_file($path)) @unlink($path);
+        }
+        quizReply(200, [
+            'deleted' => $deleted,
+            'locked' => $submitted > 0,
+            'draft_count' => 0,
+            'submitted_count' => $submitted,
+            'message' => $deleted . ' student draft' . ($deleted === 1 ? '' : 's') . ' cleared.',
+        ]);
+    }
     if (in_array($action,['response','grade','attachment'],true)) {
         $responseId = (int)($post ? ($data['response_id']??0) : ($_GET['response_id']??0));
         $stmt=$conn->prepare('SELECT r.*,u.full_name,u.username FROM tbl_quiz_responses r JOIN tbl_users u ON u.user_id=r.user_id WHERE r.response_id=?'); $stmt->execute([$responseId]); $response=$stmt->fetch(PDO::FETCH_ASSOC);
@@ -144,12 +182,12 @@ try {
     if (!quizVisible($conn,$actor,$quiz,$viewer) && !($action==='load' && quizResponse($conn,$id,$actor['user_id']))) throw new DomainException('This quiz is not available to your account.');
     if ($action==='load') {
         $edit=($_GET['mode']??'')==='edit';if($edit&&!$manager)throw new DomainException('You cannot edit this quiz.');
-        $response=quizResponse($conn,$id,$actor['user_id']);$locked=false;
-        if($edit){$count=$conn->prepare('SELECT 1 FROM tbl_quiz_responses WHERE quiz_id=? LIMIT 1');$count->execute([$id]);$locked=(bool)$count->fetchColumn();}
+        $response=quizResponse($conn,$id,$actor['user_id']);$locked=false;$draftCount=0;$submittedCount=0;
+        if($edit){$count=$conn->prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN state='draft' THEN 1 ELSE 0 END) AS drafts, SUM(CASE WHEN state='submitted' THEN 1 ELSE 0 END) AS submitted FROM tbl_quiz_responses WHERE quiz_id=?");$count->execute([$id]);$responseCounts=$count->fetch(PDO::FETCH_ASSOC);$draftCount=(int)($responseCounts['drafts']??0);$submittedCount=(int)($responseCounts['submitted']??0);$locked=(int)($responseCounts['total']??0)>0;}
         $accepting=true;$acceptingMessage='';try{if(!quizVisible($conn,$actor,$quiz,$viewer))throw new InvalidArgumentException('This quiz is no longer available to your component.');quizAccepting($quiz,$d);}catch(InvalidArgumentException $error){$accepting=false;$acceptingMessage=$error->getMessage();}
         $focusEvents=$response&&!empty($d['monitor_focus'])?quizFocusIds($conn,$response['response_id']):[];
         $opensAt=!empty($d['opens_at'])?strtotime($d['opens_at']):false;
-        quizReply(200,['id'=>$id,'status'=>$quiz['status'],'revision'=>(int)$quiz['revision'],'manager'=>$manager,'locked'=>$locked,'accepting'=>$accepting,'accepting_message'=>$acceptingMessage,'server_time'=>time(),'opens_at_epoch'=>$opensAt===false?null:$opensAt,'definition'=>$edit?$d:quizPublicDefinition($d),
+        quizReply(200,['id'=>$id,'status'=>$quiz['status'],'revision'=>(int)$quiz['revision'],'manager'=>$manager,'locked'=>$locked,'draft_count'=>$draftCount,'submitted_count'=>$submittedCount,'accepting'=>$accepting,'accepting_message'=>$acceptingMessage,'server_time'=>time(),'opens_at_epoch'=>$opensAt===false?null:$opensAt,'definition'=>$edit?$d:quizPublicDefinition($d),
             'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released'],'violations'=>count($focusEvents),'focus_events'=>$focusEvents,'timing'=>quizResponseTiming($response,$d)]:null]);
     }
     if (!in_array($action,['start','draft','submit','timeout_submit','upload_file','focus_event'],true)) throw new InvalidArgumentException('Unknown action.');

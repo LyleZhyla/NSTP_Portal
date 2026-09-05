@@ -83,7 +83,7 @@ sock.bind(('127.0.0.1', 0))
 port = sock.getsockname()[1]
 sock.close()
 log = open(root / 'server.log', 'w')
-process = subprocess.Popen(['php', '-d', 'session.save_path=' + str(root / 'sessions'), '-S', '127.0.0.1:' + str(port), '-t', str(root), str(root / 'router.php')], stdout=log, stderr=log, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+process = subprocess.Popen(['php', '-d', 'display_errors=0', '-d', 'session.save_path=' + str(root / 'sessions'), '-S', '127.0.0.1:' + str(port), '-t', str(root), str(root / 'router.php')], stdout=log, stderr=log, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
 
 def request(path, user=1, data=None, headers=None):
@@ -176,6 +176,14 @@ try:
     check(api('duplicate', 2, id=quiz_id)[0] == 403, 'duplicate requires management access')
     status, copy = api('duplicate', id=quiz_id)
     check(status == 200 and get('load', id=copy['id'], mode='edit')[1]['locked'] is False, 'duplicate creates unlocked draft')
+    status, resettable = api('save', definition=definition([q('resettable')]))
+    api('status', id=resettable['id'], status='published')
+    check(api('start', 4, id=resettable['id'])[0] == 200, 'student creates removable draft')
+    check(api('clear_drafts', id=resettable['id'])[0] == 403, 'published quiz drafts cannot be cleared')
+    api('status', id=resettable['id'], status='closed')
+    before_clear = get('load', id=resettable['id'], mode='edit')[1]
+    status, cleared = api('clear_drafts', id=resettable['id'])
+    check(before_clear['draft_count'] == 1 and before_clear['submitted_count'] == 0 and status == 200 and cleared['deleted'] == 1 and cleared['locked'] is False, 'manager clears drafts and unlocks quiz editing')
     status, auto = api('save', definition=definition([q('auto')], release_immediately=True))
     api('status', id=auto['id'], status='published')
     status, answer = api('submit', 4, id=auto['id'], answers={'auto': 'B'})
