@@ -34,3 +34,5 @@ checkQuiz($timed['time_limit_minutes']===15,'quiz time limit is normalized');
 invalidQuiz(fn()=>quizDefinition(array_merge(definitionFixture([questionFixture('timer','multiple_choice')]),['time_limit_minutes'=>10081])),'quiz time limit maximum enforced');
 $timing=quizResponseTiming(['started_at'=>date('Y-m-d H:i:s',time()-901)],$timed);
 checkQuiz($timing['expired']&&$timing['remaining_seconds']===0,'server detects expired quiz response');
+$multiDestination=quizDefinition(array_merge(definitionFixture([questionFixture('multi','multiple_choice')]),['grade_column_ids'=>[11,12,11]]));
+checkQuiz($multiDestination['grade_column_ids']===[11,12]&&$multiDestination['grade_column_id']===11,'multiple grade destinations are normalized');

@@ -42,7 +42,7 @@ try {
     if ($action === 'save') {
         if (!canUploadLearningMaterials($actor)) quizReply(403, ['message' => 'Only administrators and coordinators can create quizzes.']);
         $d = quizDefinition($data['definition'] ?? null);
-        if (!empty($d['grade_column_id'])) { ensureGradeTables($conn); seedDefaultGradeColumns($conn); }
+        if (!empty($d['grade_column_ids'])) { ensureGradeTables($conn); seedDefaultGradeColumns($conn); }
         quizValidateGradeDestination($conn, $actor, $d);
         $conn->beginTransaction();
         if ($id) {
@@ -83,7 +83,7 @@ try {
             if (!in_array($status,['draft','published','closed'],true)) throw new InvalidArgumentException('Invalid publication status.');
             $conn->prepare('UPDATE tbl_quizzes SET status=?, revision=revision+1 WHERE quiz_id=?')->execute([$status,$id]);
         } else {
-            $d = json_decode($quiz['definition_json'],true); $d['title'] = mb_substr($d['title'],0,170).' (copy)'; $d['grade_column_id'] = 0;
+            $d = json_decode($quiz['definition_json'],true); $d['title'] = mb_substr($d['title'],0,170).' (copy)'; $d['grade_column_id'] = 0; $d['grade_column_ids'] = [];
             $stmt = $conn->prepare('INSERT INTO tbl_quizzes (uploaded_by,title,description,audience_components,audience_rotc_levels,definition_json) VALUES (?,?,?,?,?,?)');
             $stmt->execute([$actor['user_id'],$d['title'],$d['description'],$quiz['audience_components'],$quiz['audience_rotc_levels'],quizJson($d)]); $id=(int)$conn->lastInsertId();
         }

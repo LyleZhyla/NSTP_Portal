@@ -58,11 +58,12 @@ INSERT INTO tbl_public_student_registrations VALUES(4,4,'4','CWTS',NULL),(5,5,'5
 CREATE TABLE tbl_quizzes(quiz_id INTEGER PRIMARY KEY AUTOINCREMENT,uploaded_by INTEGER,title TEXT,description TEXT,audience_components TEXT,audience_rotc_levels TEXT,definition_json TEXT,status TEXT DEFAULT 'draft',revision INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE tbl_quiz_responses(response_id INTEGER PRIMARY KEY AUTOINCREMENT,quiz_id INTEGER,user_id INTEGER,answers_json TEXT,grades_json TEXT,state TEXT DEFAULT 'draft',score NUMERIC DEFAULT 0,total_points NUMERIC DEFAULT 0,needs_review INTEGER DEFAULT 0,released INTEGER DEFAULT 0,started_at TEXT DEFAULT CURRENT_TIMESTAMP,submitted_at TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(quiz_id,user_id));
 CREATE TABLE tbl_grade_columns(grade_column_id INTEGER PRIMARY KEY,label TEXT,group_label TEXT,max_score NUMERIC,program_scope TEXT,is_default INTEGER DEFAULT 0,created_by INTEGER,is_active INTEGER DEFAULT 1,sort_order INTEGER DEFAULT 0);
-INSERT INTO tbl_grade_columns(grade_column_id,label,group_label,max_score,program_scope,is_default,created_by) VALUES(1,'Quiz total','Written work',50,NULL,1,NULL),(2,'CWTS test','Written work',100,'CWTS',0,2),(3,'ROTC test','Written work',100,'ROTC',0,6);
+INSERT INTO tbl_grade_columns(grade_column_id,label,group_label,max_score,program_scope,is_default,created_by) VALUES(1,'Quiz total','Written work',50,NULL,1,NULL),(2,'CWTS test','Written work',100,'CWTS',0,2),(3,'ROTC test','Written work',100,'ROTC',0,6),(4,'LTS test','Written work',100,'LTS',0,NULL);
 CREATE TABLE tbl_grade_scores(grade_score_id INTEGER PRIMARY KEY AUTOINCREMENT,grade_column_id INTEGER,tbl_student_id INTEGER,score NUMERIC,updated_by INTEGER,UNIQUE(grade_column_id,tbl_student_id));
 CREATE TABLE tbl_learning_materials(material_id INTEGER PRIMARY KEY,title TEXT,description TEXT,original_name TEXT,file_size INTEGER,file_content BLOB,storage_name TEXT,uploaded_by INTEGER,audience_components TEXT,audience_rotc_levels TEXT,is_open INTEGER DEFAULT 1);
 INSERT INTO tbl_learning_materials VALUES(1,'Video','','lesson.mp4',4,X'74657374',NULL,2,'CWTS','',1),(2,'Legacy','','lesson.txt',4,X'74657374',NULL,1,NULL,NULL,1);
 CREATE TABLE tbl_quiz_grade_links(quiz_id INTEGER PRIMARY KEY,grade_column_id INTEGER);
+CREATE TABLE tbl_quiz_grade_destinations(quiz_id INTEGER,grade_column_id INTEGER,PRIMARY KEY(quiz_id,grade_column_id));
 CREATE TABLE tbl_quiz_focus_events(response_id INTEGER,event_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(response_id,event_id));
 CREATE TABLE tbl_quiz_files(file_id INTEGER PRIMARY KEY AUTOINCREMENT,response_id INTEGER,question_id TEXT,original_name TEXT,storage_name TEXT,file_size INTEGER);
 ''')
@@ -211,7 +212,9 @@ try:
     choices = get('grade_columns', 2)[1]['columns']
     check({c['grade_column_id'] for c in choices} == {1, 2}, 'coordinator destinations respect column ownership and program')
     check(api('save', 2, definition=definition(grade_column_id=3))[0] == 400, 'forged inaccessible destination rejected')
-    check(api('save', definition=definition(grade_column_id=2))[0] == 400, 'component-specific destination rejects mismatched quiz audience')
+    mismatched_destination = definition(grade_column_id=2)
+    mismatched_destination.update(components=['LTS'], levels=[])
+    check(api('save', definition=mismatched_destination)[0] == 400, 'component-specific destination rejects mismatched quiz audience')
     status, linked = api('save', 2, definition=definition([q('scored')], grade_column_id=1, release_immediately=True, allow_edit=True))
     check(status == 200, 'coordinator saves grading-sheet destination')
     api('status', 2, id=linked['id'], status='published')
@@ -237,9 +240,20 @@ try:
     api('grade', response_id=manual_answer['response_id'], answers_version=detail['answers_version'], grades={'essay': {'points': 2}}, release=False)
     check(sheet_score() == (25,), 'withdrawing release removes that quiz contribution')
     dup = api('duplicate', id=manual['id'])[1]
-    check(get('load', id=dup['id'], mode='edit')[1]['definition']['grade_column_id'] == 0, 'duplicate does not silently reuse grading destination')
+    duplicate_definition = get('load', id=dup['id'], mode='edit')[1]['definition']
+    check(duplicate_definition['grade_column_id'] == 0 and duplicate_definition['grade_column_ids'] == [], 'duplicate does not silently reuse grading destinations')
     current = get('load', id=linked['id'], mode='edit')[1]
     check(api('save', 2, id=linked['id'], revision=current['revision'], definition=definition(grade_column_id=0))[0] == 403, 'destination locks once responses exist')
+    multi_definition = definition([q('multi_scored')], grade_column_ids=[2, 4], release_immediately=True)
+    multi_definition.update(components=['CWTS', 'LTS'], levels=[])
+    status, multi = api('save', definition=multi_definition)
+    check(status == 200, 'super admin saves multiple component grade destinations')
+    api('status', id=multi['id'], status='published')
+    check(api('submit', 4, id=multi['id'], answers={'multi_scored': 'B'})[0] == 200, 'CWTS student submits multi-destination quiz')
+    check(api('submit', 5, id=multi['id'], answers={'multi_scored': 'B'})[0] == 200, 'LTS student submits multi-destination quiz')
+    check(db.execute('SELECT score FROM tbl_grade_scores WHERE grade_column_id=2 AND tbl_student_id=4').fetchone() == (100,), 'CWTS score reaches CWTS destination')
+    check(db.execute('SELECT score FROM tbl_grade_scores WHERE grade_column_id=4 AND tbl_student_id=5').fetchone() == (100,), 'LTS score reaches LTS destination')
+    check(db.execute('SELECT COUNT(*) FROM tbl_grade_scores WHERE (grade_column_id=4 AND tbl_student_id=4) OR (grade_column_id=2 AND tbl_student_id=5)').fetchone()[0] == 0, 'component destinations do not receive other component scores')
     def availability(user, value, material=1, csrf='test-token'):
         return request('/learning-management.php?tab=learning-materials', user, urllib.parse.urlencode(dict(action='set_availability', material_id=material, is_open=value, csrf_token=csrf)).encode(), {'Content-Type': 'application/x-www-form-urlencoded'})[0]
     video_url = '/endpoint/download-learning-material.php?id=1&play=1'

@@ -12,6 +12,15 @@ function ensureQuizTables(PDO $conn) {
         quiz_id INT PRIMARY KEY, grade_column_id INT NOT NULL,
         INDEX idx_quiz_grade_column (grade_column_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $conn->exec("CREATE TABLE IF NOT EXISTS tbl_quiz_grade_destinations (
+        quiz_id INT NOT NULL, grade_column_id INT NOT NULL,
+        PRIMARY KEY (quiz_id, grade_column_id), INDEX idx_quiz_destination_column (grade_column_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if ($conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+        $conn->exec("INSERT OR IGNORE INTO tbl_quiz_grade_destinations (quiz_id,grade_column_id) SELECT quiz_id,grade_column_id FROM tbl_quiz_grade_links");
+    } else {
+        $conn->exec("INSERT IGNORE INTO tbl_quiz_grade_destinations (quiz_id,grade_column_id) SELECT quiz_id,grade_column_id FROM tbl_quiz_grade_links");
+    }
     $conn->exec("CREATE TABLE IF NOT EXISTS tbl_quizzes (
         quiz_id INT AUTO_INCREMENT PRIMARY KEY, uploaded_by INT NOT NULL,
         title VARCHAR(180) NOT NULL, description TEXT NOT NULL,
@@ -90,9 +99,16 @@ function quizDefinition($input) {
         'components' => explode(',', $audience['components']), 'levels' => array_values(array_filter(explode(',', $audience['levels']))),
         'confirmation' => quizText($input['confirmation'] ?? 'Your response has been recorded.', 1000),
         'accent' => preg_match('/^#[0-9a-f]{6}$/iD', $input['accent'] ?? '') ? $input['accent'] : '#198754'];
-    $column = $input['grade_column_id'] ?? 0;
-    if (filter_var($column, FILTER_VALIDATE_INT) === false || (int)$column < 0) throw new InvalidArgumentException('Invalid score destination.');
-    $d['grade_column_id'] = (int)$column;
+    $columns = $input['grade_column_ids'] ?? null;
+    if ($columns === null) $columns = [(int)($input['grade_column_id'] ?? 0)];
+    if (!is_array($columns) || count($columns) > 20) throw new InvalidArgumentException('Invalid score destinations.');
+    $columnIds = [];
+    foreach ($columns as $column) {
+        if (filter_var($column, FILTER_VALIDATE_INT) === false || (int)$column < 0) throw new InvalidArgumentException('Invalid score destination.');
+        if ((int)$column > 0) $columnIds[] = (int)$column;
+    }
+    $d['grade_column_ids'] = array_values(array_unique($columnIds));
+    $d['grade_column_id'] = $d['grade_column_ids'][0] ?? 0;
     $timeLimit = $input['time_limit_minutes'] ?? 0;
     if (filter_var($timeLimit, FILTER_VALIDATE_INT) === false || (int)$timeLimit < 0 || (int)$timeLimit > 10080) {
         throw new InvalidArgumentException('Time limit must be from 1 minute to 7 days, or 0 for no limit.');
