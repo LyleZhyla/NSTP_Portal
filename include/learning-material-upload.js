@@ -27,10 +27,9 @@
             controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 90000);
             try {
-                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin', signal: controller.signal});
+                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin', signal: controller.signal, headers:{'Accept':'application/json'}});
                 let data;
-                try { data = await response.json(); }
-                catch (_) { throw new Error('The server returned an invalid response. Please retry.'); }
+                data = await window.readMaterialJsonResponse(response);
                 if (!response.ok) {
                     const error = new Error(data.message || 'Upload failed. Please retry.');
                     error.permanent = response.status < 500;

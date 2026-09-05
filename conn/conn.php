@@ -23,6 +23,13 @@ try {
 
     date_default_timezone_set('Asia/Manila');
 } catch (PDOException $e) {
+    if (stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false) {
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo json_encode(['message' => 'The database is temporarily unavailable. Start MySQL or contact the server administrator.']);
+        exit;
+    }
     die("Connection failed: " . $e->getMessage());
 }
 ?>

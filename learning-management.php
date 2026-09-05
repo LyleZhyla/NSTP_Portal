@@ -259,6 +259,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script src="include/material-api.js?v=<?= (int) filemtime(__DIR__ . '/include/material-api.js') ?>"></script>
 <script src="include/learning-material-audience.js?v=<?= (int) filemtime(__DIR__ . '/include/learning-material-audience.js') ?>"></script>
 <script src="include/learning-material-upload.js?v=<?= (int) filemtime(__DIR__ . '/include/learning-material-upload.js') ?>"></script>
 <script>

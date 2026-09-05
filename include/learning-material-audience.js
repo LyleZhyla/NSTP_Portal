@@ -31,8 +31,8 @@
             toggle.disabled = true;
             status.textContent = 'Saving...';
             try {
-                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin'});
-                const data = await response.json();
+                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin', headers:{'Accept':'application/json'}});
+                const data = await window.readMaterialJsonResponse(response);
                 if (!response.ok) throw new Error(data.message || 'Unable to update availability.');
                 toggle.checked = Number(data.is_open) === 1;
                 const label = toggle.checked ? 'Open to eligible students' : 'Closed to students';
@@ -56,8 +56,8 @@
             button.disabled = group.disabled = true;
             status.textContent = 'Saving...';
             try {
-                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin'});
-                const data = await response.json();
+                const response = await fetch(form.action, {method: 'POST', body, credentials: 'same-origin', headers:{'Accept':'application/json'}});
+                const data = await window.readMaterialJsonResponse(response);
                 if (!response.ok) throw new Error(data.message || 'Unable to save audience.');
                 const components = audience['components[]'];
                 const label = components.join(', ') + (components.includes('ROTC') ? ' | ROTC students: ' + audience['rotc_levels[]'].join(', ') : '');
@@ -79,8 +79,8 @@
             button.disabled = true;
             status.textContent = 'Deleting...';
             try {
-                const response = await fetch(form.action, {method:'POST', body:new FormData(form), credentials:'same-origin'});
-                const data = await response.json();
+                const response = await fetch(form.action, {method:'POST', body:new FormData(form), credentials:'same-origin', headers:{'Accept':'application/json'}});
+                const data = await window.readMaterialJsonResponse(response);
                 if (!response.ok) throw new Error(data.message || 'Unable to delete material.');
                 window.location.reload();
             } catch (error) {

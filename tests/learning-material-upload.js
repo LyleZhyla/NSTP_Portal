@@ -20,7 +20,7 @@ async function scenario(components, levels) {
             return (selector.includes('component')?components:levels).map(value=>({value}));
         }
     };
-    const window = {addEventListener:()=>{}, location:{assign:()=>{}}};
+    const window = {addEventListener:()=>{}, location:{assign:()=>{}},readMaterialJsonResponse:async response=>JSON.parse(await response.text())};
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../include/learning-material-upload.js'),'utf8'), {
         window, FormData, AbortController, Event,
         document:{getElementById:id=>id==='material-upload-form'?form:controls[id], dispatchEvent:()=>{}},
@@ -28,7 +28,7 @@ async function scenario(components, levels) {
         fetch:async (_, options)=>{
             const body = options.body, action = body.get('action'); calls.push(body);
             assert.equal(audience.disabled,true,'fields locked during request');
-            return {ok:true,json:async()=>action==='start'?{upload_id:'test',chunk_size:4,received:0}:action==='chunk'?{received:4}:{success:true}};
+            return {ok:true,status:200,text:async()=>JSON.stringify(action==='start'?{upload_id:'test',chunk_size:4,received:0}:action==='chunk'?{received:4}:{success:true})};
         }
     });
     await handlers.submit({preventDefault:()=>{}});
