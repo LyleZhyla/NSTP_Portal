@@ -2,6 +2,15 @@
 session_start();
 require_once __DIR__ . '/../include/quizzes.php';
 function quizReply($status, $data) { http_response_code($status); header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: no-store'); echo quizJson($data); exit; }
+function quizForcedSubmissionAnswers(PDO $conn, $responseId, array $definition, $answers) {
+    $answers = quizForcedAnswers($definition, is_array($answers) ? $answers : []);
+    foreach ($definition['questions'] as $question) {
+        if ($question['type'] !== 'file' || !isset($answers[$question['id']])) continue;
+        try { quizCheckFiles($conn, $responseId, [$question], $answers); }
+        catch (InvalidArgumentException $error) { unset($answers[$question['id']]); }
+    }
+    return $answers;
+}
 if (empty($_SESSION['user_id'])) quizReply(401, ['message' => 'Please sign in again.']);
 require_once __DIR__ . '/../conn/conn.php';
 if (!learningMaterialSessionActive($conn)) quizReply(401, ['message' => 'Your session has expired.']);
@@ -113,7 +122,7 @@ try {
         $released=$manager || (bool)$response['released'];
         $definition=json_decode($quiz['definition_json'],true);
         $stmt=$conn->prepare('SELECT file_id,original_name,question_id FROM tbl_quiz_files WHERE response_id=?');$stmt->execute([$responseId]);
-        quizReply(200,['response_id'=>$responseId,'name'=>$response['full_name'],'username'=>$response['username'],'violations'=>quizFocusCount($conn,$responseId),'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),
+        quizReply(200,['response_id'=>$responseId,'name'=>$response['full_name'],'username'=>$response['username'],'violations'=>quizFocusCount($conn,$responseId),'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'timing'=>quizResponseTiming($response,$definition),
             'answers_version'=>$manager?$response['answers_json']:null,'grades'=>$released?json_decode($response['grades_json'],true):null,'score'=>$released?$response['score']:null,'total'=>$response['total_points'],'released'=>(bool)$response['released'],'needs_review'=>(bool)$response['needs_review'],
             'definition'=>$released?$definition:quizPublicDefinition($definition),'files'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
     }
@@ -139,26 +148,33 @@ try {
         $response=quizResponse($conn,$id,$actor['user_id']);$count=$conn->prepare('SELECT COUNT(*) FROM tbl_quiz_responses WHERE quiz_id=?');$count->execute([$id]);
         $accepting=true;$acceptingMessage='';try{if(!quizVisible($conn,$actor,$quiz,$viewer))throw new InvalidArgumentException('This quiz is no longer available to your component.');quizAccepting($quiz,$d);}catch(InvalidArgumentException $error){$accepting=false;$acceptingMessage=$error->getMessage();}
         quizReply(200,['id'=>$id,'status'=>$quiz['status'],'revision'=>(int)$quiz['revision'],'manager'=>$manager,'locked'=>(int)$count->fetchColumn()>0,'accepting'=>$accepting,'accepting_message'=>$acceptingMessage,'definition'=>$edit?$d:quizPublicDefinition($d),
-            'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released'],'violations'=>quizFocusCount($conn,$response['response_id']),'focus_events'=>quizFocusIds($conn,$response['response_id'])]:null]);
+            'response'=>$response?['response_id'=>(int)$response['response_id'],'state'=>$response['state'],'answers'=>json_decode($response['answers_json'],true),'released'=>(bool)$response['released'],'violations'=>quizFocusCount($conn,$response['response_id']),'focus_events'=>quizFocusIds($conn,$response['response_id']),'timing'=>quizResponseTiming($response,$d)]:null]);
     }
-    if (!in_array($action,['start','draft','submit','upload_file','focus_event'],true)) throw new InvalidArgumentException('Unknown action.');
+    if (!in_array($action,['start','draft','submit','timeout_submit','upload_file','focus_event'],true)) throw new InvalidArgumentException('Unknown action.');
     if ($actor['role']!=='student') throw new DomainException('Only students submit quiz responses. Use Preview to test your quiz.');
     $conn->beginTransaction();$quiz=quizFind($conn,$id,true);$d=json_decode($quiz['definition_json'],true);
     if (!quizVisible($conn,$actor,$quiz,$viewer)) throw new DomainException('This quiz is no longer available.');
     quizAccepting($quiz,$d);
     $response=quizResponse($conn,$id,$actor['user_id']);
     if (!$response) {
-        $conn->prepare("INSERT INTO tbl_quiz_responses (quiz_id,user_id,answers_json,grades_json) VALUES (?,?,'{}','{}')")->execute([$id,$actor['user_id']]);$response=quizResponse($conn,$id,$actor['user_id']);
+        $conn->prepare("INSERT INTO tbl_quiz_responses (quiz_id,user_id,answers_json,grades_json,started_at) VALUES (?,?,'{}','{}',?)")->execute([$id,$actor['user_id'],date('Y-m-d H:i:s')]);$response=quizResponse($conn,$id,$actor['user_id']);
     }
     $violations=quizFocusCount($conn,$response['response_id']);
+    $timing=quizResponseTiming($response,$d);$timedOut=$timing&&$timing['expired'];
     if ($action==='focus_event' && $response['state']==='submitted' && $violations>=3) {
         $conn->commit(); quizReply(200,['response_id'=>(int)$response['response_id'],'violations'=>$violations,'forced'=>true]);
     }
-    if ($response['state']==='submitted'&&(!$d['allow_edit']||$violations>=3)) {
-        if ($action==='submit') {$conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'message'=>'Response already submitted.']);}
+    if ($response['state']==='submitted'&&(!$d['allow_edit']||$violations>=3||$timedOut)) {
+        if (in_array($action,['submit','timeout_submit'],true)) {$conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'message'=>'Response already submitted.']);}
         throw new DomainException('You already submitted this quiz.');
     }
-    $forced=false;
+    if ($action==='timeout_submit'&&!$timedOut) throw new InvalidArgumentException('The quiz time limit has not ended yet.');
+    $forced=false;$forcedByTimeout=false;
+    if ($response['state']==='draft'&&$timedOut) {
+        $forced=true;$forcedByTimeout=true;$action='submit';
+        $provided=is_array($data['answers']??null)?$data['answers']:json_decode($response['answers_json'],true);
+        $data['answers']=quizForcedSubmissionAnswers($conn,$response['response_id'],$d,$provided);
+    }
     if ($action==='focus_event') {
         if (empty($d['monitor_focus'])) throw new DomainException('Focus monitoring is disabled for this quiz.');
         $eventId=$data['event_id']??'';
@@ -171,13 +187,9 @@ try {
         $violations=quizFocusCount($conn,$response['response_id']);
         if ($violations<3) { $conn->commit(); quizReply(200,['violations'=>$violations,'forced'=>false]); }
         $forced=true; $action='submit';
-        $data['answers']=quizForcedAnswers($d, is_array($data['answers']??null)?$data['answers']:json_decode($response['answers_json'],true));
-        foreach ($d['questions'] as $q) if ($q['type']==='file' && isset($data['answers'][$q['id']])) {
-            try { quizCheckFiles($conn,$response['response_id'],[$q],$data['answers']); }
-            catch (InvalidArgumentException $error) { unset($data['answers'][$q['id']]); }
-        }
+        $data['answers']=quizForcedSubmissionAnswers($conn,$response['response_id'],$d,is_array($data['answers']??null)?$data['answers']:json_decode($response['answers_json'],true));
     }
-    if ($action==='start') {$events=quizFocusIds($conn,$response['response_id']);$conn->commit();quizReply(200,['violations'=>$violations,'focus_events'=>$events,'response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true)]);}
+    if ($action==='start') {$events=quizFocusIds($conn,$response['response_id']);$conn->commit();quizReply(200,['violations'=>$violations,'focus_events'=>$events,'response_id'=>(int)$response['response_id'],'answers'=>json_decode($response['answers_json'],true),'timing'=>$timing]);}
     if ($action==='upload_file') {
         $qid=$data['question_id']??'';$question=null;foreach($d['questions'] as $q)if($q['id']===$qid&&$q['type']==='file')$question=$q;
         if(!$question)throw new InvalidArgumentException('Invalid file question.');
@@ -202,7 +214,7 @@ try {
         $conn->prepare("UPDATE tbl_quiz_responses SET answers_json=?,grades_json=?,state='submitted',score=?,total_points=?,needs_review=?,released=?,submitted_at=CURRENT_TIMESTAMP WHERE response_id=?")->execute([quizJson($graded['answers']),quizJson($graded['grades']),$graded['score'],$graded['total'],$graded['needs_review']?1:0,$release?1:0,$response['response_id']]);
     }
     if ($action === 'submit') quizSyncGrade($conn, $quiz, $actor['user_id']);
-    $conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'forced'=>$forced,'violations'=>$violations,'message'=>$action==='submit'?$d['confirmation']:'Draft saved.']);
+    $conn->commit();quizReply(200,['response_id'=>(int)$response['response_id'],'forced'=>$forced,'timed_out'=>$forcedByTimeout,'violations'=>$violations,'message'=>$action==='submit'?$d['confirmation']:'Draft saved.']);
 } catch (Throwable $error) {
     if (isset($conn)&&$conn->inTransaction())$conn->rollBack();
     if(isset($path)&&$action==='upload_file'&&is_file($path))unlink($path);

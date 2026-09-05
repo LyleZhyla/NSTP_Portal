@@ -93,6 +93,11 @@ function quizDefinition($input) {
     $column = $input['grade_column_id'] ?? 0;
     if (filter_var($column, FILTER_VALIDATE_INT) === false || (int)$column < 0) throw new InvalidArgumentException('Invalid score destination.');
     $d['grade_column_id'] = (int)$column;
+    $timeLimit = $input['time_limit_minutes'] ?? 0;
+    if (filter_var($timeLimit, FILTER_VALIDATE_INT) === false || (int)$timeLimit < 0 || (int)$timeLimit > 10080) {
+        throw new InvalidArgumentException('Time limit must be from 1 minute to 7 days, or 0 for no limit.');
+    }
+    $d['time_limit_minutes'] = (int)$timeLimit;
     foreach (['shuffle_questions', 'shuffle_options', 'allow_edit', 'release_immediately', 'monitor_focus'] as $key) $d[$key] = ($input[$key] ?? false) === true;
     foreach (['opens_at', 'closes_at'] as $key) {
         $value = $input[$key] ?? '';
@@ -240,6 +245,21 @@ function quizAccepting(array $quiz, array $d) {
 function quizResponse(PDO $conn, $quizId, $userId) {
     $stmt = $conn->prepare('SELECT * FROM tbl_quiz_responses WHERE quiz_id = ? AND user_id = ?'); $stmt->execute([$quizId, $userId]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+function quizResponseTiming(array $response, array $definition) {
+    $minutes = max(0, (int)($definition['time_limit_minutes'] ?? 0));
+    if ($minutes === 0) return null;
+    $started = strtotime((string)($response['started_at'] ?? ''));
+    if ($started === false) $started = time();
+    $now = time();
+    $deadline = $started + ($minutes * 60);
+    return [
+        'started_at' => $started,
+        'deadline_at' => $deadline,
+        'server_time' => $now,
+        'remaining_seconds' => max(0, $deadline - $now),
+        'expired' => $now >= $deadline,
+    ];
 }
 function quizCheckFiles(PDO $conn, $responseId, array $questions, array $answers) {
     foreach ($questions as $q) if ($q['type'] === 'file' && !empty($answers[$q['id']])) {

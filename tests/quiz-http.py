@@ -273,6 +273,20 @@ try:
     check(focus('c'*32, answers={})[1]['response_id'] == forced['response_id'], 'forced submission retry is idempotent')
     check(api('draft',4,id=monitored['id'],answers={})[0] == 403 and api('start',4,id=monitored['id'])[0] == 403, 'forced response cannot reopen despite allow edit')
     check(get('responses',id=monitored['id'])[1]['responses'][0]['violations'] == 3, 'manager sees focus count in response list')
+    timed = api('save', definition=definition([q('timed_choice'), q('timed_required', 'short_answer')], time_limit_minutes=1))[1]
+    api('status', id=timed['id'], status='published')
+    timed_start = api('start', 4, id=timed['id'])[1]
+    check(timed_start['timing']['remaining_seconds'] <= 60 and timed_start['timing']['remaining_seconds'] > 0, 'server starts persistent quiz countdown')
+    check(api('timeout_submit', 4, id=timed['id'], answers={'timed_choice': 'B'})[0] == 400, 'early timeout submission rejected')
+    db.execute("UPDATE tbl_quiz_responses SET started_at=datetime('now','-2 minutes') WHERE response_id=?", (timed_start['response_id'],))
+    db.commit()
+    timed_load = get('load', 4, id=timed['id'])[1]
+    check(timed_load['response']['timing']['expired'] is True and timed_load['response']['timing']['remaining_seconds'] == 0, 'refresh cannot reset expired timer')
+    status, timed_submit = api('timeout_submit', 4, id=timed['id'], answers={'timed_choice': 'B'})
+    check(status == 200 and timed_submit['forced'] and timed_submit['timed_out'], 'expired quiz auto-submits incomplete current answers')
+    timed_row = db.execute('SELECT state,score,total_points FROM tbl_quiz_responses WHERE response_id=?', (timed_start['response_id'],)).fetchone()
+    check(timed_row == ('submitted', 2, 4), 'timeout keeps valid answers and scores unanswered items as zero')
+    check(api('timeout_submit', 4, id=timed['id'], answers={})[1]['response_id'] == timed_start['response_id'], 'timeout submission retry is idempotent')
     stored_name = 'a' * 64 + '.php'
     stored_path = root / 'storage/learning-materials' / stored_name
     stored_path.write_bytes(b'<?php http_response_code(404); exit; __halt_compiler();\nvideo')

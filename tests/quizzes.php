@@ -29,3 +29,8 @@ invalidQuiz(fn()=>quizDefinition(definitionFixture([questionFixture('a','multipl
 invalidQuiz(fn()=>quizMediaUrl('javascript:alert(1)'),'unsafe image URL denied');
 checkQuiz(quizMediaUrl('https://youtu.be/abcdefghijk',true)==='https://www.youtube-nocookie.com/embed/abcdefghijk','safe YouTube embed');
 checkQuiz(quizCanManage(['role'=>'coordinator','user_id'=>1],['uploaded_by'=>1])&&!quizCanManage(['role'=>'coordinator','user_id'=>2],['uploaded_by'=>1]),'coordinator ownership');
+$timed=quizDefinition(array_merge(definitionFixture([questionFixture('timer','multiple_choice')]),['time_limit_minutes'=>15]));
+checkQuiz($timed['time_limit_minutes']===15,'quiz time limit is normalized');
+invalidQuiz(fn()=>quizDefinition(array_merge(definitionFixture([questionFixture('timer','multiple_choice')]),['time_limit_minutes'=>10081])),'quiz time limit maximum enforced');
+$timing=quizResponseTiming(['started_at'=>date('Y-m-d H:i:s',time()-901)],$timed);
+checkQuiz($timing['expired']&&$timing['remaining_seconds']===0,'server detects expired quiz response');
