@@ -1251,9 +1251,9 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     <?php endif; ?>
                                 </div>
                                 <div class="form-group">
-                                    <label for="studentMasterlistFolder">Facilitator / Section (Excel only)</label>
+                                    <label for="studentMasterlistFolder">Facilitator / Section Folder</label>
                                     <select class="form-control" id="studentMasterlistFolder" name="student_folder">
-                                        <option value="">All Accessible Sections</option>
+                                        <option value="">All Accessible Folders</option>
                                         <?php foreach ($gradeExportFolders as $folder): ?>
                                         <option value="<?php echo htmlspecialchars($folder['key']); ?>" data-component="<?php echo htmlspecialchars($folder['program'] ?? ''); ?>">
                                             <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
@@ -1265,10 +1265,10 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     <label for="studentMasterlistFormat">File Format</label>
                                     <select class="form-control" id="studentMasterlistFormat" name="format">
                                         <option value="xlsx">Excel (.xlsx)</option>
-                                        <option value="pdf">PDF - All Sections (.zip)</option>
+                                        <option value="pdf">PDF (.pdf for one folder / .zip for all)</option>
                                     </select>
                                 </div>
-                                <p class="muted-note">Includes student name, program, and assigned section without the student number. PDF automatically includes all accessible sections in one ZIP, with one PDF named after each section.</p>
+                                <p class="muted-note">Includes student name, program, and assigned section without the student number. Choose one folder to download only its records. For PDF, selecting all folders creates one ZIP with a separate PDF for each section.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download Student Masterlist
                                 </button>
@@ -1643,7 +1643,6 @@ const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5
 
 const studentMasterlistComponent = document.getElementById('studentMasterlistComponent');
 const studentMasterlistFolder = document.getElementById('studentMasterlistFolder');
-const studentMasterlistFormat = document.getElementById('studentMasterlistFormat');
 if (studentMasterlistComponent && studentMasterlistFolder) {
     const filterStudentMasterlistFolders = function() {
         const component = studentMasterlistComponent.value;
@@ -1666,19 +1665,6 @@ if (studentMasterlistComponent && studentMasterlistFolder) {
 
     studentMasterlistComponent.addEventListener('change', filterStudentMasterlistFolders);
     filterStudentMasterlistFolders();
-}
-
-if (studentMasterlistFolder && studentMasterlistFormat) {
-    const updateStudentMasterlistScope = function() {
-        const downloadsAllSections = studentMasterlistFormat.value === 'pdf';
-        if (downloadsAllSections) {
-            studentMasterlistFolder.value = '';
-        }
-        studentMasterlistFolder.disabled = downloadsAllSections;
-    };
-
-    studentMasterlistFormat.addEventListener('change', updateStudentMasterlistScope);
-    updateStudentMasterlistScope();
 }
 
 document.querySelectorAll('.download-card > .card-header').forEach(function(header) {

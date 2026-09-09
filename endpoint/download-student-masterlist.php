@@ -36,9 +36,7 @@ $format = strtolower(trim((string) ($_GET['format'] ?? 'xlsx')));
 if (!in_array($format, ['xlsx', 'pdf'], true)) {
     $format = 'xlsx';
 }
-$folderKey = $format === 'pdf'
-    ? ''
-    : trim((string) ($_GET['student_folder'] ?? ''));
+$folderKey = trim((string) ($_GET['student_folder'] ?? ''));
 $selectedFacilitatorId = null;
 $selectedSection = '';
 $selectedFacilitatorName = '';
@@ -382,6 +380,20 @@ if ($format === 'pdf') {
             'filename' => masterlistSafeFilename($sectionName) . '.pdf',
             'content' => masterlistBuildPdf($sheetStudents, $sheetScopeLabel),
         ];
+    }
+
+    if ($selectedSection !== '' && count($pdfFiles) === 1) {
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        $pdfName = masterlistSafeFilename($selectedSection) . '.pdf';
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $pdfName . '"');
+        header('Content-Length: ' . strlen($pdfFiles[0]['content']));
+        header('Cache-Control: max-age=0');
+        header('X-Content-Type-Options: nosniff');
+        echo $pdfFiles[0]['content'];
+        exit();
     }
 
     while (ob_get_level() > 0) {
