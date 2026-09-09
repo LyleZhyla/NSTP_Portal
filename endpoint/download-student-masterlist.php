@@ -40,10 +40,44 @@ if (!in_array($format, ['xlsx', 'pdf'], true)) {
 $folderKey = trim((string) ($_GET['student_folder'] ?? ''));
 $fieldDefinitions = [
     'student_number' => ['label' => 'Student Number', 'width' => 20],
-    'student_name' => ['label' => 'Student Name', 'width' => 34],
-    'program' => ['label' => 'Program / Original Section', 'width' => 30],
-    'course_section' => ['label' => 'Assigned Section', 'width' => 22],
+    'student_name' => ['label' => 'Full Name', 'width' => 34],
+    'last_name' => ['label' => 'Last Name', 'width' => 22],
+    'extension_name' => ['label' => 'Extension Name', 'width' => 16],
+    'first_name' => ['label' => 'First Name', 'width' => 22],
+    'middle_name' => ['label' => 'Middle Name', 'width' => 22],
+    'place_of_birth' => ['label' => 'Place of Birth', 'width' => 30],
+    'date_of_birth' => ['label' => 'Date of Birth', 'width' => 16],
+    'age' => ['label' => 'Age', 'width' => 9],
+    'gender' => ['label' => 'Gender', 'width' => 14],
+    'religion' => ['label' => 'Religion', 'width' => 18],
+    'blood_type' => ['label' => 'Blood Type', 'width' => 12],
+    'height' => ['label' => 'Height', 'width' => 12],
+    'contact_number' => ['label' => 'Contact Number', 'width' => 20],
+    'email' => ['label' => 'Email Address', 'width' => 30],
+    'full_address' => ['label' => 'Complete Address', 'width' => 45],
+    'house_no' => ['label' => 'House No.', 'width' => 14],
+    'street' => ['label' => 'Street', 'width' => 24],
+    'barangay' => ['label' => 'Barangay', 'width' => 22],
+    'city_municipality' => ['label' => 'City / Municipality', 'width' => 24],
+    'province' => ['label' => 'Province', 'width' => 22],
+    'emergency_name' => ['label' => 'Emergency Contact Name', 'width' => 28],
+    'emergency_relationship' => ['label' => 'Relationship', 'width' => 18],
+    'emergency_contact_number' => ['label' => 'Emergency Contact Number', 'width' => 24],
+    'emergency_address' => ['label' => 'Emergency Contact Address', 'width' => 40],
+    'college' => ['label' => 'College', 'width' => 30],
+    'course' => ['label' => 'Course', 'width' => 30],
+    'major' => ['label' => 'Major', 'width' => 24],
+    'year_section' => ['label' => 'Year and Section', 'width' => 18],
+    'component' => ['label' => 'NSTP Component', 'width' => 18],
+    'rotc_ms_level' => ['label' => 'ROTC MS Level', 'width' => 16],
+    'shirt_size' => ['label' => 'Shirt Size', 'width' => 12],
+    'program' => ['label' => 'Original Program / Section', 'width' => 30],
+    'course_section' => ['label' => 'Assigned Folder / Section', 'width' => 24],
     'facilitator_name' => ['label' => 'Facilitator', 'width' => 28],
+    'generated_code' => ['label' => 'QR Identifier', 'width' => 28],
+    'formal_picture' => ['label' => 'Formal Picture File', 'width' => 38],
+    'registration_status' => ['label' => 'Registration Status', 'width' => 20],
+    'registration_date' => ['label' => 'Registration Date', 'width' => 22],
 ];
 $defaultFields = ['student_name', 'program', 'course_section'];
 $requestedFields = $_GET['data_fields'] ?? $defaultFields;
@@ -152,13 +186,60 @@ $componentExpression = "
 $studentSql = "
     SELECT
         s.tbl_student_id,
-        s.student_number,
+        COALESCE(NULLIF(r.student_number, ''), s.student_number, '') AS student_number,
         s.student_name,
+        COALESCE(r.last_name, '') AS last_name,
+        COALESCE(r.extension_name, '') AS extension_name,
+        COALESCE(r.first_name, '') AS first_name,
+        COALESCE(r.middle_name, '') AS middle_name,
+        COALESCE(r.place_of_birth, '') AS place_of_birth,
+        COALESCE(DATE_FORMAT(r.date_of_birth, '%Y-%m-%d'), '') AS date_of_birth,
+        CASE WHEN r.date_of_birth IS NULL THEN '' ELSE TIMESTAMPDIFF(YEAR, r.date_of_birth, CURDATE()) END AS age,
+        COALESCE(r.gender, '') AS gender,
+        COALESCE(r.religion, '') AS religion,
+        COALESCE(r.blood_type, '') AS blood_type,
+        COALESCE(r.height, '') AS height,
+        COALESCE(r.contact_number, '') AS contact_number,
+        COALESCE(NULLIF(r.email, ''), student_user.email, '') AS email,
+        TRIM(CONCAT_WS(', ', NULLIF(r.house_no, ''), NULLIF(r.street, ''), NULLIF(r.barangay, ''), NULLIF(r.city_municipality, ''), NULLIF(r.province, ''))) AS full_address,
+        COALESCE(r.house_no, '') AS house_no,
+        COALESCE(r.street, '') AS street,
+        COALESCE(r.barangay, '') AS barangay,
+        COALESCE(r.city_municipality, '') AS city_municipality,
+        COALESCE(r.province, '') AS province,
+        COALESCE(r.emergency_name, '') AS emergency_name,
+        COALESCE(r.emergency_relationship, '') AS emergency_relationship,
+        COALESCE(r.emergency_contact_number, '') AS emergency_contact_number,
+        COALESCE(r.emergency_address, '') AS emergency_address,
+        COALESCE(r.college, '') AS college,
+        COALESCE(r.course, '') AS course,
+        COALESCE(r.major, '') AS major,
+        COALESCE(r.year_section, '') AS year_section,
+        COALESCE(NULLIF(r.component, ''), {$componentExpression}, '') AS component,
+        COALESCE(r.rotc_ms_level, '') AS rotc_ms_level,
+        COALESCE(NULLIF(student_user.shirt_size, ''), r.shirt_size, '') AS shirt_size,
         COALESCE(NULLIF(s.original_section, ''), 'N/A') AS program,
         COALESCE(NULLIF(s.course_section, ''), 'Unassigned') AS course_section,
-        {$facilitatorNameExpression} AS facilitator_name
+        {$facilitatorNameExpression} AS facilitator_name,
+        COALESCE(s.generated_code, '') AS generated_code,
+        COALESCE(r.formal_picture, '') AS formal_picture,
+        COALESCE(r.status, '') AS registration_status,
+        COALESCE(DATE_FORMAT(r.created_at, '%Y-%m-%d %H:%i:%s'), '') AS registration_date
     FROM tbl_student s
     LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
+    LEFT JOIN tbl_users student_user ON student_user.user_id = s.user_id
+    LEFT JOIN tbl_public_student_registrations r ON r.registration_id = (
+        SELECT r2.registration_id
+        FROM tbl_public_student_registrations r2
+        WHERE r2.registrant_role = 'student'
+          AND COALESCE(r2.status, 'submitted') <> 'account_deleted'
+          AND (
+              (s.user_id IS NOT NULL AND r2.user_id = s.user_id)
+              OR (NULLIF(s.student_number, '') IS NOT NULL AND r2.student_number = s.student_number)
+          )
+        ORDER BY r2.registration_id DESC
+        LIMIT 1
+    )
 ";
 $studentParams = [];
 $studentWhere = [];
@@ -329,6 +410,9 @@ function masterlistEscape($value) {
 function masterlistBuildPdf(array $sheetStudents, $scopeLabel, array $selectedFields, array $fieldDefinitions) {
     $facilitatorLabel = masterlistFacilitatorLabel($sheetStudents);
     $columnCount = count($selectedFields) + 1;
+    $pageSize = $columnCount > 9 ? 'A3' : 'A4';
+    $pageOrientation = $columnCount > 4 ? 'landscape' : 'portrait';
+    $bodyFontSize = $columnCount > 14 ? 6 : ($columnCount > 8 ? 7 : 9);
     $rows = '';
     foreach ($sheetStudents as $index => $student) {
         $rows .= '<tr><td class="number">' . ($index + 1) . '</td>';
@@ -348,7 +432,7 @@ function masterlistBuildPdf(array $sheetStudents, $scopeLabel, array $selectedFi
 
     $html = '<!doctype html><html><head><meta charset="UTF-8"><style>'
         . '@page { margin: 28px 28px 45px 28px; }'
-        . 'body { font-family: DejaVu Sans, sans-serif; color: #111; font-size: 9px; margin: 0; }'
+        . 'body { font-family: DejaVu Sans, sans-serif; color: #111; font-size: ' . $bodyFontSize . 'px; margin: 0; }'
         . '.title { background: #1F4E78; color: #fff; font-weight: bold; font-size: 16px; text-align: center; padding: 5px 0; }'
         . '.scope { font-weight: bold; font-size: 10px; text-align: center; padding: 3px 0; }'
         . '.facilitator { color: #7F6000; background: #FFF2CC; border: 2px solid #D6B656; font-weight: bold; font-size: 12px; text-align: center; padding: 5px 0; }'
@@ -373,14 +457,15 @@ function masterlistBuildPdf(array $sheetStudents, $scopeLabel, array $selectedFi
     $options->set('defaultFont', 'DejaVu Sans');
     $options->set('isRemoteEnabled', false);
     $dompdf = new Dompdf($options);
-    $dompdf->setPaper('A4', 'portrait');
+    $dompdf->setPaper($pageSize, $pageOrientation);
     $dompdf->loadHtml($html, 'UTF-8');
     $dompdf->render();
 
     $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans', 'normal');
     $canvas = $dompdf->getCanvas();
-    $canvas->page_text(28, 810, 'Generated by QR Attendance System', $font, 8, [0, 0, 0]);
-    $canvas->page_text(500, 810, 'Page {PAGE_NUM} of {PAGE_COUNT}', $font, 8, [0, 0, 0]);
+    $footerY = $canvas->get_height() - 20;
+    $canvas->page_text(28, $footerY, 'Generated by QR Attendance System', $font, 8, [0, 0, 0]);
+    $canvas->page_text($canvas->get_width() - 110, $footerY, 'Page {PAGE_NUM} of {PAGE_COUNT}', $font, 8, [0, 0, 0]);
     return $dompdf->output();
 }
 

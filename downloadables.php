@@ -1269,32 +1269,68 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     </select>
                                 </div>
                                 <fieldset class="form-group">
-                                    <legend class="col-form-label pt-0 font-weight-bold">Data to Include</legend>
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                                        <legend class="col-form-label pt-0 font-weight-bold mb-0">Data to Include</legend>
+                                        <div class="btn-group btn-group-sm" role="group" aria-label="Student masterlist field selection">
+                                            <button type="button" class="btn btn-outline-primary" id="selectAllMasterlistFields">Select All</button>
+                                            <button type="button" class="btn btn-outline-secondary" id="clearAllMasterlistFields">Clear All</button>
+                                        </div>
+                                    </div>
+                                    <?php
+                                    $masterlistFieldGroups = [
+                                        'Identity' => [
+                                            'student_number' => 'Student Number', 'student_name' => 'Full Name',
+                                            'last_name' => 'Last Name', 'extension_name' => 'Extension Name',
+                                            'first_name' => 'First Name', 'middle_name' => 'Middle Name',
+                                        ],
+                                        'Personal Information' => [
+                                            'place_of_birth' => 'Place of Birth', 'date_of_birth' => 'Date of Birth',
+                                            'age' => 'Age', 'gender' => 'Gender', 'religion' => 'Religion',
+                                            'blood_type' => 'Blood Type', 'height' => 'Height',
+                                        ],
+                                        'Contact and Address' => [
+                                            'contact_number' => 'Contact Number', 'email' => 'Email Address',
+                                            'full_address' => 'Complete Address', 'house_no' => 'House No.',
+                                            'street' => 'Street', 'barangay' => 'Barangay',
+                                            'city_municipality' => 'City / Municipality', 'province' => 'Province',
+                                        ],
+                                        'Emergency Contact' => [
+                                            'emergency_name' => 'Emergency Contact Name',
+                                            'emergency_relationship' => 'Relationship',
+                                            'emergency_contact_number' => 'Emergency Contact Number',
+                                            'emergency_address' => 'Emergency Contact Address',
+                                        ],
+                                        'Academic and NSTP' => [
+                                            'college' => 'College', 'course' => 'Course', 'major' => 'Major',
+                                            'year_section' => 'Year and Section', 'component' => 'NSTP Component',
+                                            'rotc_ms_level' => 'ROTC MS Level', 'shirt_size' => 'Shirt Size',
+                                            'program' => 'Original Program / Section',
+                                            'course_section' => 'Assigned Folder / Section',
+                                            'facilitator_name' => 'Facilitator',
+                                        ],
+                                        'Registration and QR' => [
+                                            'generated_code' => 'QR Identifier', 'formal_picture' => 'Formal Picture File',
+                                            'registration_status' => 'Registration Status',
+                                            'registration_date' => 'Registration Date',
+                                        ],
+                                    ];
+                                    $masterlistDefaultFields = ['student_name', 'program', 'course_section'];
+                                    ?>
                                     <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="custom-control custom-checkbox mb-2">
-                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldNumber" name="data_fields[]" value="student_number">
-                                                <label class="custom-control-label" for="masterlistFieldNumber">Student Number</label>
-                                            </div>
-                                            <div class="custom-control custom-checkbox mb-2">
-                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldName" name="data_fields[]" value="student_name" checked>
-                                                <label class="custom-control-label" for="masterlistFieldName">Student Name</label>
-                                            </div>
-                                            <div class="custom-control custom-checkbox mb-2">
-                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldProgram" name="data_fields[]" value="program" checked>
-                                                <label class="custom-control-label" for="masterlistFieldProgram">Program / Original Section</label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="custom-control custom-checkbox mb-2">
-                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldSection" name="data_fields[]" value="course_section" checked>
-                                                <label class="custom-control-label" for="masterlistFieldSection">Assigned Section</label>
-                                            </div>
-                                            <div class="custom-control custom-checkbox mb-2">
-                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldFacilitator" name="data_fields[]" value="facilitator_name">
-                                                <label class="custom-control-label" for="masterlistFieldFacilitator">Facilitator</label>
+                                        <?php foreach ($masterlistFieldGroups as $groupLabel => $fields): ?>
+                                        <div class="col-lg-4 col-md-6 mb-3">
+                                            <div class="border rounded p-3 h-100">
+                                                <div class="font-weight-bold text-muted mb-2"><?php echo htmlspecialchars($groupLabel); ?></div>
+                                                <?php foreach ($fields as $fieldKey => $fieldLabel): ?>
+                                                <?php $fieldId = 'masterlistField' . str_replace(' ', '', ucwords(str_replace('_', ' ', $fieldKey))); ?>
+                                                <div class="custom-control custom-checkbox mb-2">
+                                                    <input type="checkbox" class="custom-control-input student-masterlist-field" id="<?php echo htmlspecialchars($fieldId); ?>" name="data_fields[]" value="<?php echo htmlspecialchars($fieldKey); ?>" <?php echo in_array($fieldKey, $masterlistDefaultFields, true) ? 'checked' : ''; ?>>
+                                                    <label class="custom-control-label" for="<?php echo htmlspecialchars($fieldId); ?>"><?php echo htmlspecialchars($fieldLabel); ?></label>
+                                                </div>
+                                                <?php endforeach; ?>
                                             </div>
                                         </div>
+                                        <?php endforeach; ?>
                                     </div>
                                     <small class="form-text text-muted">Select at least one field. Row numbers are included automatically.</small>
                                 </fieldset>
@@ -1699,6 +1735,13 @@ if (studentMasterlistComponent && studentMasterlistFolder) {
 }
 
 if (studentMasterlistForm) {
+    const masterlistFields = Array.from(studentMasterlistForm.querySelectorAll('.student-masterlist-field'));
+    document.getElementById('selectAllMasterlistFields')?.addEventListener('click', function() {
+        masterlistFields.forEach(function(field) { field.checked = true; });
+    });
+    document.getElementById('clearAllMasterlistFields')?.addEventListener('click', function() {
+        masterlistFields.forEach(function(field) { field.checked = false; });
+    });
     studentMasterlistForm.addEventListener('submit', function(event) {
         if (!studentMasterlistForm.querySelector('.student-masterlist-field:checked')) {
             event.preventDefault();
