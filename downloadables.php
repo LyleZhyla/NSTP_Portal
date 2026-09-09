@@ -1226,7 +1226,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                 <?php if (!$isGraphsPage): ?>
                 <div class="row">
                     <div class="col-12 mb-3">
-                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-student-masterlist.php">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-student-masterlist.php" id="studentMasterlistForm">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-users mr-2"></i>Student Masterlist</h3>
                                 <div class="card-tools">
@@ -1268,7 +1268,37 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <option value="pdf">PDF (.pdf for one folder / .zip for all)</option>
                                     </select>
                                 </div>
-                                <p class="muted-note">Includes student name, program, and assigned section without the student number. Choose one folder to download only its records. For PDF, selecting all folders creates one ZIP with a separate PDF for each section.</p>
+                                <fieldset class="form-group">
+                                    <legend class="col-form-label pt-0 font-weight-bold">Data to Include</legend>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="custom-control custom-checkbox mb-2">
+                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldNumber" name="data_fields[]" value="student_number">
+                                                <label class="custom-control-label" for="masterlistFieldNumber">Student Number</label>
+                                            </div>
+                                            <div class="custom-control custom-checkbox mb-2">
+                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldName" name="data_fields[]" value="student_name" checked>
+                                                <label class="custom-control-label" for="masterlistFieldName">Student Name</label>
+                                            </div>
+                                            <div class="custom-control custom-checkbox mb-2">
+                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldProgram" name="data_fields[]" value="program" checked>
+                                                <label class="custom-control-label" for="masterlistFieldProgram">Program / Original Section</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="custom-control custom-checkbox mb-2">
+                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldSection" name="data_fields[]" value="course_section" checked>
+                                                <label class="custom-control-label" for="masterlistFieldSection">Assigned Section</label>
+                                            </div>
+                                            <div class="custom-control custom-checkbox mb-2">
+                                                <input type="checkbox" class="custom-control-input student-masterlist-field" id="masterlistFieldFacilitator" name="data_fields[]" value="facilitator_name">
+                                                <label class="custom-control-label" for="masterlistFieldFacilitator">Facilitator</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <small class="form-text text-muted">Select at least one field. Row numbers are included automatically.</small>
+                                </fieldset>
+                                <p class="muted-note">Choose one folder to download only its records. For PDF, selecting all folders creates one ZIP with a separate PDF for each section.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download Student Masterlist
                                 </button>
@@ -1643,6 +1673,7 @@ const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5
 
 const studentMasterlistComponent = document.getElementById('studentMasterlistComponent');
 const studentMasterlistFolder = document.getElementById('studentMasterlistFolder');
+const studentMasterlistForm = document.getElementById('studentMasterlistForm');
 if (studentMasterlistComponent && studentMasterlistFolder) {
     const filterStudentMasterlistFolders = function() {
         const component = studentMasterlistComponent.value;
@@ -1665,6 +1696,15 @@ if (studentMasterlistComponent && studentMasterlistFolder) {
 
     studentMasterlistComponent.addEventListener('change', filterStudentMasterlistFolders);
     filterStudentMasterlistFolders();
+}
+
+if (studentMasterlistForm) {
+    studentMasterlistForm.addEventListener('submit', function(event) {
+        if (!studentMasterlistForm.querySelector('.student-masterlist-field:checked')) {
+            event.preventDefault();
+            Swal.fire('Select Data', 'Choose at least one student data field to include in the download.', 'warning');
+        }
+    });
 }
 
 document.querySelectorAll('.download-card > .card-header').forEach(function(header) {

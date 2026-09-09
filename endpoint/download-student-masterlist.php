@@ -7,6 +7,7 @@ require_once '../include/user-permissions.php';
 require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -37,6 +38,28 @@ if (!in_array($format, ['xlsx', 'pdf'], true)) {
     $format = 'xlsx';
 }
 $folderKey = trim((string) ($_GET['student_folder'] ?? ''));
+$fieldDefinitions = [
+    'student_number' => ['label' => 'Student Number', 'width' => 20],
+    'student_name' => ['label' => 'Student Name', 'width' => 34],
+    'program' => ['label' => 'Program / Original Section', 'width' => 30],
+    'course_section' => ['label' => 'Assigned Section', 'width' => 22],
+    'facilitator_name' => ['label' => 'Facilitator', 'width' => 28],
+];
+$defaultFields = ['student_name', 'program', 'course_section'];
+$requestedFields = $_GET['data_fields'] ?? $defaultFields;
+if (!is_array($requestedFields)) {
+    $requestedFields = [$requestedFields];
+}
+$selectedFields = [];
+foreach ($requestedFields as $requestedField) {
+    $requestedField = trim((string) $requestedField);
+    if (isset($fieldDefinitions[$requestedField]) && !in_array($requestedField, $selectedFields, true)) {
+        $selectedFields[] = $requestedField;
+    }
+}
+if (!$selectedFields) {
+    die('Please select at least one student data field.');
+}
 $selectedFacilitatorId = null;
 $selectedSection = '';
 $selectedFacilitatorName = '';
@@ -218,19 +241,24 @@ function masterlistFacilitatorLabel(array $sheetStudents) {
         : 'Unassigned';
 }
 
-function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabel) {
+function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabel, array $selectedFields, array $fieldDefinitions) {
     $facilitatorLabel = masterlistFacilitatorLabel($sheetStudents);
+    $lastColumnIndex = count($selectedFields) + 1;
+    $lastColumn = Coordinate::stringFromColumnIndex($lastColumnIndex);
 
-    $sheet->mergeCells('A1:D1');
+    $sheet->mergeCells("A1:{$lastColumn}1");
     $sheet->setCellValue('A1', 'STUDENT MASTERLIST');
-    $sheet->mergeCells('A2:D2');
+    $sheet->mergeCells("A2:{$lastColumn}2");
     $sheet->setCellValue('A2', $scopeLabel);
-    $sheet->mergeCells('A3:D3');
+    $sheet->mergeCells("A3:{$lastColumn}3");
     $sheet->setCellValue('A3', 'Facilitator: ' . $facilitatorLabel);
-    $sheet->mergeCells('A4:D4');
+    $sheet->mergeCells("A4:{$lastColumn}4");
     $sheet->setCellValue('A4', 'Generated: ' . date('F j, Y g:i A') . ' | Total Students: ' . count($sheetStudents));
 
-    $headers = ['No.', 'Student Name', 'Program', 'Assigned Section'];
+    $headers = ['No.'];
+    foreach ($selectedFields as $field) {
+        $headers[] = $fieldDefinitions[$field]['label'];
+    }
     foreach ($headers as $index => $header) {
         $sheet->setCellValue([$index + 1, 6], $header);
     }
@@ -238,21 +266,25 @@ function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabe
     $rowNumber = 7;
     foreach ($sheetStudents as $index => $student) {
         $sheet->setCellValue([1, $rowNumber], $index + 1);
-        $sheet->setCellValueExplicit([2, $rowNumber], (string) ($student['student_name'] ?? ''), DataType::TYPE_STRING);
-        $sheet->setCellValueExplicit([3, $rowNumber], (string) ($student['program'] ?? 'N/A'), DataType::TYPE_STRING);
-        $sheet->setCellValueExplicit([4, $rowNumber], (string) ($student['course_section'] ?? 'Unassigned'), DataType::TYPE_STRING);
+        foreach ($selectedFields as $fieldIndex => $field) {
+            $sheet->setCellValueExplicit(
+                [$fieldIndex + 2, $rowNumber],
+                (string) ($student[$field] ?? ''),
+                DataType::TYPE_STRING
+            );
+        }
         $rowNumber++;
     }
 
     $lastDataRow = max(6, $rowNumber - 1);
-    $sheet->getStyle('A1:D1')->applyFromArray([
+    $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
         'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4E78']],
         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
     ]);
-    $sheet->getStyle('A2:D4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-    $sheet->getStyle('A2:D3')->getFont()->setBold(true);
-    $sheet->getStyle('A3:D3')->applyFromArray([
+    $sheet->getStyle("A2:{$lastColumn}4")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+    $sheet->getStyle("A2:{$lastColumn}3")->getFont()->setBold(true);
+    $sheet->getStyle("A3:{$lastColumn}3")->applyFromArray([
         'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => '7F6000']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF2CC']],
         'borders' => [
@@ -264,49 +296,54 @@ function masterlistBuildSheet(Worksheet $sheet, array $sheetStudents, $scopeLabe
         ],
     ]);
     $sheet->getRowDimension(3)->setRowHeight(22);
-    $sheet->getStyle('A6:D6')->applyFromArray([
+    $sheet->getStyle("A6:{$lastColumn}6")->applyFromArray([
         'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
     ]);
-    $sheet->getStyle("A6:D{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B7B7B7');
+    $sheet->getStyle("A6:{$lastColumn}{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B7B7B7');
     if ($rowNumber > 7) {
         $sheet->getStyle("A7:A{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("C7:D{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     }
-    $sheet->getStyle("A6:D{$lastDataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+    $sheet->getStyle("A6:{$lastColumn}{$lastDataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
 
     $sheet->getColumnDimension('A')->setWidth(7);
-    $sheet->getColumnDimension('B')->setWidth(34);
-    $sheet->getColumnDimension('C')->setWidth(30);
-    $sheet->getColumnDimension('D')->setWidth(22);
+    foreach ($selectedFields as $fieldIndex => $field) {
+        $column = Coordinate::stringFromColumnIndex($fieldIndex + 2);
+        $sheet->getColumnDimension($column)->setWidth($fieldDefinitions[$field]['width']);
+    }
     $sheet->getRowDimension(1)->setRowHeight(25);
     $sheet->freezePane('A7');
-    $sheet->setAutoFilter("A6:D{$lastDataRow}");
+    $sheet->setAutoFilter("A6:{$lastColumn}{$lastDataRow}");
     $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
     $sheet->getPageSetup()->setFitToWidth(1)->setFitToHeight(0);
     $sheet->getPageMargins()->setTop(0.4)->setRight(0.3)->setLeft(0.3)->setBottom(0.4);
     $sheet->getHeaderFooter()->setOddFooter('&LGenerated by QR Attendance System&RPage &P of &N');
-    $sheet->getPageSetup()->setPrintArea("A1:D{$lastDataRow}");
+    $sheet->getPageSetup()->setPrintArea("A1:{$lastColumn}{$lastDataRow}");
 }
 
 function masterlistEscape($value) {
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function masterlistBuildPdf(array $sheetStudents, $scopeLabel) {
+function masterlistBuildPdf(array $sheetStudents, $scopeLabel, array $selectedFields, array $fieldDefinitions) {
     $facilitatorLabel = masterlistFacilitatorLabel($sheetStudents);
+    $columnCount = count($selectedFields) + 1;
     $rows = '';
     foreach ($sheetStudents as $index => $student) {
-        $rows .= '<tr>'
-            . '<td class="number">' . ($index + 1) . '</td>'
-            . '<td class="student-name">' . masterlistEscape($student['student_name'] ?? '') . '</td>'
-            . '<td>' . masterlistEscape($student['program'] ?? 'N/A') . '</td>'
-            . '<td class="center">' . masterlistEscape($student['course_section'] ?? 'Unassigned') . '</td>'
-            . '</tr>';
+        $rows .= '<tr><td class="number">' . ($index + 1) . '</td>';
+        foreach ($selectedFields as $field) {
+            $rows .= '<td>' . masterlistEscape($student[$field] ?? '') . '</td>';
+        }
+        $rows .= '</tr>';
     }
     if ($rows === '') {
-        $rows = '<tr><td class="center" colspan="4">No students found for this section.</td></tr>';
+        $rows = '<tr><td class="center" colspan="' . $columnCount . '">No students found for this section.</td></tr>';
+    }
+
+    $headerCells = '<th class="number">No.</th>';
+    foreach ($selectedFields as $field) {
+        $headerCells .= '<th>' . masterlistEscape($fieldDefinitions[$field]['label']) . '</th>';
     }
 
     $html = '<!doctype html><html><head><meta charset="UTF-8"><style>'
@@ -321,11 +358,7 @@ function masterlistBuildPdf(array $sheetStudents, $scopeLabel) {
         . 'tr { page-break-inside: avoid; }'
         . 'th { background: #4472C4; color: #fff; font-weight: bold; text-align: center; border: 1px solid #B7B7B7; padding: 3px 2px; }'
         . 'td { border: 1px solid #B7B7B7; padding: 2px 3px; vertical-align: middle; line-height: 1.15; white-space: normal; word-wrap: break-word; overflow-wrap: break-word; }'
-        . 'td.student-name { word-break: break-word; }'
         . '.number { width: 7%; text-align: center; }'
-        . '.student { width: 38%; }'
-        . '.program { width: 32%; }'
-        . '.section { width: 23%; }'
         . '.center { text-align: center; }'
         . '</style></head><body>'
         . '<div class="title">STUDENT MASTERLIST</div>'
@@ -333,10 +366,7 @@ function masterlistBuildPdf(array $sheetStudents, $scopeLabel) {
         . '<div class="facilitator">Facilitator: ' . masterlistEscape($facilitatorLabel) . '</div>'
         . '<div class="generated">Generated: ' . masterlistEscape(date('F j, Y g:i A'))
         . ' | Total Students: ' . count($sheetStudents) . '</div>'
-        . '<table><thead><tr>'
-        . '<th class="number">No.</th><th class="student">Student Name</th>'
-        . '<th class="program">Program</th><th class="section">Assigned Section</th>'
-        . '</tr></thead><tbody>' . $rows . '</tbody></table>'
+        . '<table><thead><tr>' . $headerCells . '</tr></thead><tbody>' . $rows . '</tbody></table>'
         . '</body></html>';
 
     $options = new Options();
@@ -378,7 +408,7 @@ if ($format === 'pdf') {
         $sheetScopeLabel = $baseScopeLabel . ' | Section: ' . $sectionName;
         $pdfFiles[] = [
             'filename' => masterlistSafeFilename($sectionName) . '.pdf',
-            'content' => masterlistBuildPdf($sheetStudents, $sheetScopeLabel),
+            'content' => masterlistBuildPdf($sheetStudents, $sheetScopeLabel, $selectedFields, $fieldDefinitions),
         ];
     }
 
@@ -437,7 +467,7 @@ foreach ($studentSheetGroups as $sectionName => $sheetStudents) {
     if ($separateBySection) {
         $sheetScopeLabel .= ' | Section: ' . $sectionName;
     }
-    masterlistBuildSheet($sheet, $sheetStudents, $sheetScopeLabel);
+    masterlistBuildSheet($sheet, $sheetStudents, $sheetScopeLabel, $selectedFields, $fieldDefinitions);
     $sheetIndex++;
 }
 $spreadsheet->setActiveSheetIndex(0);
