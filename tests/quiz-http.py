@@ -227,6 +227,11 @@ try:
     db.commit()
     hidden_choices = get('grade_columns', 2)[1]['columns']
     check({c['grade_column_id'] for c in hidden_choices} == {2}, 'quiz builder excludes columns hidden from the coordinator grading sheet')
+    db.execute("INSERT INTO tbl_grade_column_visibility(grade_column_id,user_id,program_scope,is_hidden,updated_by) VALUES(1,6,'ROTC',1,6)")
+    db.commit()
+    admin_choices = get('grade_columns', 1)[1]['columns']
+    check(1 not in {c['grade_column_id'] for c in admin_choices}, 'super admin excludes a default column hidden by every applicable coordinator')
+    db.execute('DELETE FROM tbl_grade_column_visibility WHERE grade_column_id=1 AND user_id=6')
     db.execute('DELETE FROM tbl_grade_column_visibility WHERE grade_column_id=1 AND user_id=2')
     db.commit()
     choices = get('grade_columns', 2)[1]['columns']

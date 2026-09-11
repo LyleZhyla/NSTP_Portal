@@ -5,7 +5,28 @@ function quizGradeColumns(PDO $conn, array $actor) {
     if (!in_array($actor['role'], ['super_admin', 'coordinator'], true)) throw new DomainException('Only quiz authors can select a score destination.');
     $sql = 'SELECT c.grade_column_id,c.label,c.group_label,c.max_score,c.program_scope,c.is_default,c.created_by FROM tbl_grade_columns c WHERE c.is_active=1 AND c.max_score>0';
     $params = [];
-    if ($actor['role'] !== 'super_admin') {
+    if ($actor['role'] === 'super_admin') {
+        $sql .= " AND (
+            c.is_default=0
+            OR NOT EXISTS (
+                SELECT 1 FROM tbl_users coordinator
+                WHERE coordinator.role='coordinator'
+                  AND (c.program_scope IS NULL OR coordinator.program=c.program_scope)
+            )
+            OR EXISTS (
+                SELECT 1 FROM tbl_users coordinator
+                WHERE coordinator.role='coordinator'
+                  AND (c.program_scope IS NULL OR coordinator.program=c.program_scope)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM tbl_grade_column_visibility v
+                      WHERE v.grade_column_id=c.grade_column_id
+                        AND v.user_id=coordinator.user_id
+                        AND v.program_scope=COALESCE(c.program_scope,coordinator.program,'global')
+                        AND v.is_hidden=1
+                  )
+            )
+        )";
+    } else {
         $program = normalizeProgram($actor['program'] ?? null);
         $visibilityScope = $program ?: 'global';
         $sql .= ' AND (c.program_scope IS NULL OR c.program_scope=?) AND (c.is_default=1 OR c.created_by IS NULL OR c.created_by=?)
