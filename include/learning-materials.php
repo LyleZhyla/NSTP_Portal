@@ -64,6 +64,8 @@ function learningMaterialViewer(PDO $conn, array $actor) {
     $stmt = $conn->prepare('SELECT s.*, creator.role AS creator_role, creator.program AS creator_program FROM tbl_student s LEFT JOIN tbl_users creator ON creator.user_id = s.created_by WHERE s.user_id = ? ORDER BY s.tbl_student_id DESC LIMIT 1');
     $stmt->execute([$actor['user_id']]);
     $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $actor['student_name'] = trim((string) ($student['student_name'] ?? ''));
+    $actor['course_section'] = trim((string) ($student['course_section'] ?? ''));
     $number = $student['student_number'] ?? '';
     $stmt = $conn->prepare("SELECT component, rotc_ms_level FROM tbl_public_student_registrations WHERE user_id = ? OR (? <> '' AND student_number = ?) ORDER BY registration_id DESC LIMIT 1");
     $stmt->execute([$actor['user_id'], $number, $number]);
@@ -73,6 +75,20 @@ function learningMaterialViewer(PDO $conn, array $actor) {
         $actor['ms_level'] = ($student ? getRotcStudentMsLevel($conn, $student) : normalizeRotcMsLevel($registration['rotc_ms_level'] ?? null)) ?: 'MS-1';
     }
     return $actor;
+}
+
+function learningMaterialQuizFormUrl($courseSection, $studentName) {
+    $courseSection = trim((string) $courseSection);
+    $studentName = trim((string) $studentName);
+    if ($courseSection === '' || $studentName === '') return null;
+
+    $query = http_build_query([
+        'usp' => 'pp_url',
+        'entry.1210477944' => $courseSection,
+        'entry.120892430' => $studentName,
+    ], '', '&', PHP_QUERY_RFC3986);
+
+    return 'https://docs.google.com/forms/d/e/1FAIpQLSdUGHc4vf8azung5r3evyNnjQUJaGPc54AWx2ZfHWec5Vl8PQ/viewform?' . $query;
 }
 
 // Use the exact same filter for the list, its count, and direct downloads.

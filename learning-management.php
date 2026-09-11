@@ -31,10 +31,15 @@ if ($canUploadMaterials && empty($_SESSION['learning_material_csrf'])) {
 $materials = [];
 $materialsError = false;
 $materialPageCount = 1;
+$materialQuizUrl = null;
 $materialPage = max(1, (int) (filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1));
 try {
     ensureLearningMaterialsTable($conn);
-    $visibility = learningMaterialAccessSql(learningMaterialViewer($conn, $materialActor));
+    $materialViewer = learningMaterialViewer($conn, $materialActor);
+    $visibility = learningMaterialAccessSql($materialViewer);
+    if ($materialActor['role'] === 'student') {
+        $materialQuizUrl = learningMaterialQuizFormUrl($materialViewer['course_section'] ?? '', $materialViewer['student_name'] ?? '');
+    }
     $countStmt = $conn->prepare('SELECT COUNT(*) FROM tbl_learning_materials m WHERE ' . $visibility['sql']);
     $countStmt->execute($visibility['params']);
     $materialCount = (int) $countStmt->fetchColumn();
@@ -187,6 +192,17 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 <p class="text-muted">There are no modules, reading materials, or lesson resources available at this time.</p>
                             </div>
                             <?php else: ?>
+                            <?php if ($materialQuizUrl): ?>
+                            <div class="alert alert-light border d-flex flex-column flex-sm-row align-items-sm-center justify-content-between mb-3" role="region" aria-label="Learning materials quiz">
+                                <div class="mr-sm-3 mb-2 mb-sm-0">
+                                    <strong>Ready to take the quiz?</strong>
+                                    <div class="small text-muted">Your section and name will be filled in automatically.</div>
+                                </div>
+                                <a class="btn btn-success btn-sm text-nowrap" href="<?= materialEscape($materialQuizUrl) ?>">
+                                    <i class="fas fa-clipboard-check mr-1" aria-hidden="true"></i> Take Quiz
+                                </a>
+                            </div>
+                            <?php endif; ?>
                             <h2 class="h5 mb-3">Available Materials <span class="text-muted">(<?= $materialCount ?>)</span></h2>
                             <?php foreach ($materials as $material): ?>
                             <article class="border rounded p-3 mb-3">
