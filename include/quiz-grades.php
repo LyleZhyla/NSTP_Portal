@@ -3,13 +3,21 @@ require_once __DIR__ . '/grade-schema.php';
 
 function quizGradeColumns(PDO $conn, array $actor) {
     if (!in_array($actor['role'], ['super_admin', 'coordinator'], true)) throw new DomainException('Only quiz authors can select a score destination.');
-    $sql = 'SELECT grade_column_id,label,group_label,max_score,program_scope,is_default,created_by FROM tbl_grade_columns WHERE is_active=1 AND max_score>0';
+    $sql = 'SELECT c.grade_column_id,c.label,c.group_label,c.max_score,c.program_scope,c.is_default,c.created_by FROM tbl_grade_columns c WHERE c.is_active=1 AND c.max_score>0';
     $params = [];
     if ($actor['role'] !== 'super_admin') {
-        $sql .= ' AND (program_scope IS NULL OR program_scope=?) AND (is_default=1 OR created_by IS NULL OR created_by=?)';
-        $params = [normalizeProgram($actor['program'] ?? null), $actor['user_id']];
+        $program = normalizeProgram($actor['program'] ?? null);
+        $visibilityScope = $program ?: 'global';
+        $sql .= ' AND (c.program_scope IS NULL OR c.program_scope=?) AND (c.is_default=1 OR c.created_by IS NULL OR c.created_by=?)
+            AND NOT EXISTS (
+                SELECT 1 FROM tbl_grade_column_visibility v
+                WHERE v.grade_column_id=c.grade_column_id AND v.user_id=?
+                  AND ((v.program_scope=?) OR (v.program_scope IS NULL AND ? IS NULL))
+                  AND v.is_hidden=1
+            )';
+        $params = [$program, $actor['user_id'], $actor['user_id'], $visibilityScope, $visibilityScope];
     }
-    $stmt = $conn->prepare($sql . ' ORDER BY group_label,sort_order,grade_column_id');
+    $stmt = $conn->prepare($sql . ' ORDER BY c.group_label,c.sort_order,c.grade_column_id');
     $stmt->execute($params);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }

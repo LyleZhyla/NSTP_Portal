@@ -60,6 +60,7 @@ CREATE TABLE tbl_quiz_responses(response_id INTEGER PRIMARY KEY AUTOINCREMENT,qu
 CREATE TABLE tbl_grade_columns(grade_column_id INTEGER PRIMARY KEY,label TEXT,group_label TEXT,max_score NUMERIC,program_scope TEXT,is_default INTEGER DEFAULT 0,created_by INTEGER,is_active INTEGER DEFAULT 1,sort_order INTEGER DEFAULT 0);
 INSERT INTO tbl_grade_columns(grade_column_id,label,group_label,max_score,program_scope,is_default,created_by) VALUES(1,'Quiz total','Written work',50,NULL,1,NULL),(2,'CWTS test','Written work',100,'CWTS',0,2),(3,'ROTC test','Written work',100,'ROTC',0,6),(4,'LTS test','Written work',100,'LTS',0,NULL);
 CREATE TABLE tbl_grade_scores(grade_score_id INTEGER PRIMARY KEY AUTOINCREMENT,grade_column_id INTEGER,tbl_student_id INTEGER,score NUMERIC,updated_by INTEGER,UNIQUE(grade_column_id,tbl_student_id));
+CREATE TABLE tbl_grade_column_visibility(grade_column_visibility_id INTEGER PRIMARY KEY AUTOINCREMENT,grade_column_id INTEGER,user_id INTEGER,program_scope TEXT,is_hidden INTEGER DEFAULT 0,updated_by INTEGER,UNIQUE(grade_column_id,user_id,program_scope));
 CREATE TABLE tbl_learning_materials(material_id INTEGER PRIMARY KEY,title TEXT,description TEXT,original_name TEXT,file_size INTEGER,file_content BLOB,storage_name TEXT,uploaded_by INTEGER,audience_components TEXT,audience_rotc_levels TEXT,is_open INTEGER DEFAULT 1);
 INSERT INTO tbl_learning_materials VALUES(1,'Video','','lesson.mp4',4,X'74657374',NULL,2,'CWTS','',1),(2,'Legacy','','lesson.txt',4,X'74657374',NULL,1,NULL,NULL,1);
 CREATE TABLE tbl_quiz_grade_links(quiz_id INTEGER PRIMARY KEY,grade_column_id INTEGER);
@@ -222,6 +223,12 @@ try:
     check(get('load', 5, id=quiz_id)[0] == 200 and get('load', 7, id=quiz_id)[0] == 403, 'new audience gains access and excluded audience loses access')
     check(get('load', 4, id=quiz_id)[1]['accepting'] is False and get('response', 4, response_id=rid)[1]['released'], 'excluded respondent retains grades but cannot keep answering')
     check(get('grade_columns', 4)[0] == 403, 'students cannot list grade destinations')
+    db.execute("INSERT INTO tbl_grade_column_visibility(grade_column_id,user_id,program_scope,is_hidden,updated_by) VALUES(1,2,'CWTS',1,2)")
+    db.commit()
+    hidden_choices = get('grade_columns', 2)[1]['columns']
+    check({c['grade_column_id'] for c in hidden_choices} == {2}, 'quiz builder excludes columns hidden from the coordinator grading sheet')
+    db.execute('DELETE FROM tbl_grade_column_visibility WHERE grade_column_id=1 AND user_id=2')
+    db.commit()
     choices = get('grade_columns', 2)[1]['columns']
     check({c['grade_column_id'] for c in choices} == {1, 2}, 'coordinator destinations respect column ownership and program')
     check(api('save', 2, definition=definition(grade_column_id=3))[0] == 400, 'forged inaccessible destination rejected')
