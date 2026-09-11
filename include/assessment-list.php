@@ -13,7 +13,12 @@ try {
 ?>
 <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
     <div><h2 class="h4 mb-1">Assessments</h2><p class="text-muted mb-2">Quizzes and activities for your component.</p></div>
-    <?php if (canUploadLearningMaterials($materialActor)): ?><a href="quiz.php?mode=edit" class="btn btn-success"><i class="fas fa-plus mr-1" aria-hidden="true"></i>Create Quiz</a><?php endif; ?>
+    <?php if (canUploadLearningMaterials($materialActor)): ?>
+    <div class="d-flex flex-wrap" style="gap:.5rem">
+        <a href="quiz.php?mode=edit" class="btn btn-success"><i class="fas fa-plus mr-1" aria-hidden="true"></i>Create System Quiz</a>
+        <a href="quiz.php?mode=edit&amp;type=google_form" class="btn btn-outline-success"><i class="fab fa-google mr-1" aria-hidden="true"></i>Add Google Form Quiz</a>
+    </div>
+    <?php endif; ?>
 </div>
 <?php if (!$quizzes): ?><div class="learning-empty"><span class="learning-empty-icon"><i class="fas fa-clipboard-check" aria-hidden="true"></i></span><h3 class="h5">No assessments yet</h3><p class="text-muted">Available quizzes will appear here.</p></div><?php endif; ?>
 <?php foreach ($quizzes as $quiz): $manage=quizCanManage($materialActor,$quiz); $quizDefinition=json_decode($quiz['definition_json'],true)?:[]; $externalQuiz=quizIsExternal($quizDefinition); ?>

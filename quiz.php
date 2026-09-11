@@ -32,7 +32,8 @@ if($requestedQuizId&&in_array($mode,['take','preview'],true)){
     }
 }
 if(empty($_SESSION['quiz_csrf']))$_SESSION['quiz_csrf']=bin2hex(random_bytes(32));
-$boot=['id'=>$requestedQuizId,'responseId'=>max(0,(int)($_GET['response_id']??0)),'mode'=>$mode,'role'=>$actor['role'],'csrf'=>$_SESSION['quiz_csrf'],'fileLimit'=>learningMaterialChunkLimit()];
+$defaultDelivery=($_GET['type']??'')==='google_form'?'google_form':'system';
+$boot=['id'=>$requestedQuizId,'responseId'=>max(0,(int)($_GET['response_id']??0)),'mode'=>$mode,'role'=>$actor['role'],'defaultDelivery'=>$defaultDelivery,'csrf'=>$_SESSION['quiz_csrf'],'fileLimit'=>learningMaterialChunkLimit()];
 ?>
 <!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Assessments - TAU NSTP</title>
