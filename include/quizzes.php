@@ -92,13 +92,69 @@ function quizMediaUrl($value, $video = false) {
     if (!is_string($id) || !preg_match('/^[a-zA-Z0-9_-]{11}$/D', $id)) throw new InvalidArgumentException('Enter a valid YouTube video link.');
     return 'https://www.youtube-nocookie.com/embed/' . $id;
 }
+
+function quizGoogleFormSettings($value) {
+    if (!is_string($value)) throw new InvalidArgumentException('Enter a pre-filled Google Form link.');
+    $url = trim(html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    if ($url === '' || strlen($url) > 8000 || preg_match('/[\r\n]/', $url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+        throw new InvalidArgumentException('Enter a valid pre-filled Google Form link.');
+    }
+    $parts = parse_url($url);
+    if (($parts['scheme'] ?? '') !== 'https' || strtolower($parts['host'] ?? '') !== 'docs.google.com'
+        || isset($parts['user'], $parts['pass'], $parts['port'])
+        || !preg_match('~^/forms/d/e/[A-Za-z0-9_-]+/viewform$~D', $parts['path'] ?? '')) {
+        throw new InvalidArgumentException('Use a Google Forms responder link from docs.google.com.');
+    }
+    $entryKeys = [];
+    foreach (explode('&', (string) ($parts['query'] ?? '')) as $pair) {
+        $key = rawurldecode(explode('=', $pair, 2)[0] ?? '');
+        if (preg_match('/^entry\.\d+$/D', $key) && !in_array($key, $entryKeys, true)) $entryKeys[] = $key;
+    }
+    if (count($entryKeys) < 2) {
+        throw new InvalidArgumentException('The pre-filled link must contain the ROTC section first and student name second.');
+    }
+    return ['url' => $url, 'section_entry' => $entryKeys[0], 'name_entry' => $entryKeys[1]];
+}
+
+function quizIsExternal(array $definition) {
+    return ($definition['delivery_mode'] ?? 'system') === 'google_form';
+}
+
+function quizExternalFormUrl(array $definition, array $viewer) {
+    if (!quizIsExternal($definition)) return null;
+    $courseSection = trim((string) ($viewer['course_section'] ?? ''));
+    $studentName = trim((string) ($viewer['student_name'] ?? ''));
+    if ($courseSection === '' || $studentName === '') return null;
+    $settings = quizGoogleFormSettings($definition['external_form_url'] ?? '');
+    $parts = parse_url($settings['url']);
+    $query = [];
+    foreach (explode('&', (string) ($parts['query'] ?? '')) as $pair) {
+        if ($pair === '') continue;
+        [$rawKey, $rawValue] = array_pad(explode('=', $pair, 2), 2, '');
+        $key = rawurldecode($rawKey);
+        if ($key === $settings['section_entry']) $rawValue = rawurlencode($courseSection);
+        elseif ($key === $settings['name_entry']) $rawValue = rawurlencode($studentName);
+        $query[] = rawurlencode($key) . '=' . $rawValue;
+    }
+    return 'https://docs.google.com' . $parts['path'] . ($query ? '?' . implode('&', $query) : '');
+}
+
 function quizDefinition($input) {
     if (!is_array($input)) throw new InvalidArgumentException('Invalid quiz.');
     $audience = normalizeLearningMaterialAudience($input['components'] ?? [], $input['levels'] ?? []);
+    $deliveryMode = $input['delivery_mode'] ?? 'system';
+    if (!in_array($deliveryMode, ['system', 'google_form'], true)) throw new InvalidArgumentException('Choose a valid quiz type.');
     $d = ['title' => quizText($input['title'] ?? '', 180, true), 'description' => quizText($input['description'] ?? '', 5000),
         'components' => explode(',', $audience['components']), 'levels' => array_values(array_filter(explode(',', $audience['levels']))),
         'confirmation' => quizText($input['confirmation'] ?? 'Your response has been recorded.', 1000),
-        'accent' => preg_match('/^#[0-9a-f]{6}$/iD', $input['accent'] ?? '') ? $input['accent'] : '#198754'];
+        'accent' => preg_match('/^#[0-9a-f]{6}$/iD', $input['accent'] ?? '') ? $input['accent'] : '#198754',
+        'delivery_mode' => $deliveryMode, 'external_form_url' => '', 'external_section_entry' => '', 'external_name_entry' => ''];
+    if ($deliveryMode === 'google_form') {
+        $external = quizGoogleFormSettings($input['external_form_url'] ?? '');
+        $d['external_form_url'] = $external['url'];
+        $d['external_section_entry'] = $external['section_entry'];
+        $d['external_name_entry'] = $external['name_entry'];
+    }
     $columns = $input['grade_column_ids'] ?? null;
     if ($columns === null) $columns = [(int)($input['grade_column_id'] ?? 0)];
     if (!is_array($columns) || count($columns) > 20) throw new InvalidArgumentException('Invalid score destinations.');
@@ -107,20 +163,24 @@ function quizDefinition($input) {
         if (filter_var($column, FILTER_VALIDATE_INT) === false || (int)$column < 0) throw new InvalidArgumentException('Invalid score destination.');
         if ((int)$column > 0) $columnIds[] = (int)$column;
     }
-    $d['grade_column_ids'] = array_values(array_unique($columnIds));
+    $d['grade_column_ids'] = $deliveryMode === 'google_form' ? [] : array_values(array_unique($columnIds));
     $d['grade_column_id'] = $d['grade_column_ids'][0] ?? 0;
     $timeLimit = $input['time_limit_minutes'] ?? 0;
     if (filter_var($timeLimit, FILTER_VALIDATE_INT) === false || (int)$timeLimit < 0 || (int)$timeLimit > 10080) {
         throw new InvalidArgumentException('Time limit must be from 1 minute to 7 days, or 0 for no limit.');
     }
-    $d['time_limit_minutes'] = (int)$timeLimit;
-    foreach (['shuffle_questions', 'shuffle_options', 'allow_edit', 'release_immediately', 'monitor_focus'] as $key) $d[$key] = ($input[$key] ?? false) === true;
+    $d['time_limit_minutes'] = $deliveryMode === 'google_form' ? 0 : (int)$timeLimit;
+    foreach (['shuffle_questions', 'shuffle_options', 'allow_edit', 'release_immediately', 'monitor_focus'] as $key) $d[$key] = $deliveryMode === 'system' && ($input[$key] ?? false) === true;
     foreach (['opens_at', 'closes_at'] as $key) {
         $value = $input[$key] ?? '';
         if (!is_string($value) || ($value !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/D', $value) || !strtotime($value)))) throw new InvalidArgumentException('Invalid opening or closing date.');
         $d[$key] = $value;
     }
     if ($d['opens_at'] && $d['closes_at'] && strtotime($d['opens_at']) >= strtotime($d['closes_at'])) throw new InvalidArgumentException('Closing time must be after opening time.');
+    if ($deliveryMode === 'google_form') {
+        $d['questions'] = [];
+        return $d;
+    }
     $questions = $input['questions'] ?? [];
     if (!is_array($questions) || count($questions) < 1 || count($questions) > 100) throw new InvalidArgumentException('Add 1 to 100 questions/sections.');
     $types = ['multiple_choice', 'checkboxes', 'dropdown', 'short_answer', 'paragraph', 'scale', 'rating', 'date', 'time', 'multiple_grid', 'checkbox_grid', 'file', 'section'];

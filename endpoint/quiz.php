@@ -224,6 +224,7 @@ try {
     if (!in_array($action,['start','draft','submit','timeout_submit','upload_file','focus_event'],true)) throw new InvalidArgumentException('Unknown action.');
     if ($actor['role']!=='student') throw new DomainException('Only students submit quiz responses. Use Preview to test your quiz.');
     $conn->beginTransaction();$quiz=quizFind($conn,$id);$d=json_decode($quiz['definition_json'],true);
+    if (quizIsExternal($d)) throw new DomainException('Open this assessment through its Google Form link.');
     if (!quizVisible($conn,$actor,$quiz,$viewer)) throw new DomainException('This quiz is no longer available.');
     quizAccepting($quiz,$d);
     $response=quizResponse($conn,$id,$actor['user_id'],true);

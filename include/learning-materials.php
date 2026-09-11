@@ -77,25 +77,6 @@ function learningMaterialViewer(PDO $conn, array $actor) {
     return $actor;
 }
 
-function learningMaterialQuizFormUrl($courseSection, $studentName) {
-    $courseSection = trim((string) $courseSection);
-    $studentName = trim((string) $studentName);
-    if ($courseSection === '' || $studentName === '') return null;
-
-    $query = http_build_query([
-        'usp' => 'pp_url',
-        'entry.1210477944' => $courseSection,
-        'entry.120892430' => $studentName,
-    ], '', '&', PHP_QUERY_RFC3986);
-
-    return 'https://docs.google.com/forms/d/e/1FAIpQLSdUGHc4vf8azung5r3evyNnjQUJaGPc54AWx2ZfHWec5Vl8PQ/viewform?' . $query;
-}
-
-function canTakeLearningMaterialQuiz(array $viewer) {
-    return ($viewer['role'] ?? '') === 'student'
-        && normalizeProgram($viewer['program'] ?? null) === 'ROTC';
-}
-
 // Use the exact same filter for the list, its count, and direct downloads.
 function learningMaterialVisibilitySql(array $viewer) {
     if (($viewer['role'] ?? '') === 'super_admin') return ['sql' => '1=1', 'params' => []];

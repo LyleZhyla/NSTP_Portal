@@ -77,9 +77,14 @@ columns stop receiving updates. Changes to a column maximum take effect at the
 next submission or grade update. Quiz grade writes and sheet writes share one
 transaction. A student must have exactly one linked student record to sync.
 
-This is a native Google Forms-inspired workflow, not Google Forms integration.
-Google Sheets/Drive synchronization, Google add-ons, email notifications,
-collaborative live editing, and import of external Google Forms are not included.
+Each assessment can use either **System quiz** or **Google Form quiz** delivery.
+For Google Form delivery, paste a responder pre-filled link in the builder. Generate
+that link with the ROTC section as its first pre-filled `entry.*` field and the
+student name as its second. When an eligible student opens the published assessment,
+the system replaces both sample values using their linked student profile and then
+redirects to Google Forms. Opening/closing dates and component/MS-level audiences
+still apply in this system. Google Form responses and scores remain in Google Forms;
+they are not stored in the native response list or synchronized to the grading sheet.
 
 ## Optional tab/focus monitoring
 

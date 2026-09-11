@@ -7,8 +7,32 @@ $actor=getCurrentUserRecord($conn);
 if (!$actor) { header('Location: endpoint/logout.php'); exit; }
 $mode=$_GET['mode']??'take';if(!in_array($mode,['edit','take','preview','responses','result'],true))$mode='take';
 if($mode==='edit'&&!canUploadLearningMaterials($actor)){http_response_code(403);exit('Only administrators and coordinators can create quizzes.');}
+$requestedQuizId=max(0,(int)($_GET['id']??0));
+if($requestedQuizId&&in_array($mode,['take','preview'],true)){
+    try{
+        $requestedQuiz=quizFind($conn,$requestedQuizId);
+        $requestedDefinition=json_decode($requestedQuiz['definition_json'],true,512,JSON_THROW_ON_ERROR);
+        if(quizIsExternal($requestedDefinition)){
+            $viewer=learningMaterialViewer($conn,$actor);
+            if($mode==='preview'){
+                if(!quizCanManage($actor,$requestedQuiz))throw new DomainException('You cannot preview this quiz.');
+                $externalUrl=$requestedDefinition['external_form_url']??'';
+            }else{
+                if(($actor['role']??'')!=='student'||!quizVisible($conn,$actor,$requestedQuiz,$viewer))throw new DomainException('This quiz is not available to your account.');
+                quizAccepting($requestedQuiz,$requestedDefinition);
+                $externalUrl=quizExternalFormUrl($requestedDefinition,$viewer);
+                if(!$externalUrl)throw new DomainException('Your student name or ROTC section is incomplete. Ask your administrator to update your profile.');
+            }
+            header('Location: '.$externalUrl, true, 302);
+            exit;
+        }
+    }catch(Throwable $error){
+        http_response_code($error instanceof OutOfBoundsException?404:403);
+        exit($error->getMessage());
+    }
+}
 if(empty($_SESSION['quiz_csrf']))$_SESSION['quiz_csrf']=bin2hex(random_bytes(32));
-$boot=['id'=>max(0,(int)($_GET['id']??0)),'responseId'=>max(0,(int)($_GET['response_id']??0)),'mode'=>$mode,'role'=>$actor['role'],'csrf'=>$_SESSION['quiz_csrf'],'fileLimit'=>learningMaterialChunkLimit()];
+$boot=['id'=>$requestedQuizId,'responseId'=>max(0,(int)($_GET['response_id']??0)),'mode'=>$mode,'role'=>$actor['role'],'csrf'=>$_SESSION['quiz_csrf'],'fileLimit'=>learningMaterialChunkLimit()];
 ?>
 <!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Assessments - TAU NSTP</title>
