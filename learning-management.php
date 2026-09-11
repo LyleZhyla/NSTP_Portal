@@ -37,7 +37,7 @@ try {
     ensureLearningMaterialsTable($conn);
     $materialViewer = learningMaterialViewer($conn, $materialActor);
     $visibility = learningMaterialAccessSql($materialViewer);
-    if ($materialActor['role'] === 'student') {
+    if (canTakeLearningMaterialQuiz($materialViewer)) {
         $materialQuizUrl = learningMaterialQuizFormUrl($materialViewer['course_section'] ?? '', $materialViewer['student_name'] ?? '');
     }
     $countStmt = $conn->prepare('SELECT COUNT(*) FROM tbl_learning_materials m WHERE ' . $visibility['sql']);
@@ -195,8 +195,8 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                             <?php if ($materialQuizUrl): ?>
                             <div class="alert alert-light border d-flex flex-column flex-sm-row align-items-sm-center justify-content-between mb-3" role="region" aria-label="Learning materials quiz">
                                 <div class="mr-sm-3 mb-2 mb-sm-0">
-                                    <strong>Ready to take the quiz?</strong>
-                                    <div class="small text-muted">Your section and name will be filled in automatically.</div>
+                                    <strong>Ready to take the ROTC quiz?</strong>
+                                    <div class="small text-muted">Your ROTC section and name will be filled in automatically.</div>
                                 </div>
                                 <a class="btn btn-success btn-sm text-nowrap" href="<?= materialEscape($materialQuizUrl) ?>">
                                     <i class="fas fa-clipboard-check mr-1" aria-hidden="true"></i> Take Quiz

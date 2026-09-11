@@ -36,6 +36,8 @@ $timing=quizResponseTiming(['started_at'=>date('Y-m-d H:i:s',time()-901)],$timed
 checkQuiz($timing['expired']&&$timing['remaining_seconds']===0,'server detects expired quiz response');
 $multiDestination=quizDefinition(array_merge(definitionFixture([questionFixture('multi','multiple_choice')]),['grade_column_ids'=>[11,12,11]]));
 checkQuiz($multiDestination['grade_column_ids']===[11,12]&&$multiDestination['grade_column_id']===11,'multiple grade destinations are normalized');
-$externalQuizUrl=learningMaterialQuizFormUrl('CWTS A','Dela Cruz, Juan A.');
-checkQuiz(str_contains($externalQuizUrl,'entry.1210477944=CWTS%20A')&&str_contains($externalQuizUrl,'entry.120892430=Dela%20Cruz%2C%20Juan%20A.'),'learning material quiz link prefills section and student name');
+$externalQuizUrl=learningMaterialQuizFormUrl('Alpha 1st','Dela Cruz, Juan A.');
+checkQuiz(str_contains($externalQuizUrl,'entry.1210477944=Alpha%201st')&&str_contains($externalQuizUrl,'entry.120892430=Dela%20Cruz%2C%20Juan%20A.'),'learning material quiz link prefills ROTC section and student name');
 checkQuiz(learningMaterialQuizFormUrl('','Dela Cruz, Juan A.')===null,'learning material quiz link requires a complete student profile');
+checkQuiz(canTakeLearningMaterialQuiz(['role'=>'student','program'=>'ROTC']),'ROTC students can take the external learning material quiz');
+checkQuiz(!canTakeLearningMaterialQuiz(['role'=>'student','program'=>'CWTS'])&&!canTakeLearningMaterialQuiz(['role'=>'facilitator','program'=>'ROTC']),'external learning material quiz is restricted to ROTC students');

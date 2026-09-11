@@ -91,6 +91,11 @@ function learningMaterialQuizFormUrl($courseSection, $studentName) {
     return 'https://docs.google.com/forms/d/e/1FAIpQLSdUGHc4vf8azung5r3evyNnjQUJaGPc54AWx2ZfHWec5Vl8PQ/viewform?' . $query;
 }
 
+function canTakeLearningMaterialQuiz(array $viewer) {
+    return ($viewer['role'] ?? '') === 'student'
+        && normalizeProgram($viewer['program'] ?? null) === 'ROTC';
+}
+
 // Use the exact same filter for the list, its count, and direct downloads.
 function learningMaterialVisibilitySql(array $viewer) {
     if (($viewer['role'] ?? '') === 'super_admin') return ['sql' => '1=1', 'params' => []];
