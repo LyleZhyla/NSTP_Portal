@@ -50,10 +50,10 @@ db = sqlite3.connect(root / 'test.sqlite')
 db.executescript('''
 CREATE TABLE tbl_users(user_id INTEGER PRIMARY KEY,role TEXT,program TEXT,full_name TEXT,username TEXT);
 INSERT INTO tbl_users VALUES (1,'super_admin',NULL,'Administrator','admin'),(2,'coordinator','CWTS','Coordinator','coordinator'),(3,'facilitator','CWTS','Facilitator','facilitator'),(4,'student','CWTS','=2+2','student4'),(5,'student','LTS','LTS Student','student5'),(6,'coordinator','ROTC','ROTC Coordinator','coord6'),(7,'student','ROTC','ROTC Student','student7');
-CREATE TABLE tbl_student(tbl_student_id INTEGER PRIMARY KEY,user_id INTEGER,created_by INTEGER,student_number TEXT,course_section TEXT,original_section TEXT);
+CREATE TABLE tbl_student(tbl_student_id INTEGER PRIMARY KEY,user_id INTEGER,created_by INTEGER,student_number TEXT,student_name TEXT,course_section TEXT,original_section TEXT);
 CREATE TABLE tbl_public_student_registrations(registration_id INTEGER PRIMARY KEY,user_id INTEGER,student_number TEXT,component TEXT,rotc_ms_level TEXT);
 CREATE TABLE tbl_student_rotc_levels(tbl_student_id INTEGER PRIMARY KEY,rotc_ms_level TEXT);
-INSERT INTO tbl_student VALUES(4,4,1,'4','CWTS','CWTS'),(5,5,1,'5','LTS','LTS'),(7,7,1,'7','ROTC','ROTC');
+INSERT INTO tbl_student VALUES(4,4,1,'4','=2+2','CWTS','CWTS'),(5,5,1,'5','LTS Student','LTS','LTS'),(7,7,1,'7','ROTC Student','ROTC','ROTC');
 INSERT INTO tbl_public_student_registrations VALUES(4,4,'4','CWTS',NULL),(5,5,'5','LTS',NULL),(7,7,'7','ROTC','MS-31');
 CREATE TABLE tbl_quizzes(quiz_id INTEGER PRIMARY KEY AUTOINCREMENT,uploaded_by INTEGER,title TEXT,description TEXT,audience_components TEXT,audience_rotc_levels TEXT,definition_json TEXT,status TEXT DEFAULT 'draft',revision INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE tbl_quiz_responses(response_id INTEGER PRIMARY KEY AUTOINCREMENT,quiz_id INTEGER,user_id INTEGER,answers_json TEXT,grades_json TEXT,state TEXT DEFAULT 'draft',score NUMERIC DEFAULT 0,total_points NUMERIC DEFAULT 0,needs_review INTEGER DEFAULT 0,released INTEGER DEFAULT 0,started_at TEXT DEFAULT CURRENT_TIMESTAMP,submitted_at TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(quiz_id,user_id));

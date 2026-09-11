@@ -36,11 +36,11 @@ $timing=quizResponseTiming(['started_at'=>date('Y-m-d H:i:s',time()-901)],$timed
 checkQuiz($timing['expired']&&$timing['remaining_seconds']===0,'server detects expired quiz response');
 $multiDestination=quizDefinition(array_merge(definitionFixture([questionFixture('multi','multiple_choice')]),['grade_column_ids'=>[11,12,11]]));
 checkQuiz($multiDestination['grade_column_ids']===[11,12]&&$multiDestination['grade_column_id']===11,'multiple grade destinations are normalized');
-$googleForm='https://docs.google.com/forms/d/e/1FAIpQLSdUGHc4vf8azung5r3evyNnjQUJaGPc54AWx2ZfHWec5Vl8PQ/viewform?usp=pp_url&entry.1210477944=Sample+Section&entry.120892430=Sample+Student';
+$googleForm='https://docs.google.com/forms/d/e/1FAIpQLSdUGHc4vf8azung5r3evyNnjQUJaGPc54AWx2ZfHWec5Vl8PQ/viewform?usp=pp_url&entry.120892430=Sample+Student&entry.1210477944=Sample+Section&entry.9876543210=2026000001';
 $external=quizDefinition(['title'=>'ROTC Google Form','description'=>'','components'=>['ROTC'],'levels'=>['MS-1'],'delivery_mode'=>'google_form','external_form_url'=>$googleForm,'questions'=>[]]);
 checkQuiz(quizIsExternal($external)&&$external['questions']===[]&&$external['grade_column_ids']===[],'Google Form assessment definition bypasses system questions and grading');
-$externalQuizUrl=quizExternalFormUrl($external,['course_section'=>'Alpha 1st','student_name'=>'Dela Cruz, Juan A.']);
-checkQuiz(str_contains($externalQuizUrl,'entry.1210477944=Alpha%201st')&&str_contains($externalQuizUrl,'entry.120892430=Dela%20Cruz%2C%20Juan%20A.'),'Google Form assessment prefills ROTC section and student name');
-checkQuiz(quizExternalFormUrl($external,['course_section'=>'','student_name'=>'Dela Cruz, Juan A.'])===null,'Google Form assessment requires a complete student profile');
+$externalQuizUrl=quizExternalFormUrl($external,['student_name'=>'Dela Cruz, Juan A.','course_section'=>'Alpha 1st','student_number'=>'2026000001']);
+checkQuiz(str_contains($externalQuizUrl,'entry.120892430=Dela%20Cruz%2C%20Juan%20A.')&&str_contains($externalQuizUrl,'entry.1210477944=Alpha%201st')&&str_contains($externalQuizUrl,'entry.9876543210=2026000001'),'Google Form assessment prefills student name, ROTC section, and student number');
+checkQuiz(quizExternalFormUrl($external,['student_name'=>'Dela Cruz, Juan A.','course_section'=>'Alpha 1st','student_number'=>''])===null,'Google Form assessment requires a complete student profile');
 invalidQuiz(fn()=>quizDefinition(['title'=>'Bad link','components'=>['ROTC'],'levels'=>['MS-1'],'delivery_mode'=>'google_form','external_form_url'=>'https://example.com/form','questions'=>[]]),'external assessment only accepts Google Forms responder links');
-invalidQuiz(fn()=>quizDefinition(['title'=>'Missing fields','components'=>['ROTC'],'levels'=>['MS-1'],'delivery_mode'=>'google_form','external_form_url'=>'https://docs.google.com/forms/d/e/example/viewform?entry.1=one','questions'=>[]]),'external assessment requires section and name prefill fields');
+invalidQuiz(fn()=>quizDefinition(['title'=>'Missing fields','components'=>['ROTC'],'levels'=>['MS-1'],'delivery_mode'=>'google_form','external_form_url'=>'https://docs.google.com/forms/d/e/example/viewform?entry.1=one&entry.2=two','questions'=>[]]),'external assessment requires name, section, and student number prefill fields');

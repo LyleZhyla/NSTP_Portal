@@ -66,7 +66,8 @@ function learningMaterialViewer(PDO $conn, array $actor) {
     $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $actor['student_name'] = trim((string) ($student['student_name'] ?? ''));
     $actor['course_section'] = trim((string) ($student['course_section'] ?? ''));
-    $number = $student['student_number'] ?? '';
+    $number = trim((string) ($student['student_number'] ?? ''));
+    $actor['student_number'] = $number;
     $stmt = $conn->prepare("SELECT component, rotc_ms_level FROM tbl_public_student_registrations WHERE user_id = ? OR (? <> '' AND student_number = ?) ORDER BY registration_id DESC LIMIT 1");
     $stmt->execute([$actor['user_id'], $number, $number]);
     $registration = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];

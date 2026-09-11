@@ -110,10 +110,15 @@ function quizGoogleFormSettings($value) {
         $key = rawurldecode(explode('=', $pair, 2)[0] ?? '');
         if (preg_match('/^entry\.\d+$/D', $key) && !in_array($key, $entryKeys, true)) $entryKeys[] = $key;
     }
-    if (count($entryKeys) < 2) {
-        throw new InvalidArgumentException('The pre-filled link must contain the ROTC section first and student name second.');
+    if (count($entryKeys) < 3) {
+        throw new InvalidArgumentException('The pre-filled link must contain student name first, ROTC section second, and student number third.');
     }
-    return ['url' => $url, 'section_entry' => $entryKeys[0], 'name_entry' => $entryKeys[1]];
+    return [
+        'url' => $url,
+        'name_entry' => $entryKeys[0],
+        'section_entry' => $entryKeys[1],
+        'student_number_entry' => $entryKeys[2],
+    ];
 }
 
 function quizIsExternal(array $definition) {
@@ -124,7 +129,8 @@ function quizExternalFormUrl(array $definition, array $viewer) {
     if (!quizIsExternal($definition)) return null;
     $courseSection = trim((string) ($viewer['course_section'] ?? ''));
     $studentName = trim((string) ($viewer['student_name'] ?? ''));
-    if ($courseSection === '' || $studentName === '') return null;
+    $studentNumber = trim((string) ($viewer['student_number'] ?? ''));
+    if ($studentName === '' || $courseSection === '' || $studentNumber === '') return null;
     $settings = quizGoogleFormSettings($definition['external_form_url'] ?? '');
     $parts = parse_url($settings['url']);
     $query = [];
@@ -132,8 +138,9 @@ function quizExternalFormUrl(array $definition, array $viewer) {
         if ($pair === '') continue;
         [$rawKey, $rawValue] = array_pad(explode('=', $pair, 2), 2, '');
         $key = rawurldecode($rawKey);
-        if ($key === $settings['section_entry']) $rawValue = rawurlencode($courseSection);
-        elseif ($key === $settings['name_entry']) $rawValue = rawurlencode($studentName);
+        if ($key === $settings['name_entry']) $rawValue = rawurlencode($studentName);
+        elseif ($key === $settings['section_entry']) $rawValue = rawurlencode($courseSection);
+        elseif ($key === $settings['student_number_entry']) $rawValue = rawurlencode($studentNumber);
         $query[] = rawurlencode($key) . '=' . $rawValue;
     }
     return 'https://docs.google.com' . $parts['path'] . ($query ? '?' . implode('&', $query) : '');
@@ -148,12 +155,14 @@ function quizDefinition($input) {
         'components' => explode(',', $audience['components']), 'levels' => array_values(array_filter(explode(',', $audience['levels']))),
         'confirmation' => quizText($input['confirmation'] ?? 'Your response has been recorded.', 1000),
         'accent' => preg_match('/^#[0-9a-f]{6}$/iD', $input['accent'] ?? '') ? $input['accent'] : '#198754',
-        'delivery_mode' => $deliveryMode, 'external_form_url' => '', 'external_section_entry' => '', 'external_name_entry' => ''];
+        'delivery_mode' => $deliveryMode, 'external_form_url' => '', 'external_name_entry' => '', 'external_section_entry' => '',
+        'external_student_number_entry' => ''];
     if ($deliveryMode === 'google_form') {
         $external = quizGoogleFormSettings($input['external_form_url'] ?? '');
         $d['external_form_url'] = $external['url'];
-        $d['external_section_entry'] = $external['section_entry'];
         $d['external_name_entry'] = $external['name_entry'];
+        $d['external_section_entry'] = $external['section_entry'];
+        $d['external_student_number_entry'] = $external['student_number_entry'];
     }
     $columns = $input['grade_column_ids'] ?? null;
     if ($columns === null) $columns = [(int)($input['grade_column_id'] ?? 0)];

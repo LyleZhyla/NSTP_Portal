@@ -21,7 +21,7 @@ if($requestedQuizId&&in_array($mode,['take','preview'],true)){
                 if(($actor['role']??'')!=='student'||!quizVisible($conn,$actor,$requestedQuiz,$viewer))throw new DomainException('This quiz is not available to your account.');
                 quizAccepting($requestedQuiz,$requestedDefinition);
                 $externalUrl=quizExternalFormUrl($requestedDefinition,$viewer);
-                if(!$externalUrl)throw new DomainException('Your student name or ROTC section is incomplete. Ask your administrator to update your profile.');
+                if(!$externalUrl)throw new DomainException('Your student name, ROTC section, or student number is incomplete. Ask your administrator to update your profile.');
             }
             header('Location: '.$externalUrl, true, 302);
             exit;
