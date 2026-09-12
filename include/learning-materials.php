@@ -10,6 +10,7 @@ function ensureLearningMaterialsTable(PDO $conn) {
         file_size BIGINT UNSIGNED NOT NULL,
         file_content LONGBLOB NOT NULL,
         storage_name VARCHAR(68) NULL,
+        external_url VARCHAR(2048) NULL,
         uploaded_by INT NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_material_created (created_at, material_id)
@@ -20,6 +21,9 @@ function ensureLearningMaterialsTable(PDO $conn) {
     }
     if (!isset($columns['storage_name'])) {
         $conn->exec('ALTER TABLE tbl_learning_materials ADD storage_name VARCHAR(68) NULL');
+    }
+    if (!isset($columns['external_url'])) {
+        $conn->exec('ALTER TABLE tbl_learning_materials ADD external_url VARCHAR(2048) NULL');
     }
     if (!isset($columns['is_open'])) $conn->exec('ALTER TABLE tbl_learning_materials ADD is_open TINYINT(1) NOT NULL DEFAULT 1');
     $conn->exec("CREATE TABLE IF NOT EXISTS tbl_learning_material_uploads (
@@ -76,6 +80,19 @@ function learningMaterialViewer(PDO $conn, array $actor) {
         $actor['ms_level'] = ($student ? getRotcStudentMsLevel($conn, $student) : normalizeRotcMsLevel($registration['rotc_ms_level'] ?? null)) ?: 'MS-1';
     }
     return $actor;
+}
+
+function normalizeLearningMaterialUrl($value) {
+    if (!is_string($value)) throw new InvalidArgumentException('Enter a valid HTTPS link.');
+    $value = trim($value);
+    if ($value === '' || strlen($value) > 2048 || !filter_var($value, FILTER_VALIDATE_URL)) {
+        throw new InvalidArgumentException('Enter a valid HTTPS link up to 2,048 characters.');
+    }
+    $parts = parse_url($value);
+    if (!$parts || strtolower((string) ($parts['scheme'] ?? '')) !== 'https' || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+        throw new InvalidArgumentException('Learning material links must use HTTPS and cannot contain login credentials.');
+    }
+    return $value;
 }
 
 // Use the exact same filter for the list, its count, and direct downloads.

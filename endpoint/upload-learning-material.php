@@ -26,13 +26,23 @@ session_write_close();
 $handle = null;
 $deletePath = null;
 $formDelete = ($_POST['action'] ?? '') === 'material_manage' && ($_POST['operation'] ?? '') === '3' && ($_POST['request_mode'] ?? '') === 'form';
+$formLink = ($_POST['action'] ?? '') === 'add_link' && ($_POST['request_mode'] ?? '') === 'form';
 try {
     if (PHP_INT_SIZE < 8) throw new RuntimeException('Large uploads require 64-bit PHP.');
     ensureLearningMaterialsTable($conn);
     $action = $_POST['action'] ?? '';
     // The UI uses a neutral management operation because some hosting WAFs
     // block request values containing SQL/action words such as "delete".
-    if (($action === 'material_manage' && ($_POST['operation'] ?? '') === '3') || $action === 'delete_material') {
+    if ($action === 'add_link') {
+        $audience = normalizeLearningMaterialAudience($_POST['components'] ?? null, $_POST['rotc_levels'] ?? []);
+        $title = is_string($_POST['title'] ?? null) ? trim($_POST['title']) : '';
+        $description = is_string($_POST['description'] ?? null) ? trim($_POST['description']) : '';
+        if ($title === '' || mb_strlen($title) > 180 || mb_strlen($description) > 5000) throw new InvalidArgumentException('Enter a title up to 180 characters and a description up to 5,000 characters.');
+        $url = normalizeLearningMaterialUrl($_POST['external_url'] ?? null);
+        $stmt = $conn->prepare("INSERT INTO tbl_learning_materials (title, description, original_name, file_size, file_content, storage_name, external_url, uploaded_by, audience_components, audience_rotc_levels) VALUES (?, ?, '', 0, '', NULL, ?, ?, ?, ?)");
+        $stmt->execute([$title, $description, $url, $actor['user_id'], $audience['components'], $audience['levels']]);
+        $result = ['success' => true, 'material_id' => (int) $conn->lastInsertId()];
+    } elseif (($action === 'material_manage' && ($_POST['operation'] ?? '') === '3') || $action === 'delete_material') {
         $materialId = filter_var($_POST['material_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if (!$materialId) throw new InvalidArgumentException('Invalid material.');
         $conn->beginTransaction();
@@ -167,10 +177,15 @@ try {
     if (is_resource($handle)) { flock($handle, LOCK_UN); fclose($handle); }
     if ($deletePath && is_file($deletePath)) unlink($deletePath);
 }
-if ($formDelete) {
+if ($formDelete || $formLink) {
     $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
     $returnPath = basename((string)$requestPath) === 'learning-management.php' ? $requestPath : '../learning-management.php';
-    header('Location: ' . $returnPath . '?tab=learning-materials&' . (($status ?? 200) === 200 ? 'material_deleted=1' : 'material_delete_failed=1'), true, 303);
+    if ($formLink) {
+        $resultKey = (($status ?? 200) === 200) ? 'material_link_added=1' : 'material_link_failed=1';
+    } else {
+        $resultKey = (($status ?? 200) === 200) ? 'material_deleted=1' : 'material_delete_failed=1';
+    }
+    header('Location: ' . $returnPath . '?tab=learning-materials&' . $resultKey, true, 303);
     exit;
 }
 materialUploadReply($status ?? 200, $result);

@@ -1,7 +1,7 @@
 <?php
 $source = file_get_contents(__DIR__ . '/../learning-management.php');
 if ($source === false) throw new RuntimeException('Cannot read Learning Management.');
-foreach (['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'material_manage'] as $action) {
+foreach (['start', 'chunk', 'finish', 'cancel', 'add_link', 'update_audience', 'set_availability', 'material_manage'] as $action) {
     if (!preg_match('/\$materialActions\s*=\s*\[[^\]]*[\'"]' . preg_quote($action, '/') . '[\'"]/s', $source)) {
         throw new RuntimeException("Missing page dispatch action: {$action}");
     }
@@ -16,7 +16,7 @@ $script = file_get_contents(__DIR__ . '/../include/learning-material-audience.js
 if (preg_match('/material-delete[\s\S]{0,1000}\bfetch\s*\(/', $script)) {
     throw new RuntimeException('Delete must not use an AJAX fetch.');
 }
-if (substr_count($source, 'action="?tab=learning-materials"') !== 4) {
+if (substr_count($source, 'action="?tab=learning-materials"') !== 5) {
     throw new RuntimeException('Every material mutation form must use the routable page endpoint.');
 }
 if (strpos($source, "require __DIR__ . '/endpoint/upload-learning-material.php';") === false) {

@@ -1,7 +1,7 @@
 <?php
 // Some production hosts block direct browser routes under /endpoint. Accept
 // material mutations on this page and dispatch internally to the same handler.
-$materialActions = ['start', 'chunk', 'finish', 'cancel', 'update_audience', 'set_availability', 'material_manage', 'delete_material'];
+$materialActions = ['start', 'chunk', 'finish', 'cancel', 'add_link', 'update_audience', 'set_availability', 'material_manage', 'delete_material'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', $materialActions, true)) {
     require __DIR__ . '/endpoint/upload-learning-material.php';
     exit;
@@ -23,6 +23,8 @@ $canUploadMaterials = canUploadLearningMaterials($materialActor);
 $materialFlash = $_SESSION['learning_material_flash'] ?? null;
 if (isset($_GET['material_deleted'])) $materialFlash = ['type'=>'success', 'message'=>'Learning material deleted.'];
 if (isset($_GET['material_delete_failed'])) $materialFlash = ['type'=>'danger', 'message'=>'Unable to delete the learning material. Please try again.'];
+if (isset($_GET['material_link_added'])) $materialFlash = ['type'=>'success', 'message'=>'Learning material link added.'];
+if (isset($_GET['material_link_failed'])) $materialFlash = ['type'=>'danger', 'message'=>'Unable to add the learning material link. Check the HTTPS link and try again.'];
 $materialOld = $_SESSION['learning_material_old'] ?? [];
 unset($_SESSION['learning_material_flash'], $_SESSION['learning_material_old']);
 if ($canUploadMaterials && empty($_SESSION['learning_material_csrf'])) {
@@ -42,7 +44,7 @@ try {
     $materialPageCount = max(1, (int) ceil($materialCount / 20));
     $materialPage = min($materialPage, $materialPageCount);
     $offset = ($materialPage - 1) * 20;
-    $listStmt = $conn->prepare("SELECT m.material_id, m.is_open, m.title, m.description, m.original_name, m.file_size, m.created_at, m.uploaded_by, m.audience_components, m.audience_rotc_levels, u.full_name AS uploader_name
+    $listStmt = $conn->prepare("SELECT m.material_id, m.is_open, m.title, m.description, m.original_name, m.file_size, m.external_url, m.created_at, m.uploaded_by, m.audience_components, m.audience_rotc_levels, u.full_name AS uploader_name
         FROM tbl_learning_materials m LEFT JOIN tbl_users u ON u.user_id = m.uploaded_by
         WHERE {$visibility['sql']} ORDER BY m.created_at DESC, m.material_id DESC LIMIT 20 OFFSET {$offset}");
     $listStmt->execute($visibility['params']);
@@ -145,6 +147,39 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                 <div class="alert alert-warning" role="alert">Learning materials are temporarily unavailable. Please try again later.</div>
                             <?php else: ?>
                             <?php if ($canUploadMaterials): ?>
+                            <div class="card card-outline card-info mb-4">
+                                <div class="card-header"><h2 class="card-title"><i class="fas fa-link mr-2" aria-hidden="true"></i>Add Learning Link</h2></div>
+                                <form action="?tab=learning-materials" method="post">
+                                    <div class="card-body">
+                                        <p class="text-muted">Share a Google Drive, YouTube, website, or other secure online resource.</p>
+                                        <input type="hidden" name="csrf_token" value="<?= materialEscape($_SESSION['learning_material_csrf']) ?>">
+                                        <input type="hidden" name="action" value="add_link">
+                                        <input type="hidden" name="request_mode" value="form">
+                                        <div class="form-group">
+                                            <label for="material-link-title">Title <span class="text-danger" aria-hidden="true">*</span></label>
+                                            <input class="form-control" type="text" id="material-link-title" name="title" maxlength="180" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="material-link-description">Description <span class="text-muted font-weight-normal">(optional)</span></label>
+                                            <textarea class="form-control" id="material-link-description" name="description" rows="3" maxlength="5000"></textarea>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="material-external-url">HTTPS link <span class="text-danger" aria-hidden="true">*</span></label>
+                                            <input class="form-control" type="url" id="material-external-url" name="external_url" maxlength="2048" placeholder="https://example.com/resource" pattern="https://.*" required>
+                                            <small class="form-text text-muted">Only secure HTTPS links are accepted.</small>
+                                        </div>
+                                        <?php
+                                        $audienceFormId = 'link';
+                                        $audienceComponents = [];
+                                        $audienceLevels = [];
+                                        include __DIR__ . '/include/learning-material-audience-form.php';
+                                        ?>
+                                    </div>
+                                    <div class="card-footer">
+                                        <button class="btn btn-info" type="submit"><i class="fas fa-link mr-1" aria-hidden="true"></i> Add Link</button>
+                                    </div>
+                                </form>
+                            </div>
                             <div class="card card-outline card-success mb-4">
                                 <div class="card-header"><h2 class="card-title"><i class="fas fa-upload mr-2" aria-hidden="true"></i>Upload Material</h2></div>
                                 <form action="?tab=learning-materials" method="post" enctype="multipart/form-data" id="material-upload-form" data-max-size="<?= learningMaterialUploadLimit() ?>">
@@ -197,17 +232,21 @@ $activeTab = ($_GET['tab'] ?? '') === 'learning-materials' ? 'learning-materials
                                     <p class="material-description"><?= materialEscape($material['description']) ?></p>
                                 <?php endif; ?>
                                 <p class="text-muted small mb-2 material-name">
-                                    <?= materialEscape($material['original_name']) ?> &middot; <?= materialEscape(learningMaterialSize($material['file_size'])) ?><br>
+                                    <?php if (!empty($material['external_url'])): ?>Online resource<?php else: ?><?= materialEscape($material['original_name']) ?> &middot; <?= materialEscape(learningMaterialSize($material['file_size'])) ?><?php endif; ?><br>
                                     Uploaded by <?= materialEscape($material['uploader_name'] ?: 'Staff') ?> &middot; <?= materialEscape(date('M j, Y, g:i A', strtotime($material['created_at']))) ?>
                                 </p>
-                                <?php if (learningMaterialVideoMime($material['original_name'])): ?>
+                                <?php if (empty($material['external_url']) && learningMaterialVideoMime($material['original_name'])): ?>
                                 <video class="w-100 mb-2" style="max-height:480px;background:#111" controls preload="none" playsinline aria-label="<?= materialEscape($material['title']) ?>">
                                     <source src="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>&amp;play=1" type="<?= materialEscape(learningMaterialVideoMime($material['original_name'])) ?>">
                                     Your browser does not support video playback. Use Download below.
                                 </video>
                                 <p class="small text-muted">If this video cannot play in your browser, use Download to watch it on your device.</p>
                                 <?php endif; ?>
+                                <?php if (!empty($material['external_url'])): ?>
+                                <a class="btn btn-outline-info btn-sm" href="<?= materialEscape($material['external_url']) ?>" target="_blank" rel="noopener noreferrer" aria-label="<?= materialEscape('Open ' . $material['title'] . ' in a new tab') ?>"><i class="fas fa-external-link-alt mr-1" aria-hidden="true"></i> Open Link</a>
+                                <?php else: ?>
                                 <a class="btn btn-outline-success btn-sm" href="endpoint/download-learning-material.php?id=<?= (int) $material['material_id'] ?>" aria-label="<?= materialEscape('Download ' . $material['title']) ?>"><i class="fas fa-download mr-1" aria-hidden="true"></i> Download</a>
+                                <?php endif; ?>
                                 <?php if ($materialActor['role'] !== 'student'): ?>
                                 <p class="small mt-2 material-availability-label"><?= (int)$material['is_open'] ? 'Open to eligible students' : 'Closed to students' ?></p>
                                 <?php endif; ?>

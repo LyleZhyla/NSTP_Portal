@@ -61,8 +61,8 @@ CREATE TABLE tbl_grade_columns(grade_column_id INTEGER PRIMARY KEY,label TEXT,gr
 INSERT INTO tbl_grade_columns(grade_column_id,label,group_label,max_score,program_scope,is_default,created_by) VALUES(1,'Quiz total','Written work',50,NULL,1,NULL),(2,'CWTS test','Written work',100,'CWTS',0,2),(3,'ROTC test','Written work',100,'ROTC',0,6),(4,'LTS test','Written work',100,'LTS',0,NULL);
 CREATE TABLE tbl_grade_scores(grade_score_id INTEGER PRIMARY KEY AUTOINCREMENT,grade_column_id INTEGER,tbl_student_id INTEGER,score NUMERIC,updated_by INTEGER,UNIQUE(grade_column_id,tbl_student_id));
 CREATE TABLE tbl_grade_column_visibility(grade_column_visibility_id INTEGER PRIMARY KEY AUTOINCREMENT,grade_column_id INTEGER,user_id INTEGER,program_scope TEXT,is_hidden INTEGER DEFAULT 0,updated_by INTEGER,UNIQUE(grade_column_id,user_id,program_scope));
-CREATE TABLE tbl_learning_materials(material_id INTEGER PRIMARY KEY,title TEXT,description TEXT,original_name TEXT,file_size INTEGER,file_content BLOB,storage_name TEXT,uploaded_by INTEGER,audience_components TEXT,audience_rotc_levels TEXT,is_open INTEGER DEFAULT 1);
-INSERT INTO tbl_learning_materials VALUES(1,'Video','','lesson.mp4',4,X'74657374',NULL,2,'CWTS','',1),(2,'Legacy','','lesson.txt',4,X'74657374',NULL,1,NULL,NULL,1);
+CREATE TABLE tbl_learning_materials(material_id INTEGER PRIMARY KEY,title TEXT,description TEXT,original_name TEXT,file_size INTEGER,file_content BLOB,storage_name TEXT,external_url TEXT,uploaded_by INTEGER,audience_components TEXT,audience_rotc_levels TEXT,is_open INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+INSERT INTO tbl_learning_materials(material_id,title,description,original_name,file_size,file_content,storage_name,external_url,uploaded_by,audience_components,audience_rotc_levels,is_open) VALUES(1,'Video','','lesson.mp4',4,X'74657374',NULL,NULL,2,'CWTS','',1),(2,'Legacy','','lesson.txt',4,X'74657374',NULL,NULL,1,NULL,NULL,1);
 CREATE TABLE tbl_quiz_grade_links(quiz_id INTEGER PRIMARY KEY,grade_column_id INTEGER);
 CREATE TABLE tbl_quiz_grade_destinations(quiz_id INTEGER,grade_column_id INTEGER,PRIMARY KEY(quiz_id,grade_column_id));
 CREATE TABLE tbl_quiz_focus_events(response_id INTEGER,event_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(response_id,event_id));
@@ -293,6 +293,20 @@ try:
     check(availability(1, 1) == 200 and request(video_url, 4)[0] == 200, 'admin can reopen coordinator material')
     check(request(video_url, 5)[0] == 404, 'reopening preserves component restrictions')
     check(availability(1, 0, material=2) == 200 and request('/endpoint/download-learning-material.php?id=2', 4)[0] == 404, 'closed legacy materials cannot bypass student access check')
+    def add_material_link(user, url, csrf='test-token'):
+        body = urllib.parse.urlencode([
+            ('action', 'add_link'), ('csrf_token', csrf), ('title', 'Online Module'),
+            ('description', 'Read before class.'), ('external_url', url), ('components[]', 'CWTS')
+        ]).encode()
+        return request('/learning-management.php?tab=learning-materials', user, body, {'Content-Type':'application/x-www-form-urlencoded'})
+    check(add_material_link(4, 'https://example.com/module')[0] == 403 and add_material_link(3, 'https://example.com/module')[0] == 403, 'students and facilitators cannot add learning links')
+    check(add_material_link(2, 'http://example.com/module')[0] == 400 and add_material_link(2, 'https://example.com/module', 'wrong')[0] == 403, 'learning links validate HTTPS and CSRF')
+    check(add_material_link(2, 'https://example.com/module')[0] == 200, 'coordinator can add a learning link')
+    cwts_status, _, cwts_page = request('/learning-management.php?tab=learning-materials', 4)
+    lts_status, _, lts_page = request('/learning-management.php?tab=learning-materials', 5)
+    check(cwts_status == 200 and b'href="https://example.com/module"' in cwts_page and b'Open Link' in cwts_page, 'eligible student can open the learning link (HTTP %d)' % cwts_status)
+    check(b'href="https://example.com/module"' not in lts_page, 'learning link respects component audience')
+    check(request('/endpoint/download-learning-material.php?id=3', 4)[0] == 404, 'link material cannot be requested as an empty file download')
     monitored = api('save', definition=definition(monitor_focus=True, allow_edit=True))[1]
     api('status', id=monitored['id'], status='published')
     started = api('start', 4, id=monitored['id'])[1]
@@ -333,16 +347,16 @@ try:
     stored_name = 'a' * 64 + '.php'
     stored_path = root / 'storage/learning-materials' / stored_name
     stored_path.write_bytes(b'<?php http_response_code(404); exit; __halt_compiler();\nvideo')
-    db.execute("INSERT INTO tbl_learning_materials VALUES(3,'Stored video','','stored.mp4',5,X'','%s',2,'CWTS','',1)" % stored_name)
+    db.execute("INSERT INTO tbl_learning_materials(material_id,title,description,original_name,file_size,file_content,storage_name,external_url,uploaded_by,audience_components,audience_rotc_levels,is_open) VALUES(4,'Stored video','','stored.mp4',5,X'','%s',NULL,2,'CWTS','',1)" % stored_name)
     db.commit()
     def delete_material(user, material, csrf='test-token'):
         body = urllib.parse.urlencode(dict(action='material_manage', operation=3, material_id=material, csrf_token=csrf)).encode()
         return request('/learning-management.php?tab=learning-materials', user, body, {'Content-Type':'application/x-www-form-urlencoded'})
-    check(delete_material(4, 3)[0] == 403 and delete_material(3, 3)[0] == 403, 'students and facilitators cannot delete materials')
-    check(delete_material(6, 3)[0] == 403, 'coordinator cannot delete another uploader material')
-    check(delete_material(2, 3, 'wrong')[0] == 403, 'material deletion enforces CSRF')
-    check(delete_material(2, 3)[0] == 200 and not stored_path.exists(), 'owner coordinator deletes database record and protected stored file')
-    check(db.execute('SELECT COUNT(*) FROM tbl_learning_materials WHERE material_id=3').fetchone()[0] == 0 and request('/endpoint/download-learning-material.php?id=3', 2)[0] == 404, 'deleted material is no longer downloadable')
+    check(delete_material(4, 4)[0] == 403 and delete_material(3, 4)[0] == 403, 'students and facilitators cannot delete materials')
+    check(delete_material(6, 4)[0] == 403, 'coordinator cannot delete another uploader material')
+    check(delete_material(2, 4, 'wrong')[0] == 403, 'material deletion enforces CSRF')
+    check(delete_material(2, 4)[0] == 200 and not stored_path.exists(), 'owner coordinator deletes database record and protected stored file')
+    check(db.execute('SELECT COUNT(*) FROM tbl_learning_materials WHERE material_id=4').fetchone()[0] == 0 and request('/endpoint/download-learning-material.php?id=4', 2)[0] == 404, 'deleted material is no longer downloadable')
     check(delete_material(2, 2)[0] == 403 and delete_material(1, 2)[0] == 200, 'admin can delete any material while coordinator remains owner-limited')
     check(db.execute('SELECT COUNT(*) FROM tbl_learning_materials WHERE material_id=2').fetchone()[0] == 0, 'legacy database-backed material deletes without a storage file')
     print(json.dumps({'root': str(root), 'port': port, 'pid': process.pid, 'builder': f'http://127.0.0.1:{port}/quiz.php?id={copy["id"]}&mode=edit'}), flush=True)

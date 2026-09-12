@@ -23,7 +23,7 @@ if (!$id) {
 try {
     ensureLearningMaterialsTable($conn);
     $visibility = learningMaterialAccessSql(learningMaterialViewer($conn, $materialActor));
-    $stmt = $conn->prepare('SELECT m.original_name, m.file_size, m.storage_name FROM tbl_learning_materials m WHERE m.material_id = ? AND ' . $visibility['sql']);
+    $stmt = $conn->prepare('SELECT m.original_name, m.file_size, m.storage_name, m.external_url FROM tbl_learning_materials m WHERE m.material_id = ? AND ' . $visibility['sql']);
     $stmt->execute(array_merge([$id], $visibility['params']));
     $material = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (Throwable $error) {
@@ -34,6 +34,10 @@ try {
 if (!$material) {
     http_response_code(404);
     exit('Learning material not found.');
+}
+if (!empty($material['external_url'])) {
+    http_response_code(404);
+    exit('Open this learning material from the Learning Management page.');
 }
 session_write_close();
 $stream = null;
