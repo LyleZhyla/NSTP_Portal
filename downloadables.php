@@ -598,6 +598,14 @@ if (strtotime($saturdayEndDate) - strtotime($saturdayStartDate) > 730 * 86400) {
     $saturdayStartDate = date('Y-m-d', strtotime($saturdayEndDate . ' -730 days'));
 }
 
+$attendanceGraphComponents = $selectedAttendanceComponent
+    ? [$selectedAttendanceComponent => $selectedAttendanceComponent]
+    : [
+        'CWTS' => 'CWTS',
+        'LTS' => 'LTS',
+        'ROTC' => 'ROTC',
+        'N/A' => 'Unassigned',
+    ];
 $saturdayAttendance = [];
 $firstSaturday = new DateTime($saturdayStartDate);
 while ((int) $firstSaturday->format('N') !== 6) {
@@ -606,24 +614,41 @@ while ((int) $firstSaturday->format('N') !== 6) {
 $lastSaturdayBoundary = new DateTime($saturdayEndDate);
 for ($dateCursor = clone $firstSaturday; $dateCursor <= $lastSaturdayBoundary; $dateCursor->modify('+7 days')) {
     $dateKey = $dateCursor->format('Y-m-d');
-    $saturdayAttendance[$dateKey] = 0;
+    $saturdayAttendance[$dateKey] = array_fill_keys(array_keys($attendanceGraphComponents), 0);
 }
 
+$attendanceComponentExpression = downloadablesStudentComponentExpression();
+$attendanceComponentJoins = "
+    LEFT JOIN tbl_users creator ON creator.user_id = s.created_by
+    LEFT JOIN tbl_users student_owner ON student_owner.user_id = s.user_id
+    LEFT JOIN (
+        SELECT student_number, MAX(registration_id) AS latest_registration_id
+        FROM tbl_public_student_registrations
+        WHERE registrant_role = 'student'
+        GROUP BY student_number
+    ) latest_registration
+      ON latest_registration.student_number = s.student_number
+     AND NULLIF(TRIM(s.student_number), '') IS NOT NULL
+    LEFT JOIN tbl_public_student_registrations r
+      ON r.registration_id = latest_registration.latest_registration_id
+";
 $saturdayAttendanceSql = "
-    SELECT attendance_rows.tbl_student_id, attendance_rows.time_in
+    SELECT attendance_rows.tbl_student_id, attendance_rows.time_in, attendance_rows.component
     FROM (
-        SELECT DISTINCT a.tbl_student_id, a.time_in
+        SELECT DISTINCT a.tbl_student_id, a.time_in, ($attendanceComponentExpression) AS component
         FROM tbl_attendance a
         INNER JOIN tbl_student s ON s.tbl_student_id = a.tbl_student_id
+        $attendanceComponentJoins
         WHERE DATE(a.time_in) BETWEEN ? AND ?
           AND DAYOFWEEK(a.time_in) = 7
           AND ({$attendanceGraphAccess['condition']})
 
         UNION ALL
 
-        SELECT DISTINCT aa.tbl_student_id, aa.time_in
+        SELECT DISTINCT aa.tbl_student_id, aa.time_in, ($attendanceComponentExpression) AS component
         FROM tbl_attendance_archive aa
         INNER JOIN tbl_student s ON s.tbl_student_id = aa.tbl_student_id
+        $attendanceComponentJoins
         WHERE DATE(aa.time_in) BETWEEN ? AND ?
           AND DAYOFWEEK(aa.time_in) = 7
           AND ({$attendanceGraphAccess['condition']})
@@ -643,22 +668,40 @@ $seenSaturdayStudents = [];
 foreach ($saturdayAttendanceStmt->fetchAll(PDO::FETCH_ASSOC) as $attendanceRow) {
     $dateKey = date('Y-m-d', strtotime($attendanceRow['time_in']));
     $studentId = (int) $attendanceRow['tbl_student_id'];
-    if (!array_key_exists($dateKey, $saturdayAttendance) || isset($seenSaturdayStudents[$dateKey][$studentId])) {
+    $componentKey = $selectedAttendanceComponent
+        ?: (normalizeProgram($attendanceRow['component'] ?? null) ?: 'N/A');
+    if (!array_key_exists($dateKey, $saturdayAttendance)
+        || !array_key_exists($componentKey, $attendanceGraphComponents)
+        || isset($seenSaturdayStudents[$dateKey][$componentKey][$studentId])) {
         continue;
     }
-    $seenSaturdayStudents[$dateKey][$studentId] = true;
-    $saturdayAttendance[$dateKey]++;
+    $seenSaturdayStudents[$dateKey][$componentKey][$studentId] = true;
+    $saturdayAttendance[$dateKey][$componentKey]++;
 }
 
+$saturdayComponentTotals = array_fill_keys(array_keys($attendanceGraphComponents), 0);
 $saturdayChartRows = [];
-foreach ($saturdayAttendance as $dateKey => $attendanceTotal) {
+foreach ($saturdayAttendance as $dateKey => $componentTotals) {
+    foreach ($componentTotals as $componentKey => $componentTotal) {
+        $saturdayComponentTotals[$componentKey] += (int) $componentTotal;
+    }
     $saturdayChartRows[] = [
         'date' => $dateKey,
         'label' => date('M d, Y', strtotime($dateKey)),
-        'total' => (int) $attendanceTotal,
+        'components' => $componentTotals,
+        'total' => array_sum($componentTotals),
     ];
 }
-$saturdayAttendanceTotal = array_sum(array_column($saturdayChartRows, 'total'));
+
+if (isset($attendanceGraphComponents['N/A']) && ($saturdayComponentTotals['N/A'] ?? 0) === 0) {
+    unset($attendanceGraphComponents['N/A'], $saturdayComponentTotals['N/A']);
+    foreach ($saturdayChartRows as &$saturdayChartRow) {
+        unset($saturdayChartRow['components']['N/A']);
+    }
+    unset($saturdayChartRow);
+}
+
+$saturdayAttendanceTotal = array_sum($saturdayComponentTotals);
 $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row) => (int) $row['total'] > 0));
 ?>
 
@@ -1119,7 +1162,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                     <div class="card-body">
                         <div class="graph-help">
                             <strong>Attendance every Saturday:</strong>
-                            Each bar counts unique students with at least one scan on that Saturday. Active and archived attendance records are both included, while repeated scans by the same student on the same date are counted once.
+                            Each colored bar counts unique students per component with at least one scan on that Saturday. Active and archived attendance records are both included, while repeated scans by the same student on the same date are counted once.
                         </div>
 
                         <form method="get" class="mb-3">
@@ -1174,6 +1217,12 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                 <span>Total Saturday Attendance</span>
                                 <strong><?php echo number_format($saturdayAttendanceTotal); ?> student check-ins</strong>
                             </div>
+                            <?php foreach ($attendanceGraphComponents as $componentKey => $componentLabel): ?>
+                            <div class="graph-summary-item">
+                                <span><?php echo htmlspecialchars($componentLabel); ?> Attendance</span>
+                                <strong><?php echo number_format($saturdayComponentTotals[$componentKey] ?? 0); ?></strong>
+                            </div>
+                            <?php endforeach; ?>
                         </div>
 
                         <div class="row">
@@ -1199,7 +1248,12 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                             <thead>
                                                 <tr>
                                                     <th>Date</th>
-                                                    <th class="text-right">Present</th>
+                                                    <?php foreach ($attendanceGraphComponents as $componentLabel): ?>
+                                                    <th class="text-right"><?php echo htmlspecialchars($componentLabel); ?></th>
+                                                    <?php endforeach; ?>
+                                                    <?php if (count($attendanceGraphComponents) > 1): ?>
+                                                    <th class="text-right">Total</th>
+                                                    <?php endif; ?>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1207,11 +1261,16 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                                     <?php foreach ($saturdayChartRows as $saturdayRow): ?>
                                                     <tr>
                                                         <td><?php echo htmlspecialchars($saturdayRow['label']); ?></td>
+                                                        <?php foreach ($attendanceGraphComponents as $componentKey => $componentLabel): ?>
+                                                        <td class="text-right"><strong><?php echo number_format($saturdayRow['components'][$componentKey] ?? 0); ?></strong></td>
+                                                        <?php endforeach; ?>
+                                                        <?php if (count($attendanceGraphComponents) > 1): ?>
                                                         <td class="text-right"><strong><?php echo number_format($saturdayRow['total']); ?></strong></td>
+                                                        <?php endif; ?>
                                                     </tr>
                                                     <?php endforeach; ?>
                                                 <?php else: ?>
-                                                    <tr><td colspan="2" class="text-center text-muted py-4">No Saturdays in this date range.</td></tr>
+                                                    <tr><td colspan="<?php echo 1 + count($attendanceGraphComponents) + (count($attendanceGraphComponents) > 1 ? 1 : 0); ?>" class="text-center text-muted py-4">No Saturdays in this date range.</td></tr>
                                                 <?php endif; ?>
                                             </tbody>
                                         </table>
@@ -1700,6 +1759,7 @@ const sectionsByFacilitator = <?php echo json_encode($sectionsByFacilitator); ?>
 const enrollmentCharts = <?php echo json_encode($chartData); ?>;
 const selectedEnrollmentGraph = <?php echo json_encode($selectedGraph); ?>;
 const saturdayAttendanceRows = <?php echo json_encode($saturdayChartRows); ?>;
+const saturdayAttendanceComponents = <?php echo json_encode($attendanceGraphComponents); ?>;
 const saturdayAttendanceRange = {
     start: <?php echo json_encode($saturdayStartDate); ?>,
     end: <?php echo json_encode($saturdayEndDate); ?>,
@@ -1926,27 +1986,40 @@ let saturdayAttendanceChart = null;
 const saturdayCanvas = document.getElementById('saturdayAttendanceChart');
 const downloadSaturdayGraphBtn = document.getElementById('downloadSaturdayGraphBtn');
 if (saturdayCanvas && typeof Chart !== 'undefined' && saturdayAttendanceRows.length) {
+    const attendanceComponentColors = {
+        CWTS: { background: '#198754', border: '#146c43' },
+        LTS: { background: '#0d6efd', border: '#0a58ca' },
+        ROTC: { background: '#dc3545', border: '#b02a37' },
+        'N/A': { background: '#6c757d', border: '#565e64' }
+    };
+    const attendanceDatasets = Object.entries(saturdayAttendanceComponents).map(([componentKey, componentLabel]) => {
+        const colors = attendanceComponentColors[componentKey] || attendanceComponentColors['N/A'];
+        return {
+            label: componentLabel,
+            data: saturdayAttendanceRows.map(row => Number((row.components || {})[componentKey] || 0)),
+            backgroundColor: colors.background,
+            borderColor: colors.border,
+            borderWidth: 1,
+            borderRadius: 4
+        };
+    });
     saturdayAttendanceChart = new Chart(saturdayCanvas, {
         type: 'bar',
         data: {
             labels: saturdayAttendanceRows.map(row => row.label),
-            datasets: [{
-                label: saturdayAttendanceRange.component + ' - Unique Students Present',
-                data: saturdayAttendanceRows.map(row => Number(row.total || 0)),
-                backgroundColor: saturdayAttendanceRows.map(row => Number(row.total || 0) > 0 ? '#198754' : '#d9e2e8'),
-                borderColor: saturdayAttendanceRows.map(row => Number(row.total || 0) > 0 ? '#146c43' : '#b8c4cc'),
-                borderWidth: 1,
-                borderRadius: 4
-            }]
+            datasets: attendanceDatasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
+                legend: {
+                    display: attendanceDatasets.length > 1,
+                    position: 'top'
+                },
                 tooltip: {
                     callbacks: {
-                        label: context => context.parsed.y + ' unique student' + (context.parsed.y === 1 ? '' : 's')
+                        label: context => context.dataset.label + ': ' + context.parsed.y + ' unique student' + (context.parsed.y === 1 ? '' : 's')
                     }
                 }
             },
