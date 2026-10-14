@@ -661,53 +661,60 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     if ($action === 'add_column' && $canManageColumns) {
-        $requestedSystemAttendance = ($_POST['group_label_select'] ?? '') === '__system_attendance';
-        $isManualAttendance = ($_POST['score_item_type'] ?? '') === 'manual_attendance' || $requestedSystemAttendance;
-        $label = trim($_POST['label'] ?? '');
-        $groupLabel = selectedGradeGroupLabel($_POST);
-        $maxScore = (float) ($_POST['max_score'] ?? 0);
-        $weight = (float) ($_POST['weight_percent'] ?? 0);
-        if ($isManualAttendance) {
-            $label = $label !== '' ? $label : 'Manual Attendance Score';
-            $groupLabel = 'Manual Attendance';
-            $weight = 0;
-        } else {
-            $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
-            $existingCategoryWeight = gradeExistingCategoryWeight($gradeColumns, $groupLabel);
-            if ($existingCategoryWeight !== null) {
-                $weight = $existingCategoryWeight;
-            }
-        }
-        $groupCode = slugGradeGroup($groupLabel);
+        $scoreItemType = $_POST['score_item_type'] ?? 'score';
+        $isSystemAttendance = $scoreItemType === 'system_attendance';
+        $isManualAttendance = $scoreItemType === 'manual_attendance';
 
-        if ($label === '') {
-            $errors[] = 'Column name is required.';
-        } elseif ($maxScore <= 0) {
-            $errors[] = 'Max score must be greater than zero.';
-        } elseif (!$isManualAttendance && $weight <= 0) {
-            $errors[] = 'Weight percent must be greater than zero.';
+        if ($isSystemAttendance) {
+            setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
+            $messages[] = 'System Attendance added to the current grading sheet.';
         } else {
-            $stmt = $conn->prepare("
-                INSERT INTO tbl_grade_columns
-                    (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
-            ");
-            $stmt->execute([
-                ($isManualAttendance ? 'manual_attendance_' : 'custom_') . bin2hex(random_bytes(8)),
-                $currentProgram,
-                $label,
-                $groupCode,
-                $groupLabel,
-                $maxScore,
-                $weight,
-                500 + time(),
-                $userId,
-                $userId,
-            ]);
+            $label = trim($_POST['label'] ?? '');
+            $groupLabel = selectedGradeGroupLabel($_POST);
+            $maxScore = (float) ($_POST['max_score'] ?? 0);
+            $weight = (float) ($_POST['weight_percent'] ?? 0);
             if ($isManualAttendance) {
-                setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
+                $label = $label !== '' ? $label : 'Manual Attendance Score';
+                $groupLabel = 'Manual Attendance';
+                $weight = 0;
+            } else {
+                $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
+                $existingCategoryWeight = gradeExistingCategoryWeight($gradeColumns, $groupLabel);
+                if ($existingCategoryWeight !== null) {
+                    $weight = $existingCategoryWeight;
+                }
             }
-            $messages[] = $isManualAttendance ? 'Manual attendance score added.' : 'New grade column added.';
+            $groupCode = slugGradeGroup($groupLabel);
+
+            if ($label === '') {
+                $errors[] = 'Column name is required.';
+            } elseif ($maxScore <= 0) {
+                $errors[] = 'Max score must be greater than zero.';
+            } elseif (!$isManualAttendance && $weight <= 0) {
+                $errors[] = 'Weight percent must be greater than zero.';
+            } else {
+                $stmt = $conn->prepare("
+                    INSERT INTO tbl_grade_columns
+                        (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active, created_by, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
+                ");
+                $stmt->execute([
+                    ($isManualAttendance ? 'manual_attendance_' : 'custom_') . bin2hex(random_bytes(8)),
+                    $currentProgram,
+                    $label,
+                    $groupCode,
+                    $groupLabel,
+                    $maxScore,
+                    $weight,
+                    500 + time(),
+                    $userId,
+                    $userId,
+                ]);
+                if ($isManualAttendance) {
+                    setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
+                }
+                $messages[] = $isManualAttendance ? 'Manual attendance score added.' : 'New grade column added.';
+            }
         }
     }
 
@@ -820,8 +827,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 break;
             }
         }
-        $requestedSystemAttendance = ($_POST['group_label_select'] ?? '') === '__system_attendance';
-        $isManualAttendance = ($selectedColumn && isManualAttendanceColumn($selectedColumn)) || $requestedSystemAttendance;
+        $isManualAttendance = $selectedColumn && isManualAttendanceColumn($selectedColumn);
         if ($isManualAttendance) {
             $groupLabel = 'Manual Attendance';
             $weight = 0;
@@ -2387,6 +2393,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="modal-body">
                 <div class="form-group">
                     <label>Score Item</label>
+                    <select id="addColumnItemType" class="form-control">
+                        <option value="score">Custom Score Item</option>
+                        <option value="manual_attendance">Manual Attendance</option>
+                        <option value="system_attendance" <?php echo $systemAttendanceEnabled ? 'disabled' : ''; ?>><?php echo $systemAttendanceEnabled ? 'System Attendance (already added)' : 'System Attendance'; ?></option>
+                    </select>
+                </div>
+                <div class="alert alert-info py-2 d-none" id="systemAttendanceItemHelp">
+                    <strong>System-generated score:</strong> restores System Attendance using saved attendance records and its remaining percentage.
+                </div>
+                <div class="form-group" id="addColumnNameGroup">
+                    <label>Score Item Name</label>
                     <input type="text" name="label" id="addColumnLabel" class="form-control" maxlength="160" placeholder="Example: Reflection Paper" required>
                 </div>
                 <div class="alert alert-success py-2 d-none" id="manualAttendanceGroupingHelp">
@@ -2403,13 +2420,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) $categoryWeight); ?>"><?php echo htmlspecialchars($categoryLabel); ?> — shares <?php echo formatGradeNumber($categoryWeight, 2); ?>%</option>
                             <?php endforeach; ?>
                         <?php endif; ?>
-                        <option value="__system_attendance" data-weight="<?php echo htmlspecialchars((string) $availableAttendanceWeight); ?>"><?php echo $systemAttendanceEnabled ? 'System Attendance — shares ' : 'Add System Attendance — uses '; ?><?php echo formatGradeNumber($availableAttendanceWeight, 2); ?>%</option>
                         <option value="__new">Own percentage (create new category)</option>
                     </select>
                     <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
-                    <small class="text-muted" id="addColumnCategoryHelp">Choose System Attendance to share its percentage, an existing category to share that weight, or create a new category for a separate percentage.</small>
+                    <small class="text-muted" id="addColumnCategoryHelp">Choose an existing category to share that weight, or create a new category for a separate percentage.</small>
                 </div>
-                <div class="form-row">
+                <div class="form-row" id="addColumnScoringGroup">
                     <div class="form-group col-md-6">
                         <label>Max Score</label>
                         <input type="number" name="max_score" id="addColumnMaxScore" class="form-control" min="1" step="0.01" value="100" required>
@@ -2420,7 +2436,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <small class="text-muted" id="addColumnWeightHelp">Set the percentage for the new category.</small>
                     </div>
                 </div>
-                <div class="alert alert-info mb-0">
+                <div class="alert alert-info mb-0" id="addColumnScopeHelp">
                     Added columns are scoped to your current component<?php echo $currentProgram ? ' (' . htmlspecialchars($currentProgram) . ')' : ''; ?> and are included in the weighted grade.
                 </div>
             </div>
@@ -2457,7 +2473,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) $categoryWeight); ?>"><?php echo htmlspecialchars($categoryLabel); ?> — shares <?php echo formatGradeNumber($categoryWeight, 2); ?>%</option>
                             <?php endforeach; ?>
                         <?php endif; ?>
-                        <option value="__system_attendance" data-weight="<?php echo htmlspecialchars((string) $availableAttendanceWeight); ?>"><?php echo $systemAttendanceEnabled ? 'System Attendance — shares ' : 'Add System Attendance — uses '; ?><?php echo formatGradeNumber($availableAttendanceWeight, 2); ?>%</option>
                         <option value="__new">Own percentage (create new category)</option>
                     </select>
                     <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
@@ -2657,18 +2672,15 @@ function syncNewCategoryInput(prefix) {
     const $select = $('#' + prefix + 'ColumnGroupSelect');
     const $weight = prefix === 'edit' ? $('#editColumnWeightPercent') : $('input[name="weight_percent"]', '#addColumnModal');
     const isNew = $select.val() === '__new';
-    const isSystemAttendance = $select.val() === '__system_attendance';
     const categoryWeight = $select.find('option:selected').data('weight');
     $('#' + prefix + 'ColumnGroupNew')
         .toggleClass('d-none', !isNew)
         .prop('required', isNew);
 
     if (!isNew && categoryWeight !== undefined && categoryWeight !== '') {
-        $weight.val(categoryWeight).attr('min', isSystemAttendance ? 0 : 1).prop('readonly', true);
+        $weight.val(categoryWeight).attr('min', 1).prop('readonly', true);
         if (prefix === 'add') {
-            $('#addColumnWeightHelp').text(isSystemAttendance
-                ? 'Shares the same ' + categoryWeight + '% used by system attendance.'
-                : 'Included under the selected category and uses its existing ' + categoryWeight + '% weight.');
+            $('#addColumnWeightHelp').text('Included under the selected category and uses its existing ' + categoryWeight + '% weight.');
         }
     } else {
         $weight.attr('min', 1).prop('readonly', false);
@@ -2677,44 +2689,69 @@ function syncNewCategoryInput(prefix) {
         }
     }
 
-    if (prefix === 'add' && $('#addColumnType').val() !== 'manual_attendance') {
-        $('#manualAttendanceGroupingHelp').toggleClass('d-none', !isSystemAttendance);
-    }
 }
 
 $('#addColumnGroupSelect, #editColumnGroupSelect').on('change', function() {
     syncNewCategoryInput(this.id.indexOf('edit') === 0 ? 'edit' : 'add');
 });
 
+function configureAddScoreItemType(type) {
+    const isManualAttendance = type === 'manual_attendance';
+    const isSystemAttendance = type === 'system_attendance';
+    const usesCustomFields = !isManualAttendance && !isSystemAttendance;
+
+    $('#addColumnType').val(type);
+    $('#addColumnItemType').val(type);
+    $('#manualAttendanceGroupingHelp').toggleClass('d-none', !isManualAttendance);
+    $('#systemAttendanceItemHelp').toggleClass('d-none', !isSystemAttendance);
+    $('#addColumnNameGroup').toggleClass('d-none', isSystemAttendance);
+    $('#addColumnCategoryGroup').toggleClass('d-none', !usesCustomFields);
+    $('#addColumnScoringGroup').toggleClass('d-none', isSystemAttendance);
+    $('#addColumnWeightGroup').toggleClass('d-none', !usesCustomFields);
+    $('#addColumnScopeHelp').toggleClass('d-none', isSystemAttendance);
+    $('#addColumnLabel, #addColumnMaxScore').prop('disabled', isSystemAttendance).prop('required', !isSystemAttendance);
+    $('#addColumnGroupSelect, #addColumnGroupNew, #addColumnWeightPercent').prop('disabled', !usesCustomFields);
+
+    if (isSystemAttendance) {
+        $('#addColumnModalTitle').html('<i class="fas fa-clock mr-2"></i>Add System Attendance');
+        $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add System Attendance');
+    } else if (isManualAttendance) {
+        if (!$('#addColumnLabel').val()) {
+            $('#addColumnLabel').val('Manual Attendance Score');
+        }
+        $('#addColumnMaxScore').val($('#addManualAttendanceBtn').data('max-score'));
+        $('#addColumnModalTitle').html('<i class="fas fa-user-check mr-2"></i>Add Manual Attendance');
+        $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Manual Attendance');
+    } else {
+        $('#addColumnModalTitle').html('<i class="fas fa-plus mr-2"></i>Add Score Item');
+        $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Score Item');
+        syncNewCategoryInput('add');
+    }
+}
+
+$('#addColumnItemType').on('change', function() {
+    configureAddScoreItemType(this.value);
+});
+
 $('#addScoreItemBtn').on('click', function() {
     const $select = $('#addColumnGroupSelect');
-    $('#addColumnModalTitle').html('<i class="fas fa-plus mr-2"></i>Add Score Item');
-    $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Score Item');
-    $('#manualAttendanceGroupingHelp').addClass('d-none');
-    $('#addColumnType').val('score');
-    $('#addColumnCategoryGroup, #addColumnWeightGroup').removeClass('d-none');
     $('#addColumnLabel').val('');
     $('#addColumnMaxScore').val(100);
     $('#addColumnWeightPercent').val(10);
     $('#addColumnGroupNew').val('');
     $select.prop('selectedIndex', 0);
-    syncNewCategoryInput('add');
+    configureAddScoreItemType('score');
 });
 
 $('#addManualAttendanceBtn').on('click', function() {
     const $select = $('#addColumnGroupSelect');
 
-    $('#addColumnModalTitle').html('<i class="fas fa-user-check mr-2"></i>Add Manual Attendance');
-    $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Manual Attendance');
-    $('#manualAttendanceGroupingHelp').removeClass('d-none');
-    $('#addColumnType').val('manual_attendance');
-    $('#addColumnCategoryGroup, #addColumnWeightGroup').addClass('d-none');
     $('#addColumnLabel').val('Manual Attendance Score');
     $('#addColumnMaxScore').val($(this).data('max-score'));
     $('#addColumnWeightPercent').val(1);
     $select.val('__new');
     $('#addColumnGroupNew').val('Manual Attendance');
-    syncNewCategoryInput('add');
+    configureAddScoreItemType('manual_attendance');
 });
 
 $('.edit-column-btn').on('click', function() {
