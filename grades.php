@@ -199,10 +199,23 @@ function formatGradeNumber($value, $decimals = 2) {
     return number_format((float) $value, $decimals);
 }
 
-function transmuteGrade($equivalentPoints, $denominator = 100) {
-    $denominator = max((float) $denominator, 1);
-    $grade = 5 - (4 / $denominator * (float) $equivalentPoints);
-    return max(1, min(5, $grade));
+function transmuteGrade($percentage, $passingPercentage = 75, $highestGrade = 1, $passingGrade = 3, $failingGrade = 5) {
+    $percentage = (float) $percentage;
+    $passingPercentage = max(0.01, min(99.99, (float) $passingPercentage));
+    $highestGrade = (float) $highestGrade;
+    $passingGrade = (float) $passingGrade;
+    $failingGrade = (float) $failingGrade;
+
+    if ($percentage < $passingPercentage) {
+        return $failingGrade;
+    }
+
+    $range = max(0.01, 100 - $passingPercentage);
+    $grade = $highestGrade
+        + ((100 - min(100, $percentage)) / $range)
+        * ($passingGrade - $highestGrade);
+
+    return round(max($highestGrade, min($passingGrade, $grade)), 2);
 }
 
 function buildGradeGroups(array $gradeColumns) {
@@ -233,22 +246,51 @@ function buildGradeGroups(array $gradeColumns) {
             return number_format((float) $weight, 4, '.', '');
         }, $group['weights'])));
 
-        if ($group['has_custom'] || count($uniqueWeights) > 1) {
-            $groups[$groupCode]['weight'] = array_sum($group['weights']);
-        } else {
-            $groups[$groupCode]['weight'] = (float) ($group['weights'][0] ?? 0);
-        }
+        $groups[$groupCode]['weight'] = count($uniqueWeights) > 1
+            ? array_sum(array_map('floatval', $uniqueWeights))
+            : (float) ($group['weights'][0] ?? 0);
     }
 
     return $groups;
 }
 
-function computeStudentGradeSummary(array $gradeColumns, array $scores, array $gradeGroups, $attendanceCount, $totalMeetings, $attendanceWeight) {
+function gradeExistingCategoryWeight(array $gradeColumns, $groupLabel) {
+    $weights = [];
+    foreach ($gradeColumns as $column) {
+        if (strcasecmp(trim((string) $column['group_label']), trim((string) $groupLabel)) !== 0) {
+            continue;
+        }
+        $weights[] = (float) $column['weight_percent'];
+    }
+
+    if (!$weights) {
+        return null;
+    }
+
+    $uniqueWeights = array_values(array_unique(array_map(fn($weight) => number_format($weight, 4, '.', ''), $weights)));
+    return (float) $uniqueWeights[0];
+}
+
+function computeStudentGradeSummary(
+    array $gradeColumns,
+    array $scores,
+    array $gradeGroups,
+    $attendanceCount,
+    $totalMeetings,
+    $attendanceWeight,
+    $passingPercentage = 75,
+    $highestGrade = 1,
+    $passingGrade = 3,
+    $failingGrade = 5
+) {
     $rawTotal = 0;
     $maxTotal = 0;
     $weightedPoints = 0;
     $totalWeight = 0;
     $rawByGroup = [];
+    $gradedRawByGroup = [];
+    $gradedMaxByGroup = [];
+    $gradedCount = 0;
 
     foreach ($gradeColumns as $column) {
         $groupCode = $column['group_code'];
@@ -257,19 +299,44 @@ function computeStudentGradeSummary(array $gradeColumns, array $scores, array $g
         }
 
         $columnId = (int) $column['grade_column_id'];
-        $score = $scores[$columnId] ?? null;
-        $score = $score === null || $score === '' ? 0 : (float) $score;
+        $scoreValue = $scores[$columnId] ?? null;
+        $isGraded = $scoreValue !== null && $scoreValue !== '';
+        $score = $isGraded ? (float) $scoreValue : 0;
         $rawByGroup[$groupCode] += $score;
         $rawTotal += $score;
         $maxTotal += (float) $column['max_score'];
+        if ($isGraded) {
+            $gradedRawByGroup[$groupCode] = ($gradedRawByGroup[$groupCode] ?? 0) + $score;
+            $gradedMaxByGroup[$groupCode] = ($gradedMaxByGroup[$groupCode] ?? 0) + (float) $column['max_score'];
+            $gradedCount++;
+        }
     }
 
+    $groupSummaries = [];
+    $currentWeightedPoints = 0;
+    $activeWeight = 0;
     foreach ($gradeGroups as $groupCode => $group) {
         $groupMax = max((float) $group['max'], 1);
         $groupPercent = (($rawByGroup[$groupCode] ?? 0) / $groupMax) * 100;
         $groupWeight = (float) $group['weight'];
-        $weightedPoints += ($groupPercent / 100) * $groupWeight;
+        $groupWeighted = ($groupPercent / 100) * $groupWeight;
+        $weightedPoints += $groupWeighted;
         $totalWeight += $groupWeight;
+
+        $gradedMaximum = (float) ($gradedMaxByGroup[$groupCode] ?? 0);
+        $currentGroupWeighted = null;
+        if ($gradedMaximum > 0) {
+            $currentGroupWeighted = (($gradedRawByGroup[$groupCode] ?? 0) / $gradedMaximum) * $groupWeight;
+            $currentWeightedPoints += $currentGroupWeighted;
+            $activeWeight += $groupWeight;
+        }
+
+        $groupSummaries[$groupCode] = [
+            'earned' => (float) ($rawByGroup[$groupCode] ?? 0),
+            'maximum' => (float) $group['max'],
+            'weighted' => $groupWeighted,
+            'current_weighted' => $currentGroupWeighted,
+        ];
     }
 
     $attendanceWeight = max(0, (float) $attendanceWeight);
@@ -281,14 +348,37 @@ function computeStudentGradeSummary(array $gradeColumns, array $scores, array $g
 
     $scorePercent = $maxTotal > 0 ? ($rawTotal / $maxTotal) * 100 : 0;
     $weightedPercent = $totalWeight > 0 ? ($weightedPoints / $totalWeight) * 100 : $scorePercent;
+    $currentPercentage = $activeWeight > 0 ? ($currentWeightedPoints / $activeWeight) * 100 : null;
+    $totalItems = count($gradeColumns);
+    if ($totalItems === 0) {
+        $progressStatus = 'no_items';
+        $progressLabel = 'No score items';
+    } elseif ($gradedCount === 0) {
+        $progressStatus = 'not_started';
+        $progressLabel = 'Not started';
+    } elseif ($gradedCount < $totalItems) {
+        $progressStatus = ($currentPercentage ?? 0) >= (float) $passingPercentage ? 'on_track' : 'at_risk';
+        $progressLabel = $progressStatus === 'on_track' ? 'On track' : 'At risk';
+    } else {
+        $progressStatus = $weightedPercent >= (float) $passingPercentage ? 'completed' : 'needs_improvement';
+        $progressLabel = $progressStatus === 'completed' ? 'Completed' : 'Needs improvement';
+    }
 
     return [
         'raw_total' => $rawTotal,
         'max_total' => $maxTotal,
         'score_percent' => $scorePercent,
         'weighted_percent' => $weightedPercent,
+        'current_percentage' => $currentPercentage,
         'total_weight' => $totalWeight,
-        'final_grade' => transmuteGrade($weightedPercent),
+        'final_grade' => transmuteGrade($weightedPercent, $passingPercentage, $highestGrade, $passingGrade, $failingGrade),
+        'graded_count' => $gradedCount,
+        'total_count' => $totalItems,
+        'pending_count' => max(0, $totalItems - $gradedCount),
+        'completion_percentage' => $totalItems > 0 ? ($gradedCount / $totalItems) * 100 : 0,
+        'progress_status' => $progressStatus,
+        'progress_label' => $progressLabel,
+        'groups' => $groupSummaries,
     ];
 }
 
@@ -302,6 +392,10 @@ $currentProgram = normalizeProgram($_SESSION['program'] ?? ($currentUser['progra
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
+$passingPercentageKey = 'passing_percentage_' . $settingScope;
+$highestGradeKey = 'highest_grade_' . $settingScope;
+$passingGradeKey = 'passing_grade_' . $settingScope;
+$failingGradeKey = 'failing_grade_' . $settingScope;
 $canComputeGrades = $userRole === 'facilitator';
 $canManageColumns = $userRole === 'coordinator';
 $columnOwnerId = $userId;
@@ -531,6 +625,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $maxScore = (float) ($_POST['max_score'] ?? 0);
         $weight = (float) ($_POST['weight_percent'] ?? 0);
         $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
+        $existingCategoryWeight = gradeExistingCategoryWeight($gradeColumns, $groupLabel);
+        if ($existingCategoryWeight !== null) {
+            $weight = $existingCategoryWeight;
+        }
         $groupCode = slugGradeGroup($groupLabel);
 
         if ($label === '') {
@@ -661,6 +759,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $maxScore = (float) ($_POST['max_score'] ?? 0);
         $weight = (float) ($_POST['weight_percent'] ?? 0);
         $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
+        $otherColumns = array_values(array_filter($gradeColumns, fn($column) => (int) $column['grade_column_id'] !== $columnId));
+        $existingCategoryWeight = gradeExistingCategoryWeight($otherColumns, $groupLabel);
+        if ($existingCategoryWeight !== null) {
+            $weight = $existingCategoryWeight;
+        }
 
         if ($label === '') {
             $errors[] = 'Column name is required.';
@@ -690,50 +793,179 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'settings' && $canManageColumns) {
         $meetings = max(1, (int) ($_POST['total_meetings'] ?? 11));
-        setGradeSetting($conn, $totalMeetingsKey, (string) $meetings, $userId);
-        $settingsColumns = $_POST['columns'] ?? [];
+        $passingPercentageInput = (float) ($_POST['passing_percentage'] ?? 75);
+        $highestGradeInput = (float) ($_POST['highest_grade'] ?? 1);
+        $passingGradeInput = (float) ($_POST['passing_grade'] ?? 3);
+        $failingGradeInput = (float) ($_POST['failing_grade'] ?? 5);
+        $settingsCategories = $_POST['categories'] ?? [];
+        $currentGroups = buildGradeGroups($gradeColumns);
+        $categoryUpdates = [];
 
-        if (is_array($settingsColumns)) {
-            $activeColumnLookup = [];
-            foreach ($gradeColumns as $column) {
-                $activeColumnLookup[(int) $column['grade_column_id']] = true;
-            }
+        if ($passingPercentageInput <= 0 || $passingPercentageInput >= 100) {
+            $errors[] = 'Passing percentage must be between 0 and 100.';
+        } elseif ($highestGradeInput >= $passingGradeInput || $passingGradeInput >= $failingGradeInput) {
+            $errors[] = 'Use an ascending scale such as 1.00 highest, 3.00 passing, and 5.00 failing.';
+        }
 
-            $updateColumn = $conn->prepare("
-                UPDATE tbl_grade_columns
-                SET label = ?, group_code = ?, group_label = ?, max_score = ?, weight_percent = ?, updated_by = ?
-                WHERE grade_column_id = ?
-            ");
-
-            foreach ($settingsColumns as $columnId => $columnSettings) {
-                $columnId = (int) $columnId;
-                if (!isset($activeColumnLookup[$columnId]) || !is_array($columnSettings)) {
+        if (!is_array($settingsCategories)) {
+            $errors[] = 'Invalid grading category settings.';
+        } else {
+            foreach ($currentGroups as $groupCode => $group) {
+                $category = $settingsCategories[$groupCode] ?? null;
+                if (!is_array($category)) {
+                    $errors[] = 'Every active grading category must be included.';
                     continue;
                 }
-
-                $label = trim((string) ($columnSettings['label'] ?? ''));
-                $groupLabel = trim((string) ($columnSettings['group_label'] ?? ''));
-                $maxScore = (float) ($columnSettings['max_score'] ?? 0);
-                $weight = (float) ($columnSettings['weight_percent'] ?? 0);
-
-                if ($label === '' || $groupLabel === '' || $maxScore <= 0 || $weight <= 0) {
-                    $errors[] = 'Skipped one column in settings because it has incomplete or invalid values.';
+                $name = trim((string) ($category['name'] ?? ''));
+                $weight = (float) ($category['weight'] ?? -1);
+                if ($name === '' || $weight < 0 || $weight > 100) {
+                    $errors[] = 'Each category needs a name and a weight from 0% to 100%.';
                     continue;
                 }
-
-                $updateColumn->execute([
-                    $label,
-                    slugGradeGroup($groupLabel),
-                    $groupLabel,
-                    $maxScore,
-                    $weight,
-                    $userId,
-                    $columnId,
-                ]);
+                $categoryUpdates[$groupCode] = ['name' => $name, 'weight' => $weight];
             }
         }
 
-        $messages[] = 'Grade settings updated.';
+        $scoreCategoryWeight = array_sum(array_column($categoryUpdates, 'weight'));
+        if (!$errors && $scoreCategoryWeight > 100.001) {
+            $errors[] = 'Score category weights cannot exceed 100%. Current total: ' . formatGradeNumber($scoreCategoryWeight, 2) . '%. Reduce them so attendance can use the remaining percentage.';
+        }
+
+        if (!$errors) {
+            $conn->beginTransaction();
+            try {
+                setGradeSetting($conn, $totalMeetingsKey, (string) $meetings, $userId);
+                setGradeSetting($conn, $passingPercentageKey, (string) $passingPercentageInput, $userId);
+                setGradeSetting($conn, $highestGradeKey, (string) $highestGradeInput, $userId);
+                setGradeSetting($conn, $passingGradeKey, (string) $passingGradeInput, $userId);
+                setGradeSetting($conn, $failingGradeKey, (string) $failingGradeInput, $userId);
+
+                $updateCategoryItem = $conn->prepare("
+                    UPDATE tbl_grade_columns
+                    SET group_code = ?, group_label = ?, weight_percent = ?, updated_by = ?
+                    WHERE grade_column_id = ?
+                ");
+                foreach ($categoryUpdates as $oldGroupCode => $category) {
+                    $newGroupCode = slugGradeGroup($category['name']);
+                    foreach ($gradeColumns as $column) {
+                        if ($column['group_code'] !== $oldGroupCode) {
+                            continue;
+                        }
+                        $updateCategoryItem->execute([
+                            $newGroupCode,
+                            $category['name'],
+                            $category['weight'],
+                            $userId,
+                            (int) $column['grade_column_id'],
+                        ]);
+                    }
+                }
+                $conn->commit();
+            } catch (Throwable $error) {
+                if ($conn->inTransaction()) {
+                    $conn->rollBack();
+                }
+                throw $error;
+            }
+            $messages[] = 'Grade settings updated.';
+        }
+    }
+
+    if ($action === 'save_score_ajax') {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!$canComputeGrades) {
+            http_response_code(403);
+            echo json_encode(['message' => 'Only facilitators can encode scores.']);
+            exit();
+        }
+
+        $studentId = (int) ($_POST['student_id'] ?? 0);
+        $columnId = (int) ($_POST['column_id'] ?? 0);
+        $scoreValue = trim((string) ($_POST['score'] ?? ''));
+        $columnLookup = [];
+        foreach ($gradeColumns as $column) {
+            $columnLookup[(int) $column['grade_column_id']] = $column;
+        }
+
+        if (!isset($accessibleStudentLookup[$studentId]) || !isset($columnLookup[$columnId])) {
+            http_response_code(404);
+            echo json_encode(['message' => 'Student or score item is unavailable in this class record.']);
+            exit();
+        }
+
+        $maxScore = (float) $columnLookup[$columnId]['max_score'];
+        if ($scoreValue !== '' && (!is_numeric($scoreValue) || (float) $scoreValue < 0 || (float) $scoreValue > $maxScore)) {
+            http_response_code(422);
+            echo json_encode(['message' => 'Score must be between 0 and ' . formatGradeNumber($maxScore) . '.']);
+            exit();
+        }
+
+        $score = $scoreValue === '' ? null : (float) $scoreValue;
+        $upsert = $conn->prepare("
+            INSERT INTO tbl_grade_scores (grade_column_id, tbl_student_id, score, updated_by)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE score = VALUES(score), updated_by = VALUES(updated_by)
+        ");
+        $upsert->execute([$columnId, $studentId, $score, $userId]);
+
+        $scoreStmt = $conn->prepare("
+            SELECT grade_column_id, score
+            FROM tbl_grade_scores
+            WHERE tbl_student_id = ?
+              AND grade_column_id IN (" . implode(',', array_fill(0, count($gradeColumns), '?')) . ")
+        ");
+        $scoreStmt->execute(array_merge([$studentId], array_map('intval', array_column($gradeColumns, 'grade_column_id'))));
+        $studentScores = [];
+        foreach ($scoreStmt->fetchAll(PDO::FETCH_ASSOC) as $scoreRow) {
+            $studentScores[(int) $scoreRow['grade_column_id']] = $scoreRow['score'];
+        }
+
+        $attendanceStmt = $conn->prepare("
+            SELECT COUNT(DISTINCT attendance_date)
+            FROM (
+                SELECT DATE(time_in) AS attendance_date FROM tbl_attendance WHERE tbl_student_id = ?
+                UNION ALL
+                SELECT DATE(time_in) AS attendance_date FROM tbl_attendance_archive WHERE tbl_student_id = ?
+            ) attendance_days
+        ");
+        $attendanceStmt->execute([$studentId, $studentId]);
+        $ajaxTotalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+        $ajaxGroups = buildGradeGroups($gradeColumns);
+        $ajaxScoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $ajaxGroups));
+        $ajaxAttendanceWeight = max(0, 100 - $ajaxScoreWeight);
+        $ajaxPassingPercentage = (float) getGradeSetting($conn, $passingPercentageKey, '75');
+        $ajaxHighestGrade = (float) getGradeSetting($conn, $highestGradeKey, '1');
+        $ajaxPassingGrade = (float) getGradeSetting($conn, $passingGradeKey, '3');
+        $ajaxFailingGrade = (float) getGradeSetting($conn, $failingGradeKey, '5');
+        $summary = computeStudentGradeSummary(
+            $gradeColumns,
+            $studentScores,
+            $ajaxGroups,
+            min($ajaxTotalMeetings, (int) $attendanceStmt->fetchColumn()),
+            $ajaxTotalMeetings,
+            $ajaxAttendanceWeight,
+            $ajaxPassingPercentage,
+            $ajaxHighestGrade,
+            $ajaxPassingGrade,
+            $ajaxFailingGrade
+        );
+
+        echo json_encode([
+            'message' => 'Score saved.',
+            'percentage' => round((float) $summary['weighted_percent'], 2),
+            'grade' => round((float) $summary['final_grade'], 2),
+            'completion_percentage' => round((float) $summary['completion_percentage'], 2),
+            'progress_status' => $summary['progress_status'],
+            'progress_label' => $summary['progress_label'],
+            'pending_count' => $summary['pending_count'],
+            'groups' => array_map(fn($group) => [
+                'earned' => round((float) $group['earned'], 2),
+                'maximum' => round((float) $group['maximum'], 2),
+                'weighted' => round((float) $group['weighted'], 2),
+            ], $summary['groups']),
+        ]);
+        exit();
     }
 
     if ($action === 'save_scores' && $canComputeGrades) {
@@ -849,6 +1081,10 @@ if (!empty($accessibleStudentIds)) {
 }
 
 $totalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+$passingPercentage = (float) getGradeSetting($conn, $passingPercentageKey, '75');
+$highestGrade = (float) getGradeSetting($conn, $highestGradeKey, '1');
+$passingGrade = (float) getGradeSetting($conn, $passingGradeKey, '3');
+$failingGrade = (float) getGradeSetting($conn, $failingGradeKey, '5');
 $gradeGroups = buildGradeGroups($gradeColumns);
 $scoreWeight = array_sum(array_map(function ($group) {
     return (float) $group['weight'];
@@ -860,6 +1096,44 @@ $gradeGroupToneIndex = 1;
 foreach (array_keys($gradeGroups) as $groupCode) {
     $gradeGroupTones[$groupCode] = 'grade-group-tone-' . $gradeGroupToneIndex;
     $gradeGroupToneIndex = ($gradeGroupToneIndex % 4) + 1;
+}
+$gradeSummariesByStudent = [];
+$gradebookMetrics = [
+    'students' => count($students),
+    'on_track' => 0,
+    'needs_attention' => 0,
+    'completed' => 0,
+    'average_completion' => 0,
+];
+$completionTotal = 0;
+foreach ($students as $student) {
+    $studentId = (int) $student['tbl_student_id'];
+    $summary = computeStudentGradeSummary(
+        $gradeColumns,
+        $scoresByStudent[$studentId] ?? [],
+        $gradeGroups,
+        min($totalMeetings, $attendanceCounts[$studentId] ?? 0),
+        $totalMeetings,
+        $attendanceWeight,
+        $passingPercentage,
+        $highestGrade,
+        $passingGrade,
+        $failingGrade
+    );
+    $gradeSummariesByStudent[$studentId] = $summary;
+    $completionTotal += (float) $summary['completion_percentage'];
+    if ($summary['progress_status'] === 'on_track') {
+        $gradebookMetrics['on_track']++;
+    }
+    if (in_array($summary['progress_status'], ['at_risk', 'needs_improvement'], true)) {
+        $gradebookMetrics['needs_attention']++;
+    }
+    if ($summary['progress_status'] === 'completed') {
+        $gradebookMetrics['completed']++;
+    }
+}
+if (count($students) > 0) {
+    $gradebookMetrics['average_completion'] = round($completionTotal / count($students), 1);
 }
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -1040,6 +1314,56 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             font-size: 1.4rem;
         }
 
+        .grade-progress-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .grade-progress-card {
+            min-width: 0;
+            padding: 14px 16px;
+            border: 1px solid var(--grade-border);
+            border-top: 3px solid #94a3b8;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 3px 12px rgba(15, 77, 42, 0.05);
+        }
+
+        .grade-progress-card.on-track { border-top-color: #168865; }
+        .grade-progress-card.attention { border-top-color: #dc6b32; }
+        .grade-progress-card.completed { border-top-color: #2563eb; }
+
+        .grade-progress-card span,
+        .grade-progress-card strong,
+        .grade-progress-card small {
+            display: block;
+        }
+
+        .grade-progress-card span {
+            color: var(--grade-muted);
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .grade-progress-card strong {
+            margin-top: 4px;
+            color: var(--grade-ink);
+            font-size: 1.45rem;
+        }
+
+        .grade-progress-card small {
+            margin-top: 2px;
+            overflow: hidden;
+            color: var(--grade-muted);
+            font-size: 0.72rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .grade-table-wrap {
             max-height: calc(100vh - 230px);
             overflow: auto;
@@ -1086,13 +1410,25 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
         .grade-table thead .grade-category-row th {
             top: 0;
-            height: 58px;
+            height: 40px;
         }
 
         .grade-table thead .grade-assessment-row th {
-            top: 58px;
+            top: 40px;
+            height: 40px;
             padding-top: 8px;
             padding-bottom: 8px;
+            text-transform: none;
+        }
+
+        .grade-table thead .grade-max-row th {
+            top: 80px;
+            height: 34px;
+            padding-top: 5px;
+            padding-bottom: 5px;
+            color: #64748b;
+            font-size: 0.7rem;
+            font-weight: 700;
             text-transform: none;
         }
 
@@ -1176,6 +1512,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             color: #54715d;
         }
 
+        .grade-table .category-total-heading {
+            min-width: 112px;
+            background: #e7eef5;
+            color: #40536a;
+        }
+
         .score-input {
             width: 78px;
             min-width: 78px;
@@ -1188,6 +1530,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             border-radius: 6px;
             background: #fffef4;
             font-weight: 700;
+        }
+
+        .score-cell {
+            padding: 4px !important;
+            background: #fff;
         }
 
         .score-input:focus {
@@ -1212,6 +1559,58 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .grade-table tbody .final-cell {
             font-size: 1rem;
         }
+
+        .grade-progress-cell {
+            min-width: 142px;
+            background: #fff;
+            text-align: left !important;
+        }
+
+        .grade-progress-cell small {
+            display: block;
+            margin-top: 4px;
+            color: var(--grade-muted);
+            font-size: 0.7rem;
+        }
+
+        .progress-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #eef2f7;
+            color: #526174;
+            font-size: 0.68rem;
+            font-weight: 800;
+        }
+
+        .progress-status.on_track,
+        .progress-status.completed {
+            background: #e9f8f1;
+            color: #137052;
+        }
+
+        .progress-status.at_risk,
+        .progress-status.needs_improvement {
+            background: #fff0e8;
+            color: #a74416;
+        }
+
+        .autosave-status {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #f1f5f9;
+            color: #64748b;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .autosave-status.saving { background: #fff7df; color: #a86608; }
+        .autosave-status.saved { background: #eaf8f1; color: #168865; }
+        .autosave-status.error { background: #fff0f2; color: #b42f45; }
+
+        .score-input.saving { opacity: 0.6; }
+        .score-input.saved { border-color: #42b388; background: #effbf6; }
 
         .small-label {
             display: block;
@@ -1280,12 +1679,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
         body.dark-mode .grade-page-title,
         body.dark-mode .sheet-context-value,
-        body.dark-mode .grade-summary .info-box-number {
+        body.dark-mode .grade-summary .info-box-number,
+        body.dark-mode .grade-progress-card strong {
             color: #f1f5f9;
         }
 
         body.dark-mode .grade-sheet-selector,
-        body.dark-mode .class-record-header {
+        body.dark-mode .class-record-header,
+        body.dark-mode .grade-progress-card {
             background: #303733;
         }
 
@@ -1354,6 +1755,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 grid-template-columns: 1fr;
             }
 
+            .grade-progress-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .sheet-context-item {
                 padding-top: 3px;
                 padding-bottom: 3px;
@@ -1384,12 +1789,19 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             }
         }
 
+        @media (max-width: 520px) {
+            .grade-progress-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         @media print {
             .main-header,
             .main-sidebar,
             .content-header,
             .grade-sheet-selector,
             .grade-summary,
+            .grade-progress-grid,
             .class-record-tools-header,
             .class-record-legend,
             .grade-print-button,
@@ -1497,6 +1909,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 <?php endforeach; ?>
 
+                <?php if ($scoreWeight > 100.001): ?>
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fas fa-triangle-exclamation mr-1"></i>
+                        Category weights total <?php echo formatGradeNumber($scoreWeight, 2); ?>%. Smart NSTP grading requires a 100% total; open <strong>Settings</strong> and correct the category weights.
+                    </div>
+                <?php endif; ?>
+
                 <div class="card grade-card grade-folder-card grade-sheet-selector">
                     <div class="card-body py-3">
                         <form method="GET" class="row align-items-end">
@@ -1546,43 +1965,22 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 </div>
 
-                <div class="row grade-summary">
-                    <div class="col-md-3 col-sm-6">
-                        <div class="info-box grade-card">
-                            <span class="info-box-icon bg-info"><i class="fas fa-users"></i></span>
-                            <div class="info-box-content">
-                                <span class="info-box-text">Students</span>
-                                <span class="info-box-number"><?php echo count($students); ?></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6">
-                        <div class="info-box grade-card">
-                            <span class="info-box-icon bg-success"><i class="fas fa-calendar-check"></i></span>
-                            <div class="info-box-content">
-                                <span class="info-box-text">Attendance Meetings</span>
-                                <span class="info-box-number"><?php echo (int) $totalMeetings; ?></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6">
-                        <div class="info-box grade-card">
-                            <span class="info-box-icon bg-warning"><i class="fas fa-table-columns"></i></span>
-                            <div class="info-box-content">
-                                <span class="info-box-text">Score Columns</span>
-                                <span class="info-box-number"><?php echo count($gradeColumns); ?></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6">
-                        <div class="info-box grade-card">
-                            <span class="info-box-icon bg-primary"><i class="fas fa-weight-hanging"></i></span>
-                            <div class="info-box-content">
-                                <span class="info-box-text">Configured Weight</span>
-                                <span class="info-box-number"><?php echo formatGradeNumber($totalConfiguredWeight, 0); ?>%</span>
-                            </div>
-                        </div>
-                    </div>
+                <div class="grade-progress-grid" aria-label="Gradebook progress summary">
+                    <article class="grade-progress-card">
+                        <span>Students</span><strong><?php echo (int) $gradebookMetrics['students']; ?></strong><small>Enrolled in the active class</small>
+                    </article>
+                    <article class="grade-progress-card on-track">
+                        <span>On track</span><strong><?php echo (int) $gradebookMetrics['on_track']; ?></strong><small>Current standing meets the target</small>
+                    </article>
+                    <article class="grade-progress-card attention">
+                        <span>Needs attention</span><strong><?php echo (int) $gradebookMetrics['needs_attention']; ?></strong><small>Below target or incomplete</small>
+                    </article>
+                    <article class="grade-progress-card completed">
+                        <span>Completed</span><strong><?php echo (int) $gradebookMetrics['completed']; ?></strong><small>All score items recorded</small>
+                    </article>
+                    <article class="grade-progress-card">
+                        <span>Encoding progress</span><strong><?php echo formatGradeNumber($gradebookMetrics['average_completion'], 1); ?>%</strong><small>Average score-item completion</small>
+                    </article>
                 </div>
 
                 <?php if ($canManageColumns): ?>
@@ -1596,13 +1994,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                         aria-expanded="false"
                                         aria-controls="activeColumnsPanel">
                                     <i class="fas fa-chevron-right mr-1" id="activeColumnsIcon"></i>
-                                    <i class="fas fa-list mr-2"></i>Class Record Columns
+                                    <i class="fas fa-list mr-2"></i>Score Items
                                 </button>
                                 <div class="small text-muted mt-1">Coordinator controls for the active grading sheet.</div>
                             </div>
                             <div class="class-record-actions">
                                 <button class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addColumnModal">
-                                    <i class="fas fa-plus mr-1"></i>Add Column
+                                    <i class="fas fa-plus mr-1"></i>Add Score Item
                                 </button>
                                 <button class="btn btn-outline-secondary btn-sm" data-toggle="modal" data-target="#settingsModal">
                                     <i class="fas fa-sliders-h mr-1"></i>Settings
@@ -1685,7 +2083,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <div class="card-header class-record-header d-flex align-items-center flex-wrap">
                             <div class="class-record-heading">
                                 <h3 class="card-title mb-0"><i class="fas fa-table mr-2"></i>Student Class Record</h3>
-                                <div class="small text-muted mt-1">Encode raw scores; totals and final grades are computed automatically.</div>
+                                <div class="small text-muted mt-1">Type a raw score, then press Enter or click outside to save automatically.</div>
                             </div>
                             <div class="class-record-legend">
                                 <span><i class="legend-swatch input"></i>Editable score</span>
@@ -1695,9 +2093,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <i class="fas fa-print mr-1"></i>Print Sheet
                             </button>
                             <?php if ($canComputeGrades): ?>
-                                <button class="btn btn-success btn-sm">
-                                    <i class="fas fa-save mr-1"></i>Save Scores
-                                </button>
+                                <span id="grade-save-status" class="autosave-status">Ready</span>
                             <?php else: ?>
                                 <span class="badge badge-secondary px-3 py-2">
                                     <i class="fas fa-eye mr-1"></i>View Only
@@ -1708,42 +2104,51 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <div class="grade-table-wrap">
                                 <table class="table table-bordered table-hover grade-table">
                                     <thead>
-                                        <?php $gradeHeaderRowspan = empty($gradeColumns) ? 1 : 2; ?>
                                         <tr class="grade-category-row">
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="sticky-index">#</th>
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="sticky-name">Student Name</th>
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>">Class / Folder</th>
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>">Facilitator</th>
+                                            <th rowspan="3" class="sticky-index">#</th>
+                                            <th rowspan="3" class="sticky-name">Student</th>
                                             <?php foreach ($gradeGroups as $groupCode => $group): ?>
-                                                <th colspan="<?php echo (int) $group['count']; ?>" class="grade-category-header <?php echo htmlspecialchars($gradeGroupTones[$groupCode]); ?>">
+                                                <th colspan="<?php echo (int) $group['count'] + 2; ?>" class="grade-category-header <?php echo htmlspecialchars($gradeGroupTones[$groupCode]); ?>">
                                                     <?php echo htmlspecialchars($group['label']); ?>
-                                                    <small><?php echo formatGradeNumber($group['weight'], 0); ?>% weight</small>
+                                                    · <?php echo formatGradeNumber($group['weight'], 2); ?>%
                                                 </th>
                                             <?php endforeach; ?>
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="computed-cell">Attendance <span class="small-label">/ <?php echo (int) $totalMeetings; ?></span></th>
-                                            <?php if (!empty($gradeColumns)): ?>
-                                                <th rowspan="2" class="computed-cell">Total Score</th>
-                                                <th rowspan="2" class="computed-cell">Max Score</th>
-                                                <th rowspan="2" class="computed-cell">Score %</th>
-                                            <?php endif; ?>
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="computed-cell">Weighted %</th>
-                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="final-cell">Final Grade</th>
+                                            <th colspan="2" class="grade-category-header grade-group-tone-4">Attendance · <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</th>
+                                            <th rowspan="3" class="computed-cell">Recorded<br>Weighted</th>
+                                            <th rowspan="3" class="final-cell">Computed<br>Grade</th>
+                                            <th rowspan="3" class="category-total-heading">Progress</th>
                                         </tr>
-                                        <?php if (!empty($gradeColumns)): ?>
-                                            <tr class="grade-assessment-row">
+                                        <tr class="grade-assessment-row">
+                                            <?php foreach ($gradeGroups as $groupCode => $group): ?>
                                                 <?php foreach ($gradeColumns as $column): ?>
+                                                    <?php if ($column['group_code'] !== $groupCode) continue; ?>
                                                     <th class="assessment-header">
                                                         <?php echo htmlspecialchars($column['label']); ?>
-                                                        <span class="small-label">Highest score: <?php echo formatGradeNumber($column['max_score'], 0); ?></span>
                                                     </th>
                                                 <?php endforeach; ?>
-                                            </tr>
-                                        <?php endif; ?>
+                                                <th class="category-total-heading">TS</th>
+                                                <th class="category-total-heading">Weighted</th>
+                                            <?php endforeach; ?>
+                                            <th class="category-total-heading">Meetings</th>
+                                            <th class="category-total-heading">Weighted</th>
+                                        </tr>
+                                        <tr class="grade-max-row">
+                                            <?php foreach ($gradeGroups as $groupCode => $group): ?>
+                                                <?php foreach ($gradeColumns as $column): ?>
+                                                    <?php if ($column['group_code'] !== $groupCode) continue; ?>
+                                                    <th><?php echo formatGradeNumber($column['max_score'], 2); ?></th>
+                                                <?php endforeach; ?>
+                                                <th><?php echo formatGradeNumber($group['max'], 2); ?></th>
+                                                <th><?php echo formatGradeNumber($group['weight'], 2); ?>%</th>
+                                            <?php endforeach; ?>
+                                            <th><?php echo (int) $totalMeetings; ?></th>
+                                            <th><?php echo formatGradeNumber($attendanceWeight, 2); ?>%</th>
+                                        </tr>
                                     </thead>
                                     <tbody>
                                         <?php if (empty($students)): ?>
                                             <tr>
-                                                <td colspan="<?php echo count($gradeColumns) + (empty($gradeColumns) ? 7 : 10); ?>" class="text-center text-muted py-5">
+                                                <td colspan="<?php echo count($gradeColumns) + (count($gradeGroups) * 2) + 7; ?>" class="text-center text-muted py-5">
                                                     <i class="fas fa-user-graduate fa-2x d-block mb-2"></i>
                                                     No students available for this account.
                                                 </td>
@@ -1755,14 +2160,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             $studentId = (int) $student['tbl_student_id'];
                                             $studentDisplayName = gradeDisplayStudentName($student);
                                             $attendanceCount = min($totalMeetings, $attendanceCounts[$studentId] ?? 0);
-                                            $summary = computeStudentGradeSummary(
-                                                $gradeColumns,
-                                                $scoresByStudent[$studentId] ?? [],
-                                                $gradeGroups,
-                                                $attendanceCount,
-                                                $totalMeetings,
-                                                $attendanceWeight
-                                            );
+                                            $summary = $gradeSummariesByStudent[$studentId];
                                             ?>
                                             <tr class="grade-row" data-attendance-count="<?php echo (int) $attendanceCount; ?>">
                                                 <td class="sticky-index"><?php echo $studentIndex + 1; ?></td>
@@ -1772,35 +2170,39 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                         <span class="small-label"><?php echo htmlspecialchars($student['student_number']); ?></span>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td><?php echo htmlspecialchars($student['course_section']); ?></td>
-                                                <td><?php echo htmlspecialchars($student['facilitator_name']); ?></td>
-                                                <?php foreach ($gradeColumns as $column): ?>
-                                                    <?php
-                                                    $columnId = (int) $column['grade_column_id'];
-                                                    $value = $scoresByStudent[$studentId][$columnId] ?? '';
-                                                    ?>
-                                                    <td>
-                                                        <input
-                                                            type="number"
-                                                            class="form-control form-control-sm score-input"
-                                                            name="scores[<?php echo $studentId; ?>][<?php echo $columnId; ?>]"
-                                                            value="<?php echo htmlspecialchars((string) $value); ?>"
-                                                            min="0"
-                                                            max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
-                                                            data-max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
-                                                            data-group="<?php echo htmlspecialchars($column['group_code']); ?>"
-                                                            step="0.01"
-                                                            <?php echo $canComputeGrades ? '' : 'readonly disabled'; ?>>
-                                                    </td>
+                                                <?php foreach ($gradeGroups as $groupCode => $group): ?>
+                                                    <?php foreach ($gradeColumns as $column): ?>
+                                                        <?php if ($column['group_code'] !== $groupCode) continue; ?>
+                                                        <?php
+                                                        $columnId = (int) $column['grade_column_id'];
+                                                        $value = $scoresByStudent[$studentId][$columnId] ?? '';
+                                                        ?>
+                                                        <td class="score-cell">
+                                                            <input
+                                                                type="number"
+                                                                class="form-control form-control-sm score-input"
+                                                                value="<?php echo htmlspecialchars((string) $value); ?>"
+                                                                min="0"
+                                                                max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
+                                                                data-max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
+                                                                data-group="<?php echo htmlspecialchars($column['group_code']); ?>"
+                                                                data-column="<?php echo $columnId; ?>"
+                                                                data-student="<?php echo $studentId; ?>"
+                                                                step="0.01"
+                                                                <?php echo $canComputeGrades ? '' : 'readonly disabled'; ?>>
+                                                        </td>
+                                                    <?php endforeach; ?>
+                                                    <td class="computed-cell" data-group-total="<?php echo htmlspecialchars($groupCode); ?>"><?php echo formatGradeNumber($summary['groups'][$groupCode]['earned']); ?> / <?php echo formatGradeNumber($summary['groups'][$groupCode]['maximum']); ?></td>
+                                                    <td class="computed-cell" data-group-weighted="<?php echo htmlspecialchars($groupCode); ?>"><?php echo formatGradeNumber($summary['groups'][$groupCode]['weighted']); ?></td>
                                                 <?php endforeach; ?>
-                                                <td class="computed-cell"><?php echo (int) $attendanceCount; ?></td>
-                                                <?php if (!empty($gradeColumns)): ?>
-                                                    <td class="computed-cell js-raw-total"><?php echo formatGradeNumber($summary['raw_total']); ?></td>
-                                                    <td class="computed-cell js-max-total"><?php echo formatGradeNumber($summary['max_total']); ?></td>
-                                                    <td class="computed-cell js-score-percent"><?php echo formatGradeNumber($summary['score_percent']); ?>%</td>
-                                                <?php endif; ?>
+                                                <td class="computed-cell"><?php echo (int) $attendanceCount; ?> / <?php echo (int) $totalMeetings; ?></td>
+                                                <td class="computed-cell"><?php echo formatGradeNumber(($attendanceCount / max($totalMeetings, 1)) * $attendanceWeight); ?></td>
                                                 <td class="computed-cell js-weighted-percent"><?php echo formatGradeNumber($summary['weighted_percent']); ?>%</td>
                                                 <td class="final-cell js-final-grade"><?php echo formatGradeNumber($summary['final_grade']); ?></td>
+                                                <td class="grade-progress-cell">
+                                                    <span class="progress-status <?php echo htmlspecialchars($summary['progress_status']); ?>" data-progress-status><?php echo htmlspecialchars($summary['progress_label']); ?></span>
+                                                    <small data-progress-detail><?php echo formatGradeNumber($summary['completion_percentage'], 0); ?>% encoded · <?php echo (int) $summary['pending_count']; ?> pending</small>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1808,7 +2210,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             </div>
                         </div>
                         <div class="card-footer text-muted">
-                            Formula is based on the active grading sheet: each category computes earned score over max score, applies its configured weight, and attendance automatically fills the remaining percentage. If attendance is the only active basis, it counts as 100%.
+                            Smart NSTP formula: each category computes earned points over its total possible score, applies the category weight, and combines the results with attendance. The configured scale converts the recorded weighted percentage to the final 1.00–5.00 grade.
                         </div>
                     </div>
                 </form>
@@ -1825,12 +2227,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <form method="POST" class="modal-content">
             <input type="hidden" name="action" value="add_column">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-plus mr-2"></i>Add Grade Column</h5>
+                <h5 class="modal-title"><i class="fas fa-plus mr-2"></i>Add Score Item</h5>
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Column Name</label>
+                    <label>Score Item</label>
                     <input type="text" name="label" class="form-control" maxlength="160" placeholder="Example: Reflection Paper" required>
                 </div>
                 <div class="form-group">
@@ -1854,8 +2256,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <input type="number" name="max_score" class="form-control" min="1" step="0.01" value="100" required>
                     </div>
                     <div class="form-group col-md-6">
-                        <label>Weight Percent</label>
+                        <label>Category Weight %</label>
                         <input type="number" name="weight_percent" class="form-control" min="1" step="0.01" value="10" required>
+                        <small class="text-muted">Used only for a new category; existing categories keep their configured weight.</small>
                     </div>
                 </div>
                 <div class="alert alert-info mb-0">
@@ -1864,7 +2267,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                <button class="btn btn-primary"><i class="fas fa-plus mr-1"></i>Add Column</button>
+                <button class="btn btn-primary"><i class="fas fa-plus mr-1"></i>Add Score Item</button>
             </div>
         </form>
     </div>
@@ -1881,7 +2284,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Column Name</label>
+                    <label>Score Item</label>
                     <input type="text" name="label" id="editColumnLabel" class="form-control" maxlength="160" required>
                 </div>
                 <div class="form-group">
@@ -1904,8 +2307,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <input type="number" name="max_score" id="editColumnMaxScore" class="form-control" min="1" step="0.01" required>
                     </div>
                     <div class="form-group col-md-6">
-                        <label>Weight Percent</label>
+                        <label>Category Weight %</label>
                         <input type="number" name="weight_percent" id="editColumnWeightPercent" class="form-control" min="1" step="0.01" required>
+                        <small class="text-muted">Moving this item to an existing category uses that category's weight.</small>
                     </div>
                 </div>
             </div>
@@ -1926,78 +2330,74 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Total Attendance Meetings</label>
-                    <input type="number" name="total_meetings" class="form-control" min="1" value="<?php echo (int) $totalMeetings; ?>" required>
-                    <small class="text-muted">Used for Attendance Equivalence. The template you provided uses 11 meetings.</small>
+                <div class="row">
+                    <div class="form-group col-lg-4">
+                        <label>Total Attendance Meetings</label>
+                        <input type="number" name="total_meetings" class="form-control" min="1" value="<?php echo (int) $totalMeetings; ?>" required>
+                        <small class="text-muted">Attendance uses the remaining category weight.</small>
+                    </div>
+                    <div class="col-lg-8">
+                        <label class="d-block">1.00–5.00 Transmutation</label>
+                        <div class="form-row">
+                            <div class="form-group col-md-3"><label class="small">Passing %</label><input type="number" name="passing_percentage" class="form-control" min="1" max="99.99" step="0.01" value="<?php echo htmlspecialchars((string) $passingPercentage); ?>" required></div>
+                            <div class="form-group col-md-3"><label class="small">Highest Grade</label><input type="number" name="highest_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $highestGrade); ?>" required></div>
+                            <div class="form-group col-md-3"><label class="small">Passing Grade</label><input type="number" name="passing_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $passingGrade); ?>" required></div>
+                            <div class="form-group col-md-3"><label class="small">Failing Grade</label><input type="number" name="failing_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $failingGrade); ?>" required></div>
+                        </div>
+                        <small class="text-muted">Default: below 75% = 5.00; 75% = 3.00; 100% = 1.00.</small>
+                    </div>
                 </div>
-                <?php if (!empty($gradeColumns)): ?>
-                    <datalist id="gradeCategoryList">
-                        <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
-                            <option value="<?php echo htmlspecialchars($categoryLabel); ?>"></option>
-                        <?php endforeach; ?>
-                    </datalist>
+                <?php if (!empty($gradeGroups)): ?>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong>Grading Categories</strong>
+                        <span class="small text-muted">Score categories: <?php echo formatGradeNumber($scoreWeight, 2); ?>% · Attendance: <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</span>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered mb-3">
                             <thead class="thead-light">
                                 <tr>
-                                    <th style="min-width: 220px;">Column</th>
-                                    <th style="min-width: 190px;">Category / Component</th>
-                                    <th style="width: 120px;">Max Score</th>
-                                    <th style="width: 140px;">Weight %</th>
+                                    <th style="min-width: 260px;">Category</th>
+                                    <th style="width: 180px;">Weight %</th>
+                                    <th style="width: 160px;">Score Items</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($gradeColumns as $column): ?>
-                                    <?php $columnId = (int) $column['grade_column_id']; ?>
+                                <?php foreach ($gradeGroups as $groupCode => $group): ?>
                                     <tr>
                                         <td>
                                             <input
                                                 type="text"
-                                                name="columns[<?php echo $columnId; ?>][label]"
-                                                class="form-control form-control-sm"
-                                                maxlength="160"
-                                                value="<?php echo htmlspecialchars($column['label']); ?>"
-                                                required>
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="text"
-                                                name="columns[<?php echo $columnId; ?>][group_label]"
+                                                name="categories[<?php echo htmlspecialchars($groupCode); ?>][name]"
                                                 class="form-control form-control-sm"
                                                 maxlength="120"
-                                                list="gradeCategoryList"
-                                                value="<?php echo htmlspecialchars($column['group_label']); ?>"
+                                                value="<?php echo htmlspecialchars($group['label']); ?>"
                                                 required>
                                         </td>
                                         <td>
                                             <input
                                                 type="number"
-                                                name="columns[<?php echo $columnId; ?>][max_score]"
+                                                name="categories[<?php echo htmlspecialchars($groupCode); ?>][weight]"
                                                 class="form-control form-control-sm"
-                                                min="1"
+                                                min="0"
+                                                max="100"
                                                 step="0.01"
-                                                value="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
+                                                value="<?php echo htmlspecialchars((string) $group['weight']); ?>"
                                                 required>
                                         </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                name="columns[<?php echo $columnId; ?>][weight_percent]"
-                                                class="form-control form-control-sm"
-                                                min="1"
-                                                step="0.01"
-                                                value="<?php echo htmlspecialchars((string) $column['weight_percent']); ?>"
-                                                required>
-                                        </td>
+                                        <td class="align-middle"><?php echo (int) $group['count']; ?> item(s)</td>
                                     </tr>
                                 <?php endforeach; ?>
+                                <tr class="table-light">
+                                    <td><strong>Attendance</strong><div class="small text-muted">Automatically computed from attendance records</div></td>
+                                    <td class="align-middle"><strong><?php echo formatGradeNumber($attendanceWeight, 2); ?>%</strong></td>
+                                    <td class="align-middle">System generated</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
                 <?php endif; ?>
                 <div class="alert alert-info mb-0">
-                    Attendance automatically uses the remaining percentage after active score columns. With no score columns, attendance is 100%.
+                    Category weights come from the score items above. Attendance automatically uses the remaining percentage. Keep the total configured weight at 100% for the same computation used by Smart NSTP.
                 </div>
             </div>
             <div class="modal-footer">
@@ -2013,10 +2413,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script>
-const gradeGroups = <?php echo json_encode($gradeGroups); ?>;
-const attendanceWeight = <?php echo json_encode((float) $attendanceWeight); ?>;
-const totalMeetings = <?php echo json_encode((int) $totalMeetings); ?>;
-
 function formatNumber(value) {
     return Number(value || 0).toLocaleString(undefined, {
         minimumFractionDigits: 2,
@@ -2024,60 +2420,73 @@ function formatNumber(value) {
     });
 }
 
-function transmuteClient(percent) {
-    const grade = 5 - (4 / 100 * Number(percent || 0));
-    return Math.max(1, Math.min(5, grade));
-}
+const $saveStatus = $('#grade-save-status');
+let activeGradeSave = 0;
 
-function refreshGradeRow($row) {
-    const rawByGroup = {};
-    let rawTotal = 0;
-    let maxTotal = 0;
-    let weightedPoints = 0;
-    let totalWeight = 0;
+$('.score-input').each(function() {
+    this.dataset.savedValue = this.value;
+}).on('keydown', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        this.blur();
+    }
+}).on('change', async function() {
+    const input = this;
+    if (input.value === input.dataset.savedValue) return;
 
-    $row.find('.score-input').each(function() {
-        const group = $(this).data('group');
-        const max = Number($(this).data('max') || 0);
-        const score = this.value === '' ? 0 : Number(this.value || 0);
-        rawByGroup[group] = (rawByGroup[group] || 0) + score;
-        rawTotal += score;
-        maxTotal += max;
-    });
-
-    Object.keys(gradeGroups).forEach(function(groupCode) {
-        const group = gradeGroups[groupCode];
-        const groupMax = Math.max(Number(group.max || 0), 1);
-        const groupWeight = Number(group.weight || 0);
-        const groupPercent = ((rawByGroup[groupCode] || 0) / groupMax) * 100;
-        weightedPoints += (groupPercent / 100) * groupWeight;
-        totalWeight += groupWeight;
-    });
-
-    if (attendanceWeight > 0) {
-        const attendanceCount = Math.min(Number($row.data('attendance-count') || 0), totalMeetings);
-        const attendancePercent = (attendanceCount / Math.max(totalMeetings, 1)) * 100;
-        weightedPoints += (attendancePercent / 100) * attendanceWeight;
-        totalWeight += attendanceWeight;
+    const max = Number(input.max || 0);
+    const numericValue = input.value === '' ? null : Number(input.value);
+    if (numericValue !== null && (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > max)) {
+        input.value = input.dataset.savedValue;
+        $saveStatus.text('Score must be between 0 and ' + formatNumber(max)).attr('class', 'autosave-status error');
+        return;
     }
 
-    const scorePercent = maxTotal > 0 ? (rawTotal / maxTotal) * 100 : 0;
-    const weightedPercent = totalWeight > 0 ? (weightedPoints / totalWeight) * 100 : scorePercent;
+    const requestId = ++activeGradeSave;
+    input.classList.add('saving');
+    $saveStatus.text('Saving…').attr('class', 'autosave-status saving');
 
-    $row.find('.js-raw-total').text(formatNumber(rawTotal));
-    $row.find('.js-max-total').text(formatNumber(maxTotal));
-    $row.find('.js-score-percent').text(formatNumber(scorePercent) + '%');
-    $row.find('.js-weighted-percent').text(formatNumber(weightedPercent) + '%');
-    $row.find('.js-final-grade').text(formatNumber(transmuteClient(weightedPercent)));
-}
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: {'Accept': 'application/json'},
+            body: new URLSearchParams({
+                action: 'save_score_ajax',
+                student_id: input.dataset.student,
+                column_id: input.dataset.column,
+                score: input.value
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Unable to save score.');
 
-$('.score-input').on('input', function() {
-    const max = parseFloat(this.max || '0');
-    const value = parseFloat(this.value || '0');
-    if (max > 0 && value > max) {
-        this.value = max;
+        input.dataset.savedValue = input.value;
+        const $row = $(input).closest('.grade-row');
+        $row.find('.js-weighted-percent').text(formatNumber(data.percentage) + '%');
+        $row.find('.js-final-grade').text(formatNumber(data.grade));
+        $row.find('[data-progress-status]')
+            .text(data.progress_label)
+            .attr('class', 'progress-status ' + data.progress_status);
+        $row.find('[data-progress-detail]').text(
+            Number(data.completion_percentage).toFixed(0) + '% encoded · ' + data.pending_count + ' pending'
+        );
+
+        Object.entries(data.groups || {}).forEach(function([groupCode, group]) {
+            $row.find('[data-group-total="' + groupCode + '"]').text(formatNumber(group.earned) + ' / ' + formatNumber(group.maximum));
+            $row.find('[data-group-weighted="' + groupCode + '"]').text(formatNumber(group.weighted));
+        });
+
+        input.classList.add('saved');
+        window.setTimeout(() => input.classList.remove('saved'), 900);
+        if (requestId === activeGradeSave) {
+            $saveStatus.text('All changes saved').attr('class', 'autosave-status saved');
+        }
+    } catch (error) {
+        input.value = input.dataset.savedValue;
+        $saveStatus.text(error.message).attr('class', 'autosave-status error');
+    } finally {
+        input.classList.remove('saving');
     }
-    refreshGradeRow($(this).closest('.grade-row'));
 });
 
 function syncNewCategoryInput(prefix) {
