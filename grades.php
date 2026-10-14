@@ -223,13 +223,14 @@ function isManualAttendanceColumn(array $column) {
         || strcasecmp(trim((string) ($column['group_label'] ?? '')), 'Manual Attendance') === 0;
 }
 
+function isSystemAttendanceColumn(array $column) {
+    return strpos((string) ($column['column_key'] ?? ''), 'system_attendance_') === 0;
+}
+
 function buildGradeGroups(array $gradeColumns) {
     $groups = [];
 
     foreach ($gradeColumns as $column) {
-        if (isManualAttendanceColumn($column)) {
-            continue;
-        }
         $groupCode = $column['group_code'];
         if (!isset($groups[$groupCode])) {
             $groups[$groupCode] = [
@@ -285,7 +286,6 @@ function computeStudentGradeSummary(
     array $gradeGroups,
     $attendanceCount,
     $totalMeetings,
-    $attendanceWeight,
     $passingPercentage = 75,
     $highestGrade = 1,
     $passingGrade = 3,
@@ -299,29 +299,13 @@ function computeStudentGradeSummary(
     $gradedRawByGroup = [];
     $gradedMaxByGroup = [];
     $gradedCount = 0;
-    $manualAttendanceEarned = 0;
-    $manualAttendanceMax = 0;
-    $manualAttendanceItemCount = 0;
-    $attendanceIsGradedComponent = (float) $attendanceWeight > 0;
-
     foreach ($gradeColumns as $column) {
         $columnId = (int) $column['grade_column_id'];
-        $scoreValue = $scores[$columnId] ?? null;
+        $scoreValue = isSystemAttendanceColumn($column)
+            ? min((int) $attendanceCount, (int) $totalMeetings)
+            : ($scores[$columnId] ?? null);
         $isGraded = $scoreValue !== null && $scoreValue !== '';
         $score = $isGraded ? (float) $scoreValue : 0;
-
-        if (isManualAttendanceColumn($column)) {
-            $manualAttendanceItemCount++;
-            if (!$attendanceIsGradedComponent) {
-                continue;
-            }
-            $manualAttendanceEarned += $score;
-            $manualAttendanceMax += (float) $column['max_score'];
-            if ($isGraded) {
-                $gradedCount++;
-            }
-            continue;
-        }
 
         $groupCode = $column['group_code'];
         if (!isset($rawByGroup[$groupCode])) {
@@ -365,22 +349,10 @@ function computeStudentGradeSummary(
         ];
     }
 
-    $attendanceWeight = max(0, (float) $attendanceWeight);
-    $systemAttendanceEarned = min((int) $attendanceCount, (int) $totalMeetings);
-    $attendanceEarned = $systemAttendanceEarned + $manualAttendanceEarned;
-    $attendanceMaximum = max((int) $totalMeetings, 1) + $manualAttendanceMax;
-    $attendancePercent = ($attendanceEarned / max($attendanceMaximum, 1)) * 100;
-    $attendanceWeighted = 0;
-    if ($attendanceWeight > 0) {
-        $attendanceWeighted = ($attendancePercent / 100) * $attendanceWeight;
-        $weightedPoints += $attendanceWeighted;
-        $totalWeight += $attendanceWeight;
-    }
-
     $scorePercent = $maxTotal > 0 ? ($rawTotal / $maxTotal) * 100 : 0;
     $weightedPercent = $totalWeight > 0 ? ($weightedPoints / $totalWeight) * 100 : $scorePercent;
     $currentPercentage = $activeWeight > 0 ? ($currentWeightedPoints / $activeWeight) * 100 : null;
-    $totalItems = count($gradeColumns) - ($attendanceIsGradedComponent ? 0 : $manualAttendanceItemCount);
+    $totalItems = count($gradeColumns);
     if ($totalItems === 0) {
         $progressStatus = 'no_items';
         $progressLabel = 'No score items';
@@ -410,14 +382,6 @@ function computeStudentGradeSummary(
         'progress_status' => $progressStatus,
         'progress_label' => $progressLabel,
         'groups' => $groupSummaries,
-        'attendance' => [
-            'system_earned' => $systemAttendanceEarned,
-            'manual_earned' => $manualAttendanceEarned,
-            'manual_maximum' => $manualAttendanceMax,
-            'earned' => $attendanceEarned,
-            'maximum' => $attendanceMaximum,
-            'weighted' => $attendanceWeighted,
-        ],
     ];
 }
 
@@ -572,6 +536,95 @@ if ($userRole === 'coordinator') {
 $sheetOwnerId = $columnOwnerId;
 $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
+$systemAttendanceColumn = null;
+foreach ($gradeColumns as $column) {
+    if (isSystemAttendanceColumn($column)) {
+        $systemAttendanceColumn = $column;
+        break;
+    }
+}
+
+// Convert the legacy standalone attendance percentage into a real score item.
+if ($systemAttendanceEnabled && !$systemAttendanceColumn) {
+    $legacyGroups = buildGradeGroups(array_values(array_filter(
+        $gradeColumns,
+        fn($column) => !isManualAttendanceColumn($column)
+    )));
+    $legacyScoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $legacyGroups));
+    $attendanceWeight = max(0, 100 - $legacyScoreWeight);
+    $attendanceGroupLabel = 'Attendance';
+    $attendanceGroupCode = slugGradeGroup($attendanceGroupLabel);
+    $attendanceColumnKey = 'system_attendance_' . substr(sha1($settingScope . ':' . $sheetOwnerId), 0, 24);
+    $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+    $stmt = $conn->prepare("
+        INSERT IGNORE INTO tbl_grade_columns
+            (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active, created_by, updated_by)
+        VALUES (?, ?, 'System Attendance', ?, ?, ?, ?, 490, 0, 1, ?, ?)
+    ");
+    $stmt->execute([
+        $attendanceColumnKey,
+        $currentProgram,
+        $attendanceGroupCode,
+        $attendanceGroupLabel,
+        $totalMeetingsForColumn,
+        $attendanceWeight,
+        $sheetOwnerId,
+        $userId,
+    ]);
+    $systemColumnIdStmt = $conn->prepare("SELECT grade_column_id FROM tbl_grade_columns WHERE column_key = ? LIMIT 1");
+    $systemColumnIdStmt->execute([$attendanceColumnKey]);
+    $legacySystemColumnId = (int) $systemColumnIdStmt->fetchColumn();
+    if ($legacySystemColumnId > 0) {
+        $restoreSystemColumn = $conn->prepare("
+            INSERT INTO tbl_grade_column_visibility (grade_column_id, user_id, program_scope, is_hidden, updated_by)
+            VALUES (?, ?, ?, 0, ?)
+            ON DUPLICATE KEY UPDATE is_hidden = 0, updated_by = VALUES(updated_by)
+        ");
+        $restoreSystemColumn->execute([$legacySystemColumnId, $sheetOwnerId, $columnVisibilityScope, $userId]);
+    }
+    $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+    $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+if ($systemAttendanceEnabled) {
+    $systemAttendanceColumn = null;
+    foreach ($gradeColumns as $column) {
+        if (isSystemAttendanceColumn($column)) {
+            $systemAttendanceColumn = $column;
+            break;
+        }
+    }
+    if ($systemAttendanceColumn) {
+        $syncLegacyManualAttendance = $conn->prepare("
+            UPDATE tbl_grade_columns
+            SET group_code = ?, group_label = ?, weight_percent = ?, updated_by = ?
+            WHERE grade_column_id = ?
+        ");
+        $manualAttendanceSynced = false;
+        foreach ($gradeColumns as $column) {
+            if (!isManualAttendanceColumn($column)) {
+                continue;
+            }
+            if ($column['group_code'] === $systemAttendanceColumn['group_code']
+                && (float) $column['weight_percent'] === (float) $systemAttendanceColumn['weight_percent']) {
+                continue;
+            }
+            $syncLegacyManualAttendance->execute([
+                $systemAttendanceColumn['group_code'],
+                $systemAttendanceColumn['group_label'],
+                $systemAttendanceColumn['weight_percent'],
+                $userId,
+                (int) $column['grade_column_id'],
+            ]);
+            $manualAttendanceSynced = true;
+        }
+        if ($manualAttendanceSynced) {
+            $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+            $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    }
+}
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
@@ -666,8 +719,69 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $isManualAttendance = $scoreItemType === 'manual_attendance';
 
         if ($isSystemAttendance) {
-            setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
-            $messages[] = 'System Attendance added to the current grading sheet.';
+            $groupLabel = selectedGradeGroupLabel($_POST, '');
+            $weight = (float) ($_POST['weight_percent'] ?? 0);
+            $existingCategoryWeight = gradeExistingCategoryWeight(
+                array_values(array_filter($gradeColumns, fn($column) => !isSystemAttendanceColumn($column))),
+                $groupLabel
+            );
+            if ($existingCategoryWeight !== null) {
+                $weight = $existingCategoryWeight;
+            }
+
+            if ($groupLabel === '') {
+                $errors[] = 'Choose a category for System Attendance.';
+            } elseif (!$isManualAttendance && $weight <= 0) {
+                $errors[] = 'Category weight must be greater than zero.';
+            } else {
+                $groupCode = slugGradeGroup($groupLabel);
+                $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+                $systemColumn = null;
+                foreach ($gradeColumns as $column) {
+                    if (isSystemAttendanceColumn($column)) {
+                        $systemColumn = $column;
+                        break;
+                    }
+                }
+
+                if ($systemColumn) {
+                    $stmt = $conn->prepare("
+                        UPDATE tbl_grade_columns
+                        SET group_code = ?, group_label = ?, max_score = ?, weight_percent = ?, is_active = 1, updated_by = ?
+                        WHERE grade_column_id = ?
+                    ");
+                    $stmt->execute([$groupCode, $groupLabel, $totalMeetingsForColumn, $weight, $userId, (int) $systemColumn['grade_column_id']]);
+                } else {
+                    $stmt = $conn->prepare("
+                        INSERT INTO tbl_grade_columns
+                            (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active, created_by, updated_by)
+                        VALUES (?, ?, 'System Attendance', ?, ?, ?, ?, 490, 0, 1, ?, ?)
+                    ");
+                    $stmt->execute([
+                        'system_attendance_' . bin2hex(random_bytes(8)),
+                        $currentProgram,
+                        $groupCode,
+                        $groupLabel,
+                        $totalMeetingsForColumn,
+                        $weight,
+                        $userId,
+                        $userId,
+                    ]);
+                }
+
+                $syncManualAttendance = $conn->prepare("
+                    UPDATE tbl_grade_columns
+                    SET group_code = ?, group_label = ?, weight_percent = ?, updated_by = ?
+                    WHERE grade_column_id = ?
+                ");
+                foreach ($gradeColumns as $column) {
+                    if (isManualAttendanceColumn($column)) {
+                        $syncManualAttendance->execute([$groupCode, $groupLabel, $weight, $userId, (int) $column['grade_column_id']]);
+                    }
+                }
+                setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
+                $messages[] = 'System Attendance added under ' . $groupLabel . '.';
+            }
         } else {
             $label = trim($_POST['label'] ?? '');
             $groupLabel = selectedGradeGroupLabel($_POST);
@@ -675,8 +789,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $weight = (float) ($_POST['weight_percent'] ?? 0);
             if ($isManualAttendance) {
                 $label = $label !== '' ? $label : 'Manual Attendance Score';
-                $groupLabel = 'Manual Attendance';
-                $weight = 0;
+                foreach ($gradeColumns as $column) {
+                    if (isSystemAttendanceColumn($column)) {
+                        $groupLabel = (string) $column['group_label'];
+                        $weight = (float) $column['weight_percent'];
+                        break;
+                    }
+                }
             } else {
                 $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
                 $existingCategoryWeight = gradeExistingCategoryWeight($gradeColumns, $groupLabel);
@@ -690,7 +809,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $errors[] = 'Column name is required.';
             } elseif ($maxScore <= 0) {
                 $errors[] = 'Max score must be greater than zero.';
-            } elseif (!$isManualAttendance && $weight <= 0) {
+            } elseif ($weight <= 0) {
                 $errors[] = 'Weight percent must be greater than zero.';
             } else {
                 $stmt = $conn->prepare("
@@ -829,16 +948,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $isManualAttendance = $selectedColumn && isManualAttendanceColumn($selectedColumn);
         if ($isManualAttendance) {
-            $groupLabel = 'Manual Attendance';
-            $weight = 0;
+            foreach ($gradeColumns as $column) {
+                if (isSystemAttendanceColumn($column)) {
+                    $groupLabel = (string) $column['group_label'];
+                    $weight = (float) $column['weight_percent'];
+                    break;
+                }
+            }
         }
         $otherColumns = array_values(array_filter($gradeColumns, fn($column) => (int) $column['grade_column_id'] !== $columnId));
         $existingCategoryWeight = gradeExistingCategoryWeight($otherColumns, $groupLabel);
         $keptSameCategory = $selectedColumn
             && strcasecmp(trim((string) $selectedColumn['group_label']), trim($groupLabel)) === 0;
-        if ($isManualAttendance) {
-            $weight = 0;
-        } elseif ($keptSameCategory) {
+        if (!$isManualAttendance && $keptSameCategory) {
             $weight = (float) $selectedColumn['weight_percent'];
         } elseif ($existingCategoryWeight !== null) {
             $weight = $existingCategoryWeight;
@@ -885,7 +1007,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $passingGradeInput = (float) ($_POST['passing_grade'] ?? 3);
         $failingGradeInput = (float) ($_POST['failing_grade'] ?? 5);
         $settingsCategories = $_POST['categories'] ?? [];
-        $currentGroups = buildGradeGroups($gradeColumns);
+        $settingsGradeColumns = array_values(array_filter(
+            $gradeColumns,
+            fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
+        ));
+        $currentGroups = buildGradeGroups($settingsGradeColumns);
         $categoryUpdates = [];
 
         if ($passingPercentageInput <= 0 || $passingPercentageInput >= 100) {
@@ -915,7 +1041,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         $scoreCategoryWeight = array_sum(array_column($categoryUpdates, 'weight'));
         if (!$errors && $scoreCategoryWeight > 100.001) {
-            $errors[] = 'Score category weights cannot exceed 100%. Current total: ' . formatGradeNumber($scoreCategoryWeight, 2) . '%. Reduce them so attendance can use the remaining percentage.';
+            $errors[] = 'Category weights cannot exceed 100%. Current total: ' . formatGradeNumber($scoreCategoryWeight, 2) . '%.';
         }
 
         if (!$errors) {
@@ -927,6 +1053,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 setGradeSetting($conn, $passingGradeKey, (string) $passingGradeInput, $userId);
                 setGradeSetting($conn, $failingGradeKey, (string) $failingGradeInput, $userId);
 
+                $updateSystemMaximum = $conn->prepare("
+                    UPDATE tbl_grade_columns
+                    SET max_score = ?, updated_by = ?
+                    WHERE grade_column_id = ?
+                ");
+                foreach ($gradeColumns as $column) {
+                    if (isSystemAttendanceColumn($column)) {
+                        $updateSystemMaximum->execute([$meetings, $userId, (int) $column['grade_column_id']]);
+                    }
+                }
+
                 $updateCategoryItem = $conn->prepare("
                     UPDATE tbl_grade_columns
                     SET group_code = ?, group_label = ?, weight_percent = ?, updated_by = ?
@@ -934,7 +1071,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 ");
                 foreach ($categoryUpdates as $oldGroupCode => $category) {
                     $newGroupCode = slugGradeGroup($category['name']);
-                    foreach ($gradeColumns as $column) {
+                    foreach ($settingsGradeColumns as $column) {
                         if ($column['group_code'] !== $oldGroupCode) {
                             continue;
                         }
@@ -970,8 +1107,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $studentId = (int) ($_POST['student_id'] ?? 0);
         $columnId = (int) ($_POST['column_id'] ?? 0);
         $scoreValue = trim((string) ($_POST['score'] ?? ''));
+        $ajaxSystemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
+        $ajaxGradeColumns = array_values(array_filter(
+            $gradeColumns,
+            fn($column) => !isSystemAttendanceColumn($column) || $ajaxSystemAttendanceEnabled
+        ));
         $columnLookup = [];
-        foreach ($gradeColumns as $column) {
+        foreach ($ajaxGradeColumns as $column) {
+            if (isSystemAttendanceColumn($column)) {
+                continue;
+            }
             $columnLookup[(int) $column['grade_column_id']] = $column;
         }
 
@@ -1000,9 +1145,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             SELECT grade_column_id, score
             FROM tbl_grade_scores
             WHERE tbl_student_id = ?
-              AND grade_column_id IN (" . implode(',', array_fill(0, count($gradeColumns), '?')) . ")
+              AND grade_column_id IN (" . implode(',', array_fill(0, count($ajaxGradeColumns), '?')) . ")
         ");
-        $scoreStmt->execute(array_merge([$studentId], array_map('intval', array_column($gradeColumns, 'grade_column_id'))));
+        $scoreStmt->execute(array_merge([$studentId], array_map('intval', array_column($ajaxGradeColumns, 'grade_column_id'))));
         $studentScores = [];
         foreach ($scoreStmt->fetchAll(PDO::FETCH_ASSOC) as $scoreRow) {
             $studentScores[(int) $scoreRow['grade_column_id']] = $scoreRow['score'];
@@ -1018,21 +1163,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         ");
         $attendanceStmt->execute([$studentId, $studentId]);
         $ajaxTotalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
-        $ajaxGroups = buildGradeGroups($gradeColumns);
-        $ajaxScoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $ajaxGroups));
-        $ajaxSystemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
-        $ajaxAttendanceWeight = $ajaxSystemAttendanceEnabled ? max(0, 100 - $ajaxScoreWeight) : 0;
+        $ajaxGroups = buildGradeGroups($ajaxGradeColumns);
         $ajaxPassingPercentage = (float) getGradeSetting($conn, $passingPercentageKey, '75');
         $ajaxHighestGrade = (float) getGradeSetting($conn, $highestGradeKey, '1');
         $ajaxPassingGrade = (float) getGradeSetting($conn, $passingGradeKey, '3');
         $ajaxFailingGrade = (float) getGradeSetting($conn, $failingGradeKey, '5');
         $summary = computeStudentGradeSummary(
-            $gradeColumns,
+            $ajaxGradeColumns,
             $studentScores,
             $ajaxGroups,
             min($ajaxTotalMeetings, (int) $attendanceStmt->fetchColumn()),
             $ajaxTotalMeetings,
-            $ajaxAttendanceWeight,
             $ajaxPassingPercentage,
             $ajaxHighestGrade,
             $ajaxPassingGrade,
@@ -1052,11 +1193,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 'maximum' => round((float) $group['maximum'], 2),
                 'weighted' => round((float) $group['weighted'], 2),
             ], $summary['groups']),
-            'attendance' => [
-                'earned' => round((float) $summary['attendance']['earned'], 2),
-                'maximum' => round((float) $summary['attendance']['maximum'], 2),
-                'weighted' => round((float) $summary['attendance']['weighted'], 2),
-            ],
         ]);
         exit();
     }
@@ -1065,6 +1201,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $scores = $_POST['scores'] ?? [];
         $columnLookup = [];
         foreach ($gradeColumns as $column) {
+            if (isSystemAttendanceColumn($column)) {
+                continue;
+            }
             $columnLookup[(int) $column['grade_column_id']] = (float) $column['max_score'];
         }
 
@@ -1123,11 +1262,21 @@ if (!empty($_SESSION['grade_errors'])) {
 $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
+$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
+$activeGradeColumns = array_values(array_filter(
+    $gradeColumns,
+    fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
+));
+$activeSystemAttendanceColumn = null;
+foreach ($activeGradeColumns as $column) {
+    if (isSystemAttendanceColumn($column)) {
+        $activeSystemAttendanceColumn = $column;
+        break;
+    }
+}
 $gradeCategoryOptions = [];
-$manualAttendanceColumns = [];
 foreach ($gradeColumns as $column) {
-    if (isManualAttendanceColumn($column)) {
-        $manualAttendanceColumns[] = $column;
+    if (isSystemAttendanceColumn($column)) {
         continue;
     }
     $categoryLabel = trim((string) ($column['group_label'] ?? ''));
@@ -1183,17 +1332,11 @@ $passingPercentage = (float) getGradeSetting($conn, $passingPercentageKey, '75')
 $highestGrade = (float) getGradeSetting($conn, $highestGradeKey, '1');
 $passingGrade = (float) getGradeSetting($conn, $passingGradeKey, '3');
 $failingGrade = (float) getGradeSetting($conn, $failingGradeKey, '5');
-$gradeGroups = buildGradeGroups($gradeColumns);
+$gradeGroups = buildGradeGroups($activeGradeColumns);
 $scoreWeight = array_sum(array_map(function ($group) {
     return (float) $group['weight'];
 }, $gradeGroups));
-$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
-$availableAttendanceWeight = max(0, 100 - $scoreWeight);
-$attendanceWeight = $systemAttendanceEnabled ? $availableAttendanceWeight : 0;
-$visibleManualAttendanceColumns = $systemAttendanceEnabled ? $manualAttendanceColumns : [];
-$totalConfiguredWeight = $scoreWeight + $attendanceWeight;
-$visibleRawColumnCount = count($gradeColumns) - count($manualAttendanceColumns) + count($visibleManualAttendanceColumns);
-$gradeTableColumnCount = $visibleRawColumnCount + (count($gradeGroups) * 2) + ($systemAttendanceEnabled ? 2 : 0) + 5;
+$gradeTableColumnCount = count($activeGradeColumns) + (count($gradeGroups) * 2) + 5;
 $gradeGroupTones = [];
 $gradeGroupToneIndex = 1;
 foreach (array_keys($gradeGroups) as $groupCode) {
@@ -1212,12 +1355,11 @@ $completionTotal = 0;
 foreach ($students as $student) {
     $studentId = (int) $student['tbl_student_id'];
     $summary = computeStudentGradeSummary(
-        $gradeColumns,
+        $activeGradeColumns,
         $scoresByStudent[$studentId] ?? [],
         $gradeGroups,
         min($totalMeetings, $attendanceCounts[$studentId] ?? 0),
         $totalMeetings,
-        $attendanceWeight,
         $passingPercentage,
         $highestGrade,
         $passingGrade,
@@ -2136,7 +2278,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <span class="column-chip">
                                     <i class="fas fa-clock text-success"></i>
                                     System Attendance
-                                    <small class="text-muted">· <?php echo formatGradeNumber($attendanceWeight, 2); ?>% · System</small>
+                                    <?php if ($activeSystemAttendanceColumn): ?>
+                                        <small class="text-muted">· <?php echo htmlspecialchars($activeSystemAttendanceColumn['group_label']); ?> · <?php echo formatGradeNumber($activeSystemAttendanceColumn['weight_percent'], 2); ?>% · System</small>
+                                    <?php endif; ?>
                                     <form method="POST" class="d-inline" onsubmit="return confirm('Remove System Attendance from this grading sheet? Attendance records and saved manual scores will be kept.');">
                                         <input type="hidden" name="action" value="remove_system_attendance">
                                         <button class="btn btn-xs btn-link text-danger p-0" title="Remove System Attendance">
@@ -2145,7 +2289,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     </form>
                                 </span>
                             <?php endif; ?>
-                            <?php if (empty($gradeColumns)): ?>
+                            <?php $editableGradeColumns = array_values(array_filter($gradeColumns, fn($column) => !isSystemAttendanceColumn($column))); ?>
+                            <?php if (empty($editableGradeColumns)): ?>
                                 <span class="text-muted"><?php echo $systemAttendanceEnabled ? 'No manual score items yet.' : 'No score items yet. Add a column to start a new class record.'; ?></span>
                             <?php else: ?>
                                 <form method="POST" id="deleteSelectedColumnsForm" class="mb-2" onsubmit="return confirm('Remove the selected columns from the current class record? Existing scores will be kept in the database but hidden with the removed columns.');">
@@ -2161,7 +2306,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                         </button>
                                     </div>
                                 </form>
-                                <?php foreach ($gradeColumns as $column): ?>
+                                <?php foreach ($editableGradeColumns as $column): ?>
                                     <span class="column-chip">
                                         <input
                                             type="checkbox"
@@ -2170,7 +2315,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                         <?php echo htmlspecialchars($column['label']); ?>
                                         <small class="text-muted">
                                             /<?php echo formatGradeNumber($column['max_score'], 0); ?>
-                                            · <?php echo isManualAttendanceColumn($column) ? ($systemAttendanceEnabled ? 'Shares attendance %' : 'Saved attendance score') : formatGradeNumber($column['weight_percent'], 0) . '%'; ?>
+                                            · <?php echo formatGradeNumber($column['weight_percent'], 0); ?>%
+                                            · <?php echo htmlspecialchars($column['group_label']); ?>
                                             - <?php echo (int) $column['is_default'] === 1 ? 'Default' : 'Custom'; ?>
                                         </small>
                                         <button
@@ -2239,16 +2385,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                     · <?php echo formatGradeNumber($group['weight'], 2); ?>%
                                                 </th>
                                             <?php endforeach; ?>
-                                            <?php if ($systemAttendanceEnabled): ?>
-                                                <th colspan="<?php echo count($visibleManualAttendanceColumns) + 2; ?>" class="grade-category-header grade-group-tone-4">Attendance (System + Manual) · <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</th>
-                                            <?php endif; ?>
                                             <th rowspan="3" class="computed-cell">Recorded<br>Weighted</th>
                                             <th rowspan="3" class="final-cell">Computed<br>Grade</th>
                                             <th rowspan="3" class="category-total-heading">Progress</th>
                                         </tr>
                                         <tr class="grade-assessment-row">
                                             <?php foreach ($gradeGroups as $groupCode => $group): ?>
-                                                <?php foreach ($gradeColumns as $column): ?>
+                                                <?php foreach ($activeGradeColumns as $column): ?>
                                                     <?php if ($column['group_code'] !== $groupCode) continue; ?>
                                                     <th class="assessment-header">
                                                         <?php echo htmlspecialchars($column['label']); ?>
@@ -2257,30 +2400,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                 <th class="category-total-heading">TS</th>
                                                 <th class="category-total-heading">Weighted</th>
                                             <?php endforeach; ?>
-                                            <?php if ($systemAttendanceEnabled): ?>
-                                                <?php foreach ($visibleManualAttendanceColumns as $manualColumn): ?>
-                                                    <th class="assessment-header"><?php echo htmlspecialchars($manualColumn['label']); ?></th>
-                                                <?php endforeach; ?>
-                                                <th class="category-total-heading">Meetings</th>
-                                                <th class="category-total-heading">Weighted</th>
-                                            <?php endif; ?>
                                         </tr>
                                         <tr class="grade-max-row">
                                             <?php foreach ($gradeGroups as $groupCode => $group): ?>
-                                                <?php foreach ($gradeColumns as $column): ?>
+                                                <?php foreach ($activeGradeColumns as $column): ?>
                                                     <?php if ($column['group_code'] !== $groupCode) continue; ?>
                                                     <th><?php echo formatGradeNumber($column['max_score'], 2); ?></th>
                                                 <?php endforeach; ?>
                                                 <th><?php echo formatGradeNumber($group['max'], 2); ?></th>
                                                 <th><?php echo formatGradeNumber($group['weight'], 2); ?>%</th>
                                             <?php endforeach; ?>
-                                            <?php if ($systemAttendanceEnabled): ?>
-                                                <?php foreach ($visibleManualAttendanceColumns as $manualColumn): ?>
-                                                    <th><?php echo formatGradeNumber($manualColumn['max_score'], 2); ?></th>
-                                                <?php endforeach; ?>
-                                                <th><?php echo (int) $totalMeetings; ?></th>
-                                                <th><?php echo formatGradeNumber($attendanceWeight, 2); ?>%</th>
-                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2309,12 +2438,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                     <?php endif; ?>
                                                 </td>
                                                 <?php foreach ($gradeGroups as $groupCode => $group): ?>
-                                                    <?php foreach ($gradeColumns as $column): ?>
+                                                    <?php foreach ($activeGradeColumns as $column): ?>
                                                         <?php if ($column['group_code'] !== $groupCode) continue; ?>
                                                         <?php
                                                         $columnId = (int) $column['grade_column_id'];
                                                         $value = $scoresByStudent[$studentId][$columnId] ?? '';
                                                         ?>
+                                                        <?php if (isSystemAttendanceColumn($column)): ?>
+                                                            <td class="computed-cell"><?php echo (int) $attendanceCount; ?> / <?php echo (int) $totalMeetings; ?></td>
+                                                        <?php else: ?>
                                                         <td class="score-cell">
                                                             <input
                                                                 type="number"
@@ -2329,33 +2461,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                                 step="0.01"
                                                                 <?php echo $canComputeGrades ? '' : 'readonly disabled'; ?>>
                                                         </td>
+                                                        <?php endif; ?>
                                                     <?php endforeach; ?>
                                                     <td class="computed-cell" data-group-total="<?php echo htmlspecialchars($groupCode); ?>"><?php echo formatGradeNumber($summary['groups'][$groupCode]['earned']); ?> / <?php echo formatGradeNumber($summary['groups'][$groupCode]['maximum']); ?></td>
                                                     <td class="computed-cell" data-group-weighted="<?php echo htmlspecialchars($groupCode); ?>"><?php echo formatGradeNumber($summary['groups'][$groupCode]['weighted']); ?></td>
                                                 <?php endforeach; ?>
-                                                <?php foreach ($visibleManualAttendanceColumns as $manualColumn): ?>
-                                                    <?php
-                                                    $manualColumnId = (int) $manualColumn['grade_column_id'];
-                                                    $manualValue = $scoresByStudent[$studentId][$manualColumnId] ?? '';
-                                                    ?>
-                                                    <td class="score-cell">
-                                                        <input
-                                                            type="number"
-                                                            class="form-control form-control-sm score-input"
-                                                            value="<?php echo htmlspecialchars((string) $manualValue); ?>"
-                                                            min="0"
-                                                            max="<?php echo htmlspecialchars((string) $manualColumn['max_score']); ?>"
-                                                            data-max="<?php echo htmlspecialchars((string) $manualColumn['max_score']); ?>"
-                                                            data-column="<?php echo $manualColumnId; ?>"
-                                                            data-student="<?php echo $studentId; ?>"
-                                                            step="0.01"
-                                                            <?php echo $canComputeGrades ? '' : 'readonly disabled'; ?>>
-                                                    </td>
-                                                <?php endforeach; ?>
-                                                <?php if ($systemAttendanceEnabled): ?>
-                                                    <td class="computed-cell"><?php echo (int) $attendanceCount; ?> / <?php echo (int) $totalMeetings; ?></td>
-                                                    <td class="computed-cell" data-attendance-weighted><?php echo formatGradeNumber($summary['attendance']['weighted']); ?></td>
-                                                <?php endif; ?>
                                                 <td class="computed-cell js-weighted-percent"><?php echo formatGradeNumber($summary['weighted_percent']); ?>%</td>
                                                 <td class="final-cell js-final-grade"><?php echo formatGradeNumber($summary['final_grade']); ?></td>
                                                 <td class="grade-progress-cell">
@@ -2369,7 +2479,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             </div>
                         </div>
                         <div class="card-footer text-muted">
-                            Smart NSTP formula: each category applies its configured weight. System meetings and manual attendance points are combined over their total possible points, then use one shared Attendance percentage.
+                            Smart NSTP formula: each category applies its configured weight. System Attendance is an auto-computed score item inside its selected category; manual attendance items in that category share the same percentage.
                         </div>
                     </div>
                 </form>
@@ -2400,7 +2510,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </select>
                 </div>
                 <div class="alert alert-info py-2 d-none" id="systemAttendanceItemHelp">
-                    <strong>System-generated score:</strong> restores System Attendance using saved attendance records and its remaining percentage.
+                    <strong>System-generated score:</strong> attendance records supply the score automatically. Choose the category that will control its percentage.
                 </div>
                 <div class="form-group" id="addColumnNameGroup">
                     <label>Score Item Name</label>
@@ -2411,7 +2521,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 </div>
                 <div class="form-group" id="addColumnCategoryGroup">
                     <label>Category / Percentage Group</label>
-                    <select name="group_label_select" id="addColumnGroupSelect" class="form-control">
+                    <select name="group_label_select" id="addColumnGroupSelect" class="form-control" required>
+                        <option value="" selected disabled>Choose a category</option>
                         <?php if (empty($gradeCategoryOptions)): ?>
                             <option value="Additional Requirements">Additional Requirements</option>
                         <?php else: ?>
@@ -2426,7 +2537,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <small class="text-muted" id="addColumnCategoryHelp">Choose an existing category to share that weight, or create a new category for a separate percentage.</small>
                 </div>
                 <div class="form-row" id="addColumnScoringGroup">
-                    <div class="form-group col-md-6">
+                    <div class="form-group col-md-6" id="addColumnMaxScoreGroup">
                         <label>Max Score</label>
                         <input type="number" name="max_score" id="addColumnMaxScore" class="form-control" min="1" step="0.01" value="100" required>
                     </div>
@@ -2510,7 +2621,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <div class="form-group col-lg-4">
                         <label>Total Attendance Meetings</label>
                         <input type="number" name="total_meetings" class="form-control" min="1" value="<?php echo (int) $totalMeetings; ?>" required>
-                        <small class="text-muted">System attendance uses the remaining category weight.</small>
+                        <small class="text-muted">This is the maximum score of the System Attendance score item.</small>
                     </div>
                     <div class="col-lg-8">
                         <label class="d-block">1.00–5.00 Transmutation</label>
@@ -2526,7 +2637,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <?php if (!empty($gradeGroups)): ?>
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <strong>Grading Categories</strong>
-                        <span class="small text-muted">Score categories: <?php echo formatGradeNumber($scoreWeight, 2); ?>% · System attendance: <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</span>
+                        <span class="small text-muted">Total configured weight: <?php echo formatGradeNumber($scoreWeight, 2); ?>%</span>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered mb-3">
@@ -2563,17 +2674,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                         <td class="align-middle"><?php echo (int) $group['count']; ?> item(s)</td>
                                     </tr>
                                 <?php endforeach; ?>
-                                <tr class="table-light">
-                                    <td><strong>Attendance (System + Manual)</strong><div class="small text-muted"><?php echo $systemAttendanceEnabled ? 'System meetings and manual attendance scores share this percentage.' : 'Removed from the current grading sheet.'; ?></div></td>
-                                    <td class="align-middle"><strong><?php echo $systemAttendanceEnabled ? formatGradeNumber($attendanceWeight, 2) . '%' : 'Removed'; ?></strong></td>
-                                    <td class="align-middle"><?php echo $systemAttendanceEnabled ? 'System generated' : 'Add it again through Add Score Item'; ?></td>
-                                </tr>
                             </tbody>
                         </table>
                     </div>
                 <?php endif; ?>
                 <div class="alert alert-info mb-0">
-                    Score categories use their configured weights. When enabled, system and manual attendance are combined under the same remaining Attendance percentage. System Attendance can be removed from Score Items and added again later.
+                    System Attendance follows the weight of its selected category. Manual attendance items in that category share the same percentage. You can remove System Attendance and add it again later under another category.
                 </div>
             </div>
             <div class="modal-footer">
@@ -2651,10 +2757,6 @@ $('.score-input').each(function() {
             $row.find('[data-group-total="' + groupCode + '"]').text(formatNumber(group.earned) + ' / ' + formatNumber(group.maximum));
             $row.find('[data-group-weighted="' + groupCode + '"]').text(formatNumber(group.weighted));
         });
-        if (data.attendance) {
-            $row.find('[data-attendance-weighted]').text(formatNumber(data.attendance.weighted));
-        }
-
         input.classList.add('saved');
         window.setTimeout(() => input.classList.remove('saved'), 900);
         if (requestId === activeGradeSave) {
@@ -2698,23 +2800,25 @@ $('#addColumnGroupSelect, #editColumnGroupSelect').on('change', function() {
 function configureAddScoreItemType(type) {
     const isManualAttendance = type === 'manual_attendance';
     const isSystemAttendance = type === 'system_attendance';
-    const usesCustomFields = !isManualAttendance && !isSystemAttendance;
+    const choosesCategory = !isManualAttendance;
 
     $('#addColumnType').val(type);
     $('#addColumnItemType').val(type);
     $('#manualAttendanceGroupingHelp').toggleClass('d-none', !isManualAttendance);
     $('#systemAttendanceItemHelp').toggleClass('d-none', !isSystemAttendance);
     $('#addColumnNameGroup').toggleClass('d-none', isSystemAttendance);
-    $('#addColumnCategoryGroup').toggleClass('d-none', !usesCustomFields);
-    $('#addColumnScoringGroup').toggleClass('d-none', isSystemAttendance);
-    $('#addColumnWeightGroup').toggleClass('d-none', !usesCustomFields);
-    $('#addColumnScopeHelp').toggleClass('d-none', isSystemAttendance);
+    $('#addColumnCategoryGroup').toggleClass('d-none', !choosesCategory);
+    $('#addColumnScoringGroup').removeClass('d-none');
+    $('#addColumnMaxScoreGroup').toggleClass('d-none', isSystemAttendance);
+    $('#addColumnWeightGroup').toggleClass('d-none', isManualAttendance);
+    $('#addColumnScopeHelp').removeClass('d-none');
     $('#addColumnLabel, #addColumnMaxScore').prop('disabled', isSystemAttendance).prop('required', !isSystemAttendance);
-    $('#addColumnGroupSelect, #addColumnGroupNew, #addColumnWeightPercent').prop('disabled', !usesCustomFields);
+    $('#addColumnGroupSelect, #addColumnGroupNew, #addColumnWeightPercent').prop('disabled', !choosesCategory);
 
     if (isSystemAttendance) {
         $('#addColumnModalTitle').html('<i class="fas fa-clock mr-2"></i>Add System Attendance');
         $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add System Attendance');
+        syncNewCategoryInput('add');
     } else if (isManualAttendance) {
         if (!$('#addColumnLabel').val()) {
             $('#addColumnLabel').val('Manual Attendance Score');
