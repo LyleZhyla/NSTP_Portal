@@ -2715,6 +2715,7 @@ $('.score-input').each(function() {
 }).on('change', async function() {
     const input = this;
     if (input.value === input.dataset.savedValue) return;
+    const submittedValue = input.value;
 
     const max = Number(input.max || 0);
     const numericValue = input.value === '' ? null : Number(input.value);
@@ -2736,13 +2737,21 @@ $('.score-input').each(function() {
                 action: 'save_score_ajax',
                 student_id: input.dataset.student,
                 column_id: input.dataset.column,
-                score: input.value
+                score: submittedValue
             })
         });
-        const data = await response.json();
+        const responseText = await response.text();
+        let data = {};
+        try {
+            data = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+            throw new Error('Score response could not be confirmed. Your entry was kept; refresh to verify the computed totals.');
+        }
         if (!response.ok) throw new Error(data.message || 'Unable to save score.');
 
-        input.dataset.savedValue = input.value;
+        if (input.value === submittedValue) {
+            input.dataset.savedValue = submittedValue;
+        }
         const $row = $(input).closest('.grade-row');
         $row.find('.js-weighted-percent').text(formatNumber(data.percentage) + '%');
         $row.find('.js-final-grade').text(formatNumber(data.grade));
@@ -2763,7 +2772,6 @@ $('.score-input').each(function() {
             $saveStatus.text('All changes saved').attr('class', 'autosave-status saved');
         }
     } catch (error) {
-        input.value = input.dataset.savedValue;
         $saveStatus.text(error.message).attr('class', 'autosave-status error');
     } finally {
         input.classList.remove('saving');
