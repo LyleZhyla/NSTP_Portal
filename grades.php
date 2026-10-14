@@ -2256,19 +2256,23 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <input type="text" name="label" id="addColumnLabel" class="form-control" maxlength="160" placeholder="Example: Reflection Paper" required>
                 </div>
                 <div class="form-group">
-                    <label>Category / Component</label>
+                    <label>Category / Percentage Group</label>
+                    <div class="alert alert-success py-2 d-none" id="manualAttendanceGroupingHelp">
+                        <strong>Flexible percentage:</strong> keep <em>Own percentage</em> for a separate Manual Attendance weight, or select an existing category to include this score under that category's percentage.
+                    </div>
                     <select name="group_label_select" id="addColumnGroupSelect" class="form-control">
                         <?php if (empty($gradeCategoryOptions)): ?>
                             <option value="Additional Requirements">Additional Requirements</option>
                         <?php else: ?>
                             <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
-                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) gradeExistingCategoryWeight($gradeColumns, $categoryLabel)); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
+                                <?php $categoryWeight = gradeExistingCategoryWeight($gradeColumns, $categoryLabel); ?>
+                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) $categoryWeight); ?>"><?php echo htmlspecialchars($categoryLabel); ?> — shares <?php echo formatGradeNumber($categoryWeight, 2); ?>%</option>
                             <?php endforeach; ?>
                         <?php endif; ?>
-                        <option value="__new">Create new category</option>
+                        <option value="__new">Own percentage (create new category)</option>
                     </select>
                     <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
-                    <small class="text-muted">Columns with the same category are grouped when computing the weighted percentage.</small>
+                    <small class="text-muted" id="addColumnCategoryHelp">Existing categories share one percentage. A new category receives its own percentage.</small>
                 </div>
                 <div class="form-row">
                     <div class="form-group col-md-6">
@@ -2278,7 +2282,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <div class="form-group col-md-6">
                         <label>Category Weight %</label>
                         <input type="number" name="weight_percent" id="addColumnWeightPercent" class="form-control" min="1" step="0.01" value="10" required>
-                        <small class="text-muted">Used only for a new category; existing categories keep their configured weight.</small>
+                        <small class="text-muted" id="addColumnWeightHelp">Set the percentage for the new category.</small>
                     </div>
                 </div>
                 <div class="alert alert-info mb-0">
@@ -2308,16 +2312,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <input type="text" name="label" id="editColumnLabel" class="form-control" maxlength="160" required>
                 </div>
                 <div class="form-group">
-                    <label>Category / Component</label>
+                    <label>Category / Percentage Group</label>
                     <select name="group_label_select" id="editColumnGroupSelect" class="form-control">
                         <?php if (empty($gradeCategoryOptions)): ?>
                             <option value="Additional Requirements">Additional Requirements</option>
                         <?php else: ?>
                             <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
-                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) gradeExistingCategoryWeight($gradeColumns, $categoryLabel)); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
+                                <?php $categoryWeight = gradeExistingCategoryWeight($gradeColumns, $categoryLabel); ?>
+                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) $categoryWeight); ?>"><?php echo htmlspecialchars($categoryLabel); ?> — shares <?php echo formatGradeNumber($categoryWeight, 2); ?>%</option>
                             <?php endforeach; ?>
                         <?php endif; ?>
-                        <option value="__new">Create new category</option>
+                        <option value="__new">Own percentage (create new category)</option>
                     </select>
                     <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
                 </div>
@@ -2520,8 +2525,14 @@ function syncNewCategoryInput(prefix) {
 
     if (!isNew && categoryWeight !== undefined && categoryWeight !== '') {
         $weight.val(categoryWeight).prop('readonly', true);
+        if (prefix === 'add') {
+            $('#addColumnWeightHelp').text('Included under the selected category and uses its existing ' + categoryWeight + '% weight.');
+        }
     } else {
         $weight.prop('readonly', false);
+        if (prefix === 'add') {
+            $('#addColumnWeightHelp').text('Set a separate percentage for this new category.');
+        }
     }
 }
 
@@ -2533,6 +2544,7 @@ $('#addScoreItemBtn').on('click', function() {
     const $select = $('#addColumnGroupSelect');
     $('#addColumnModalTitle').html('<i class="fas fa-plus mr-2"></i>Add Score Item');
     $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Score Item');
+    $('#manualAttendanceGroupingHelp').addClass('d-none');
     $('#addColumnLabel').val('');
     $('#addColumnMaxScore').val(100);
     $('#addColumnWeightPercent').val(10);
@@ -2549,6 +2561,7 @@ $('#addManualAttendanceBtn').on('click', function() {
 
     $('#addColumnModalTitle').html('<i class="fas fa-user-check mr-2"></i>Add Manual Attendance');
     $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Manual Attendance');
+    $('#manualAttendanceGroupingHelp').removeClass('d-none');
     $('#addColumnLabel').val('Manual Attendance Score');
     $('#addColumnMaxScore').val($(this).data('max-score'));
     $('#addColumnWeightPercent').val(10);
