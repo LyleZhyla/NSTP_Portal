@@ -2,7 +2,13 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-include('./include/theme-loader.php');
+$isGradeAjaxRequest = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
+    && ($_POST['action'] ?? '') === 'save_score_ajax';
+if ($isGradeAjaxRequest) {
+    ob_start();
+} else {
+    include('./include/theme-loader.php');
+}
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: landing_page.php");
@@ -1096,6 +1102,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     if ($action === 'save_score_ajax') {
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
         header('Content-Type: application/json; charset=utf-8');
 
         if (!$canComputeGrades) {
