@@ -759,9 +759,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $maxScore = (float) ($_POST['max_score'] ?? 0);
         $weight = (float) ($_POST['weight_percent'] ?? 0);
         $groupLabel = $groupLabel !== '' ? $groupLabel : 'Additional Requirements';
+        $selectedColumn = null;
+        foreach ($gradeColumns as $column) {
+            if ((int) $column['grade_column_id'] === $columnId) {
+                $selectedColumn = $column;
+                break;
+            }
+        }
         $otherColumns = array_values(array_filter($gradeColumns, fn($column) => (int) $column['grade_column_id'] !== $columnId));
         $existingCategoryWeight = gradeExistingCategoryWeight($otherColumns, $groupLabel);
-        if ($existingCategoryWeight !== null) {
+        $keptSameCategory = $selectedColumn
+            && strcasecmp(trim((string) $selectedColumn['group_label']), trim($groupLabel)) === 0;
+        if ($keptSameCategory) {
+            $weight = (float) $selectedColumn['weight_percent'];
+        } elseif ($existingCategoryWeight !== null) {
             $weight = $existingCategoryWeight;
         }
 
@@ -777,7 +788,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $activeColumnLookup[(int) $column['grade_column_id']] = true;
             }
 
-            if (!isset($activeColumnLookup[$columnId])) {
+            if (!$selectedColumn || !isset($activeColumnLookup[$columnId])) {
                 $errors[] = 'Column not found in the current class record.';
             } else {
                 $stmt = $conn->prepare("
@@ -2242,7 +2253,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <option value="Additional Requirements">Additional Requirements</option>
                         <?php else: ?>
                             <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
-                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
+                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) gradeExistingCategoryWeight($gradeColumns, $categoryLabel)); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <option value="__new">Create new category</option>
@@ -2294,7 +2305,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <option value="Additional Requirements">Additional Requirements</option>
                         <?php else: ?>
                             <?php foreach ($gradeCategoryOptions as $categoryLabel): ?>
-                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
+                                <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) gradeExistingCategoryWeight($gradeColumns, $categoryLabel)); ?>"><?php echo htmlspecialchars($categoryLabel); ?></option>
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <option value="__new">Create new category</option>
@@ -2490,10 +2501,19 @@ $('.score-input').each(function() {
 });
 
 function syncNewCategoryInput(prefix) {
-    const isNew = $('#' + prefix + 'ColumnGroupSelect').val() === '__new';
+    const $select = $('#' + prefix + 'ColumnGroupSelect');
+    const $weight = prefix === 'edit' ? $('#editColumnWeightPercent') : $('input[name="weight_percent"]', '#addColumnModal');
+    const isNew = $select.val() === '__new';
+    const categoryWeight = $select.find('option:selected').data('weight');
     $('#' + prefix + 'ColumnGroupNew')
         .toggleClass('d-none', !isNew)
         .prop('required', isNew);
+
+    if (!isNew && categoryWeight !== undefined && categoryWeight !== '') {
+        $weight.val(categoryWeight).prop('readonly', true);
+    } else {
+        $weight.prop('readonly', false);
+    }
 }
 
 $('#addColumnGroupSelect, #editColumnGroupSelect').on('change', function() {
