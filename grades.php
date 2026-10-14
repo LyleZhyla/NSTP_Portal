@@ -855,6 +855,12 @@ $scoreWeight = array_sum(array_map(function ($group) {
 }, $gradeGroups));
 $attendanceWeight = max(0, 100 - $scoreWeight);
 $totalConfiguredWeight = $scoreWeight + $attendanceWeight;
+$gradeGroupTones = [];
+$gradeGroupToneIndex = 1;
+foreach (array_keys($gradeGroups) as $groupCode) {
+    $gradeGroupTones[$groupCode] = 'grade-group-tone-' . $gradeGroupToneIndex;
+    $gradeGroupToneIndex = ($gradeGroupToneIndex % 4) + 1;
+}
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
@@ -870,6 +876,49 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="include/theme.css">
     <style>
+        :root {
+            --grade-green: #166534;
+            --grade-green-dark: #0f4d2a;
+            --grade-green-soft: #ecfdf3;
+            --grade-border: #d8e2dc;
+            --grade-ink: #1f2937;
+            --grade-muted: #64748b;
+        }
+
+        .grade-page-heading {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .grade-page-icon {
+            width: 48px;
+            height: 48px;
+            flex: 0 0 48px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            color: #fff;
+            background: linear-gradient(145deg, var(--grade-green), #22a35a);
+            box-shadow: 0 8px 20px rgba(22, 101, 52, 0.2);
+        }
+
+        .grade-page-kicker {
+            color: var(--grade-green);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+        }
+
+        .grade-page-title {
+            color: var(--grade-ink);
+            font-size: 1.55rem;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+
         .grade-toolbar {
             display: flex;
             flex-wrap: wrap;
@@ -917,21 +966,95 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         }
 
         .grade-card {
+            border-radius: 12px;
+            border: 1px solid var(--grade-border);
+            box-shadow: 0 3px 14px rgba(15, 77, 42, 0.05);
+            overflow: hidden;
+        }
+
+        .grade-sheet-selector {
+            background: linear-gradient(135deg, #ffffff 0%, #f5fbf7 100%);
+        }
+
+        .grade-sheet-selector .form-control {
+            min-height: 42px;
+            border-color: #b8c9bd;
             border-radius: 8px;
-            border: 1px solid #dee2e6;
+            font-weight: 600;
+        }
+
+        .sheet-context {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .sheet-context-item {
+            min-width: 0;
+            padding: 8px 10px;
+            border-left: 2px solid #b9dec6;
+        }
+
+        .sheet-context-label {
+            display: block;
+            color: var(--grade-muted);
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .sheet-context-value {
+            display: block;
+            overflow: hidden;
+            color: var(--grade-ink);
+            font-size: 0.86rem;
+            font-weight: 700;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .grade-summary .info-box {
+            min-height: 82px;
+            background: #fff;
+        }
+
+        .grade-summary .info-box-icon {
+            width: 64px;
+            border-radius: 0;
+            background: var(--grade-green-soft) !important;
+            color: var(--grade-green) !important;
+            font-size: 1.25rem;
+        }
+
+        .grade-summary .info-box-text {
+            color: var(--grade-muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .grade-summary .info-box-number {
+            color: var(--grade-ink);
+            font-size: 1.4rem;
         }
 
         .grade-table-wrap {
-            max-height: calc(100vh - 260px);
+            max-height: calc(100vh - 230px);
             overflow: auto;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
+            border-top: 1px solid var(--grade-border);
+            border-bottom: 1px solid var(--grade-border);
             background: #fff;
         }
 
         .grade-table {
-            min-width: 2200px;
+            width: max-content;
+            min-width: 100%;
             margin-bottom: 0;
+            color: var(--grade-ink);
+            border-collapse: separate;
+            border-spacing: 0;
         }
 
         .grade-table th,
@@ -939,49 +1062,155 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             vertical-align: middle !important;
             white-space: nowrap;
             font-size: 0.84rem;
+            border-top: 0;
+            border-left: 0;
+            border-color: var(--grade-border);
+            height: 48px;
+            text-align: center;
         }
 
         .grade-table thead th {
             position: sticky;
             top: 0;
-            z-index: 5;
-            background: #f8f9fa;
+            z-index: 6;
+            height: auto;
+            padding: 10px 9px;
+            background: #f4f8f5;
+            color: #24402e;
+            border-bottom-width: 1px;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.025em;
+            text-transform: uppercase;
+        }
+
+        .grade-table thead .grade-category-row th {
+            top: 0;
+            height: 58px;
+        }
+
+        .grade-table thead .grade-assessment-row th {
+            top: 58px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            text-transform: none;
+        }
+
+        .grade-table tbody tr:nth-child(even) td {
+            background-color: #fbfdfb;
+        }
+
+        .grade-table tbody tr:hover td {
+            background-color: #f0f9f3;
+        }
+
+        .grade-table .sticky-index {
+            position: sticky;
+            left: 0;
+            z-index: 8;
+            width: 46px;
+            min-width: 46px;
+            max-width: 46px;
+            background: #f7faf8;
+            color: var(--grade-muted);
+            font-weight: 700;
+            box-shadow: 1px 0 0 var(--grade-border);
         }
 
         .grade-table .sticky-name {
             position: sticky;
-            left: 0;
+            left: 46px;
             z-index: 7;
             background: #fff;
-            width: max-content;
-            min-width: 150px;
-            max-width: 320px;
-            white-space: nowrap;
-            box-shadow: 1px 0 0 #dee2e6;
+            min-width: 220px;
+            max-width: 280px;
+            white-space: normal;
+            text-align: left;
+            box-shadow: 2px 0 4px rgba(15, 77, 42, 0.08);
         }
 
+        .grade-table thead .sticky-index,
         .grade-table thead .sticky-name {
-            background: #f8f9fa;
-            z-index: 9;
+            background: var(--grade-green-dark);
+            color: #fff;
+            z-index: 10;
+        }
+
+        .grade-table thead .sticky-index {
+            z-index: 11;
+        }
+
+        .grade-table .grade-category-header {
+            min-width: 112px;
+            color: #fff;
+            border-bottom-color: rgba(255, 255, 255, 0.28);
+            text-align: center;
+        }
+
+        .grade-table .grade-category-header small {
+            display: block;
+            margin-top: 2px;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.67rem;
+            font-weight: 700;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .grade-group-tone-1 { background: #166534 !important; }
+        .grade-group-tone-2 { background: #087f5b !important; }
+        .grade-group-tone-3 { background: #0f766e !important; }
+        .grade-group-tone-4 { background: #3f6212 !important; }
+
+        .grade-table .assessment-header {
+            min-width: 116px;
+            max-width: 150px;
+            background: #edf7f0;
+            color: #214e31;
+            line-height: 1.25;
+            white-space: normal;
+        }
+
+        .grade-table .assessment-header .small-label {
+            margin-top: 3px;
+            color: #54715d;
         }
 
         .score-input {
-            width: 74px;
-            min-width: 74px;
+            width: 78px;
+            min-width: 78px;
+            height: 34px;
+            margin: 0 auto;
             text-align: center;
             padding-left: 6px;
             padding-right: 6px;
+            border-color: #b7c8bc;
+            border-radius: 6px;
+            background: #fffef4;
+            font-weight: 700;
+        }
+
+        .score-input:focus {
+            border-color: var(--grade-green);
+            box-shadow: 0 0 0 0.16rem rgba(22, 101, 52, 0.15);
         }
 
         .computed-cell {
-            background: #f7fbff;
+            min-width: 90px;
+            background: #eef6ff !important;
+            color: #244b74;
             font-weight: 700;
         }
 
         .final-cell {
-            background: #e8f5e9;
-            color: #155724;
+            min-width: 100px;
+            background: #dcfce7 !important;
+            color: #14532d;
             font-weight: 800;
+        }
+
+        .grade-table tbody .final-cell {
+            font-size: 1rem;
         }
 
         .small-label {
@@ -1006,6 +1235,101 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             border-left: 4px solid #198754;
         }
 
+        .class-record-header {
+            gap: 12px;
+            padding: 14px 16px;
+            background: linear-gradient(90deg, #f7fbf8 0%, #fff 60%);
+        }
+
+        .class-record-heading {
+            min-width: 220px;
+        }
+
+        .class-record-heading .card-title {
+            float: none;
+            display: block;
+            color: var(--grade-green-dark);
+            font-weight: 800;
+        }
+
+        .class-record-legend {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: auto;
+            color: var(--grade-muted);
+            font-size: 0.75rem;
+        }
+
+        .legend-swatch {
+            width: 11px;
+            height: 11px;
+            display: inline-block;
+            margin-right: 4px;
+            border: 1px solid #b7c8bc;
+            border-radius: 3px;
+            vertical-align: -1px;
+        }
+
+        .legend-swatch.input { background: #fffef4; }
+        .legend-swatch.computed { background: #eef6ff; }
+
+        .grade-print-button {
+            white-space: nowrap;
+        }
+
+        body.dark-mode .grade-page-title,
+        body.dark-mode .sheet-context-value,
+        body.dark-mode .grade-summary .info-box-number {
+            color: #f1f5f9;
+        }
+
+        body.dark-mode .grade-sheet-selector,
+        body.dark-mode .class-record-header {
+            background: #303733;
+        }
+
+        body.dark-mode .grade-table-wrap,
+        body.dark-mode .grade-table .sticky-name {
+            background: #363636;
+        }
+
+        body.dark-mode .grade-table tbody tr:nth-child(even) td {
+            background-color: #303633;
+        }
+
+        body.dark-mode .grade-table tbody tr:hover td {
+            background-color: #3b463f;
+        }
+
+        body.dark-mode .grade-table .sticky-index {
+            background: #303633;
+        }
+
+        body.dark-mode .grade-table .assessment-header {
+            background: #304238;
+            color: #d9fbe4;
+        }
+
+        body.dark-mode .grade-table .assessment-header .small-label {
+            color: #b4c9bb !important;
+        }
+
+        body.dark-mode .score-input {
+            background: #454536 !important;
+            color: #fff !important;
+        }
+
+        body.dark-mode .computed-cell {
+            background: #293c4e !important;
+            color: #dbeafe;
+        }
+
+        body.dark-mode .final-cell {
+            background: #244431 !important;
+            color: #dcfce7;
+        }
+
         .collapse-toggle {
             color: #198754;
             font-weight: 800;
@@ -1026,6 +1350,27 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 align-items: stretch;
             }
 
+            .sheet-context {
+                grid-template-columns: 1fr;
+            }
+
+            .sheet-context-item {
+                padding-top: 3px;
+                padding-bottom: 3px;
+            }
+
+            .class-record-header,
+            .class-record-legend {
+                align-items: stretch !important;
+                flex-direction: column;
+            }
+
+            .class-record-legend {
+                width: 100%;
+                margin-left: 0;
+                gap: 5px;
+            }
+
             .class-record-tools-header,
             .class-record-actions {
                 align-items: stretch;
@@ -1036,6 +1381,65 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .class-record-actions .btn,
             .class-record-actions form {
                 width: 100%;
+            }
+        }
+
+        @media print {
+            .main-header,
+            .main-sidebar,
+            .content-header,
+            .grade-sheet-selector,
+            .grade-summary,
+            .class-record-tools-header,
+            .class-record-legend,
+            .grade-print-button,
+            .main-footer {
+                display: none !important;
+            }
+
+            .content-wrapper {
+                margin-left: 0 !important;
+                background: #fff !important;
+            }
+
+            .content {
+                padding: 0 !important;
+            }
+
+            .grade-card {
+                border: 0;
+                box-shadow: none;
+            }
+
+            .grade-table-wrap {
+                max-height: none;
+                overflow: visible;
+                border: 0;
+            }
+
+            .grade-table {
+                width: 100%;
+                min-width: 0;
+                font-size: 8pt;
+            }
+
+            .grade-table thead th,
+            .grade-table .sticky-index,
+            .grade-table .sticky-name {
+                position: static;
+            }
+
+            .score-input {
+                width: 52px;
+                min-width: 52px;
+                height: 26px;
+                padding: 2px;
+                border: 0;
+            }
+
+            @page {
+                size: landscape;
+                margin: 8mm;
             }
         }
     </style>
@@ -1059,14 +1463,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <section class="content-header">
             <div class="container-fluid">
                 <div class="grade-toolbar">
-                    <div>
-                        <h1 class="mb-1"><i class="fas fa-calculator mr-2"></i>NSTP Grade Computation</h1>
-                        <div class="text-muted">
-                            <?php echo htmlspecialchars(ucfirst($userRole)); ?> view
-                            <?php if ($currentProgram): ?>
-                                · <?php echo htmlspecialchars($currentProgram); ?>
-                            <?php endif; ?>
-                            · <?php echo count($students); ?> student(s)
+                    <div class="grade-page-heading">
+                        <span class="grade-page-icon"><i class="fas fa-file-invoice"></i></span>
+                        <div>
+                            <div class="grade-page-kicker">Smart NSTP Management</div>
+                            <h1 class="grade-page-title mb-1">Grading Sheet</h1>
+                            <div class="text-muted small">
+                                <?php echo htmlspecialchars(ucfirst($userRole)); ?> workspace
+                                <?php if ($currentProgram): ?>
+                                    · <?php echo htmlspecialchars($currentProgram); ?>
+                                <?php endif; ?>
+                                · <?php echo count($students); ?> student(s)
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1089,12 +1497,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 <?php endforeach; ?>
 
-                <div class="card grade-card grade-folder-card">
+                <div class="card grade-card grade-folder-card grade-sheet-selector">
                     <div class="card-body py-3">
                         <form method="GET" class="row align-items-end">
-                            <div class="col-lg-7 col-md-8 mb-2 mb-md-0">
+                            <div class="col-lg-5 col-md-6 mb-3 mb-md-0">
                                 <label class="mb-1 font-weight-bold" for="grade_folder">
-                                    <i class="fas fa-folder-open mr-1"></i>Class Record Folder
+                                    <i class="fas fa-folder-open mr-1 text-success"></i>Select Class Record
                                 </label>
                                 <select class="form-control" id="grade_folder" name="grade_folder" onchange="this.form.submit()" <?php echo empty($gradeFolderOptions) ? 'disabled' : ''; ?>>
                                     <?php if (empty($gradeFolderOptions)): ?>
@@ -1115,18 +1523,30 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <?php endif; ?>
                                 </select>
                             </div>
-                            <div class="col-lg-5 col-md-4">
-                                <div class="text-muted small">Current class record is filtered by folder.</div>
-                                <strong><?php echo htmlspecialchars($selectedGradeFolderLabel); ?></strong>
+                            <div class="col-lg-7 col-md-6">
+                                <div class="sheet-context">
+                                    <div class="sheet-context-item">
+                                        <span class="sheet-context-label">Program</span>
+                                        <span class="sheet-context-value"><?php echo htmlspecialchars($currentProgram ?: 'NSTP'); ?></span>
+                                    </div>
+                                    <div class="sheet-context-item">
+                                        <span class="sheet-context-label">Active Class</span>
+                                        <span class="sheet-context-value" title="<?php echo htmlspecialchars($selectedGradeFolderLabel); ?>"><?php echo htmlspecialchars($selectedGradeFolderLabel); ?></span>
+                                    </div>
+                                    <div class="sheet-context-item">
+                                        <span class="sheet-context-label">Prepared by</span>
+                                        <span class="sheet-context-value"><?php echo htmlspecialchars($userName); ?></span>
+                                    </div>
+                                </div>
                                 <?php if ($selectedGradeFolder === '' && count($gradeFolderOptions) > 1): ?>
-                                    <div class="small text-danger">Select one folder first so students do not get mixed.</div>
+                                    <div class="small text-danger mt-2">Select one class record first so students do not get mixed.</div>
                                 <?php endif; ?>
                             </div>
                         </form>
                     </div>
                 </div>
 
-                <div class="row">
+                <div class="row grade-summary">
                     <div class="col-md-3 col-sm-6">
                         <div class="info-box grade-card">
                             <span class="info-box-icon bg-info"><i class="fas fa-users"></i></span>
@@ -1262,14 +1682,24 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <input type="hidden" name="action" value="save_scores">
                     <?php endif; ?>
                     <div class="card grade-card">
-                        <div class="card-header d-flex align-items-center justify-content-between">
-                            <h3 class="card-title mb-0"><i class="fas fa-file-signature mr-2"></i>Class Record</h3>
+                        <div class="card-header class-record-header d-flex align-items-center flex-wrap">
+                            <div class="class-record-heading">
+                                <h3 class="card-title mb-0"><i class="fas fa-table mr-2"></i>Student Class Record</h3>
+                                <div class="small text-muted mt-1">Encode raw scores; totals and final grades are computed automatically.</div>
+                            </div>
+                            <div class="class-record-legend">
+                                <span><i class="legend-swatch input"></i>Editable score</span>
+                                <span><i class="legend-swatch computed"></i>Auto-computed</span>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm grade-print-button" onclick="window.print()">
+                                <i class="fas fa-print mr-1"></i>Print Sheet
+                            </button>
                             <?php if ($canComputeGrades): ?>
-                                <button class="btn btn-success btn-sm ml-auto">
+                                <button class="btn btn-success btn-sm">
                                     <i class="fas fa-save mr-1"></i>Save Scores
                                 </button>
                             <?php else: ?>
-                                <span class="badge badge-secondary ml-auto">
+                                <span class="badge badge-secondary px-3 py-2">
                                     <i class="fas fa-eye mr-1"></i>View Only
                                 </span>
                             <?php endif; ?>
@@ -1278,40 +1708,49 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <div class="grade-table-wrap">
                                 <table class="table table-bordered table-hover grade-table">
                                     <thead>
-                                        <tr>
-                                            <th class="sticky-name">Student</th>
-                                            <th>Folder</th>
-                                            <th>Facilitator</th>
-                                            <?php foreach ($gradeColumns as $column): ?>
-                                                <th>
-                                                    <?php echo htmlspecialchars($column['label']); ?>
-                                                    <span class="small-label">
-                                                        <?php echo htmlspecialchars($column['group_label']); ?>
-                                                        · /<?php echo formatGradeNumber($column['max_score'], 0); ?>
-                                                    </span>
+                                        <?php $gradeHeaderRowspan = empty($gradeColumns) ? 1 : 2; ?>
+                                        <tr class="grade-category-row">
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="sticky-index">#</th>
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="sticky-name">Student Name</th>
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>">Class / Folder</th>
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>">Facilitator</th>
+                                            <?php foreach ($gradeGroups as $groupCode => $group): ?>
+                                                <th colspan="<?php echo (int) $group['count']; ?>" class="grade-category-header <?php echo htmlspecialchars($gradeGroupTones[$groupCode]); ?>">
+                                                    <?php echo htmlspecialchars($group['label']); ?>
+                                                    <small><?php echo formatGradeNumber($group['weight'], 0); ?>% weight</small>
                                                 </th>
                                             <?php endforeach; ?>
-                                            <th class="computed-cell">Attendance <span class="small-label">/ <?php echo (int) $totalMeetings; ?></span></th>
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="computed-cell">Attendance <span class="small-label">/ <?php echo (int) $totalMeetings; ?></span></th>
                                             <?php if (!empty($gradeColumns)): ?>
-                                                <th class="computed-cell">Total Score</th>
-                                                <th class="computed-cell">Max Score</th>
-                                                <th class="computed-cell">Score %</th>
+                                                <th rowspan="2" class="computed-cell">Total Score</th>
+                                                <th rowspan="2" class="computed-cell">Max Score</th>
+                                                <th rowspan="2" class="computed-cell">Score %</th>
                                             <?php endif; ?>
-                                            <th class="computed-cell">Weighted %</th>
-                                            <th class="final-cell">Final Grade</th>
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="computed-cell">Weighted %</th>
+                                            <th rowspan="<?php echo $gradeHeaderRowspan; ?>" class="final-cell">Final Grade</th>
                                         </tr>
+                                        <?php if (!empty($gradeColumns)): ?>
+                                            <tr class="grade-assessment-row">
+                                                <?php foreach ($gradeColumns as $column): ?>
+                                                    <th class="assessment-header">
+                                                        <?php echo htmlspecialchars($column['label']); ?>
+                                                        <span class="small-label">Highest score: <?php echo formatGradeNumber($column['max_score'], 0); ?></span>
+                                                    </th>
+                                                <?php endforeach; ?>
+                                            </tr>
+                                        <?php endif; ?>
                                     </thead>
                                     <tbody>
                                         <?php if (empty($students)): ?>
                                             <tr>
-                                                <td colspan="<?php echo count($gradeColumns) + (empty($gradeColumns) ? 6 : 9); ?>" class="text-center text-muted py-5">
+                                                <td colspan="<?php echo count($gradeColumns) + (empty($gradeColumns) ? 7 : 10); ?>" class="text-center text-muted py-5">
                                                     <i class="fas fa-user-graduate fa-2x d-block mb-2"></i>
                                                     No students available for this account.
                                                 </td>
                                             </tr>
                                         <?php endif; ?>
 
-                                        <?php foreach ($students as $student): ?>
+                                        <?php foreach ($students as $studentIndex => $student): ?>
                                             <?php
                                             $studentId = (int) $student['tbl_student_id'];
                                             $studentDisplayName = gradeDisplayStudentName($student);
@@ -1326,6 +1765,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             );
                                             ?>
                                             <tr class="grade-row" data-attendance-count="<?php echo (int) $attendanceCount; ?>">
+                                                <td class="sticky-index"><?php echo $studentIndex + 1; ?></td>
                                                 <td class="sticky-name">
                                                     <strong><?php echo htmlspecialchars($studentDisplayName); ?></strong>
                                                     <?php if (!empty($student['student_number'])): ?>
