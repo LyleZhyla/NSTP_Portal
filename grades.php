@@ -2704,28 +2704,33 @@ function formatNumber(value) {
 
 const $saveStatus = $('#grade-save-status');
 let activeGradeSave = 0;
+const scoreSaveTimers = new WeakMap();
 
-$('.score-input').each(function() {
-    this.dataset.savedValue = this.value;
-}).on('keydown', function(event) {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        this.blur();
+function queueScoreSave(input, delay = 450) {
+    const currentTimer = scoreSaveTimers.get(input);
+    if (currentTimer) {
+        window.clearTimeout(currentTimer);
     }
-}).on('change', async function() {
-    const input = this;
-    if (input.value === input.dataset.savedValue) return;
+    scoreSaveTimers.set(input, window.setTimeout(function() {
+        scoreSaveTimers.delete(input);
+        saveScoreInput(input);
+    }, delay));
+}
+
+async function saveScoreInput(input) {
+    if (input.value === input.dataset.savedValue || input.value === input.dataset.savingValue) return;
     const submittedValue = input.value;
 
     const max = Number(input.max || 0);
     const numericValue = input.value === '' ? null : Number(input.value);
     if (numericValue !== null && (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > max)) {
-        input.value = input.dataset.savedValue;
         $saveStatus.text('Score must be between 0 and ' + formatNumber(max)).attr('class', 'autosave-status error');
         return;
     }
 
     const requestId = ++activeGradeSave;
+    input.dataset.saveRequestId = String(requestId);
+    input.dataset.savingValue = submittedValue;
     input.classList.add('saving');
     $saveStatus.text('Saving…').attr('class', 'autosave-status saving');
 
@@ -2768,14 +2773,40 @@ $('.score-input').each(function() {
         });
         input.classList.add('saved');
         window.setTimeout(() => input.classList.remove('saved'), 900);
-        if (requestId === activeGradeSave) {
+        if (requestId === activeGradeSave && input.value === submittedValue) {
             $saveStatus.text('All changes saved').attr('class', 'autosave-status saved');
+        } else if (requestId === activeGradeSave) {
+            $saveStatus.text('Waiting to save…').attr('class', 'autosave-status saving');
         }
     } catch (error) {
         $saveStatus.text(error.message).attr('class', 'autosave-status error');
     } finally {
-        input.classList.remove('saving');
+        if (Number(input.dataset.saveRequestId) === requestId) {
+            delete input.dataset.savingValue;
+            input.classList.remove('saving');
+        }
     }
+}
+
+$('.score-input').each(function() {
+    this.dataset.savedValue = this.value;
+}).on('input', function() {
+    if (this.value === this.dataset.savedValue) {
+        const currentTimer = scoreSaveTimers.get(this);
+        if (currentTimer) window.clearTimeout(currentTimer);
+        scoreSaveTimers.delete(this);
+        $saveStatus.text('All changes saved').attr('class', 'autosave-status saved');
+        return;
+    }
+    $saveStatus.text('Waiting to save…').attr('class', 'autosave-status saving');
+    queueScoreSave(this);
+}).on('keydown', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        this.blur();
+    }
+}).on('change', function() {
+    queueScoreSave(this, 0);
 });
 
 function syncNewCategoryInput(prefix) {
