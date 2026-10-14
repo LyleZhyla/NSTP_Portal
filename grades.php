@@ -392,7 +392,6 @@ $currentProgram = normalizeProgram($_SESSION['program'] ?? ($currentUser['progra
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
-$attendanceWeightKey = 'attendance_weight_' . $settingScope;
 $passingPercentageKey = 'passing_percentage_' . $settingScope;
 $highestGradeKey = 'highest_grade_' . $settingScope;
 $passingGradeKey = 'passing_grade_' . $settingScope;
@@ -805,7 +804,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'settings' && $canManageColumns) {
         $meetings = max(1, (int) ($_POST['total_meetings'] ?? 11));
-        $attendanceWeightInput = (float) ($_POST['attendance_weight'] ?? 0);
         $passingPercentageInput = (float) ($_POST['passing_percentage'] ?? 75);
         $highestGradeInput = (float) ($_POST['highest_grade'] ?? 1);
         $passingGradeInput = (float) ($_POST['passing_grade'] ?? 3);
@@ -818,10 +816,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $errors[] = 'Passing percentage must be between 0 and 100.';
         } elseif ($highestGradeInput >= $passingGradeInput || $passingGradeInput >= $failingGradeInput) {
             $errors[] = 'Use an ascending scale such as 1.00 highest, 3.00 passing, and 5.00 failing.';
-        }
-
-        if ($attendanceWeightInput < 0 || $attendanceWeightInput > 100) {
-            $errors[] = 'Attendance weight must be from 0% to 100%.';
         }
 
         if (!is_array($settingsCategories)) {
@@ -844,16 +838,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         $scoreCategoryWeight = array_sum(array_column($categoryUpdates, 'weight'));
-        $configuredWeightTotal = $scoreCategoryWeight + $attendanceWeightInput;
-        if (!$errors && abs($configuredWeightTotal - 100) > 0.001) {
-            $errors[] = 'Category and attendance weights must total 100%. Current total: ' . formatGradeNumber($configuredWeightTotal, 2) . '%.';
+        if (!$errors && $scoreCategoryWeight > 100.001) {
+            $errors[] = 'Score category weights cannot exceed 100%. Current total: ' . formatGradeNumber($scoreCategoryWeight, 2) . '%. Reduce them so attendance can use the remaining percentage.';
         }
 
         if (!$errors) {
             $conn->beginTransaction();
             try {
                 setGradeSetting($conn, $totalMeetingsKey, (string) $meetings, $userId);
-                setGradeSetting($conn, $attendanceWeightKey, (string) $attendanceWeightInput, $userId);
                 setGradeSetting($conn, $passingPercentageKey, (string) $passingPercentageInput, $userId);
                 setGradeSetting($conn, $highestGradeKey, (string) $highestGradeInput, $userId);
                 setGradeSetting($conn, $passingGradeKey, (string) $passingGradeInput, $userId);
@@ -1108,10 +1100,7 @@ $gradeGroups = buildGradeGroups($gradeColumns);
 $scoreWeight = array_sum(array_map(function ($group) {
     return (float) $group['weight'];
 }, $gradeGroups));
-$savedAttendanceWeight = getGradeSetting($conn, $attendanceWeightKey, '');
-$attendanceWeight = $savedAttendanceWeight === ''
-    ? max(0, 100 - $scoreWeight)
-    : max(0, min(100, (float) $savedAttendanceWeight));
+$attendanceWeight = max(0, 100 - $scoreWeight);
 $totalConfiguredWeight = $scoreWeight + $attendanceWeight;
 $gradeGroupTones = [];
 $gradeGroupToneIndex = 1;
@@ -1931,10 +1920,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 <?php endforeach; ?>
 
-                <?php if (abs($totalConfiguredWeight - 100) > 0.001): ?>
+                <?php if ($scoreWeight > 100.001): ?>
                     <div class="alert alert-warning" role="alert">
                         <i class="fas fa-triangle-exclamation mr-1"></i>
-                        Category and attendance weights total <?php echo formatGradeNumber($totalConfiguredWeight, 2); ?>%. Smart NSTP grading requires a 100% total; open <strong>Settings</strong> and correct the weights.
+                        Category weights total <?php echo formatGradeNumber($scoreWeight, 2); ?>%. Smart NSTP grading requires a 100% total; open <strong>Settings</strong> and correct the category weights.
                     </div>
                 <?php endif; ?>
 
@@ -2021,8 +2010,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <div class="small text-muted mt-1">Coordinator controls for the active grading sheet.</div>
                             </div>
                             <div class="class-record-actions">
-                                <button class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addColumnModal">
+                                <button type="button" class="btn btn-primary btn-sm" id="addScoreItemBtn" data-toggle="modal" data-target="#addColumnModal">
                                     <i class="fas fa-plus mr-1"></i>Add Score Item
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-success btn-sm"
+                                    id="addManualAttendanceBtn"
+                                    data-toggle="modal"
+                                    data-target="#addColumnModal"
+                                    data-max-score="<?php echo (int) $totalMeetings; ?>">
+                                    <i class="fas fa-user-check mr-1"></i>Add Manual Attendance
                                 </button>
                                 <button class="btn btn-outline-secondary btn-sm" data-toggle="modal" data-target="#settingsModal">
                                     <i class="fas fa-sliders-h mr-1"></i>Settings
@@ -2135,7 +2133,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                     · <?php echo formatGradeNumber($group['weight'], 2); ?>%
                                                 </th>
                                             <?php endforeach; ?>
-                                            <th colspan="2" class="grade-category-header grade-group-tone-4">Attendance · <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</th>
+                                            <th colspan="2" class="grade-category-header grade-group-tone-4">System Attendance · <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</th>
                                             <th rowspan="3" class="computed-cell">Recorded<br>Weighted</th>
                                             <th rowspan="3" class="final-cell">Computed<br>Grade</th>
                                             <th rowspan="3" class="category-total-heading">Progress</th>
@@ -2249,13 +2247,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <form method="POST" class="modal-content">
             <input type="hidden" name="action" value="add_column">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-plus mr-2"></i>Add Score Item</h5>
+                <h5 class="modal-title" id="addColumnModalTitle"><i class="fas fa-plus mr-2"></i>Add Score Item</h5>
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label>Score Item</label>
-                    <input type="text" name="label" class="form-control" maxlength="160" placeholder="Example: Reflection Paper" required>
+                    <input type="text" name="label" id="addColumnLabel" class="form-control" maxlength="160" placeholder="Example: Reflection Paper" required>
                 </div>
                 <div class="form-group">
                     <label>Category / Component</label>
@@ -2275,11 +2273,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <div class="form-row">
                     <div class="form-group col-md-6">
                         <label>Max Score</label>
-                        <input type="number" name="max_score" class="form-control" min="1" step="0.01" value="100" required>
+                        <input type="number" name="max_score" id="addColumnMaxScore" class="form-control" min="1" step="0.01" value="100" required>
                     </div>
                     <div class="form-group col-md-6">
                         <label>Category Weight %</label>
-                        <input type="number" name="weight_percent" class="form-control" min="1" step="0.01" value="10" required>
+                        <input type="number" name="weight_percent" id="addColumnWeightPercent" class="form-control" min="1" step="0.01" value="10" required>
                         <small class="text-muted">Used only for a new category; existing categories keep their configured weight.</small>
                     </div>
                 </div>
@@ -2289,7 +2287,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                <button class="btn btn-primary"><i class="fas fa-plus mr-1"></i>Add Score Item</button>
+                <button class="btn btn-primary" id="addColumnSubmitBtn"><i class="fas fa-plus mr-1"></i>Add Score Item</button>
             </div>
         </form>
     </div>
@@ -2356,7 +2354,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <div class="form-group col-lg-4">
                         <label>Total Attendance Meetings</label>
                         <input type="number" name="total_meetings" class="form-control" min="1" value="<?php echo (int) $totalMeetings; ?>" required>
-                        <small class="text-muted">Used to compute each student's attendance score.</small>
+                        <small class="text-muted">System attendance uses the remaining category weight.</small>
                     </div>
                     <div class="col-lg-8">
                         <label class="d-block">1.00–5.00 Transmutation</label>
@@ -2369,12 +2367,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <small class="text-muted">Default: below 75% = 5.00; 75% = 3.00; 100% = 1.00.</small>
                     </div>
                 </div>
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                    <strong>Grading Categories</strong>
-                    <span class="small text-muted">Configured total: <strong id="configuredWeightTotal"><?php echo formatGradeNumber($totalConfiguredWeight, 2); ?>%</strong></span>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered mb-3">
+                <?php if (!empty($gradeGroups)): ?>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong>Grading Categories</strong>
+                        <span class="small text-muted">Score categories: <?php echo formatGradeNumber($scoreWeight, 2); ?>% · System attendance: <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-3">
                             <thead class="thead-light">
                                 <tr>
                                     <th style="min-width: 260px;">Category</th>
@@ -2398,7 +2397,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                             <input
                                                 type="number"
                                                 name="categories[<?php echo htmlspecialchars($groupCode); ?>][weight]"
-                                                class="form-control form-control-sm grade-weight-input"
+                                                class="form-control form-control-sm"
                                                 min="0"
                                                 max="100"
                                                 step="0.01"
@@ -2409,25 +2408,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     </tr>
                                 <?php endforeach; ?>
                                 <tr class="table-light">
-                                    <td><strong>Attendance</strong><div class="small text-muted">Automatically computed from attendance records</div></td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            name="attendance_weight"
-                                            class="form-control form-control-sm grade-weight-input"
-                                            min="0"
-                                            max="100"
-                                            step="0.01"
-                                            value="<?php echo htmlspecialchars((string) $attendanceWeight); ?>"
-                                            required>
-                                    </td>
+                                    <td><strong>System Attendance</strong><div class="small text-muted">Automatically computed from attendance records</div></td>
+                                    <td class="align-middle"><strong><?php echo formatGradeNumber($attendanceWeight, 2); ?>%</strong></td>
                                     <td class="align-middle">System generated</td>
                                 </tr>
                             </tbody>
                         </table>
-                </div>
+                    </div>
+                <?php endif; ?>
                 <div class="alert alert-info mb-0">
-                    Enter the attendance percentage manually. All category weights plus attendance must total exactly 100%.
+                    Category weights come from the score items above. System attendance automatically uses the remaining percentage. Manual attendance is added as a separate score category.
                 </div>
             </div>
             <div class="modal-footer">
@@ -2539,6 +2529,40 @@ $('#addColumnGroupSelect, #editColumnGroupSelect').on('change', function() {
     syncNewCategoryInput(this.id.indexOf('edit') === 0 ? 'edit' : 'add');
 });
 
+$('#addScoreItemBtn').on('click', function() {
+    const $select = $('#addColumnGroupSelect');
+    $('#addColumnModalTitle').html('<i class="fas fa-plus mr-2"></i>Add Score Item');
+    $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Score Item');
+    $('#addColumnLabel').val('');
+    $('#addColumnMaxScore').val(100);
+    $('#addColumnWeightPercent').val(10);
+    $('#addColumnGroupNew').val('');
+    $select.prop('selectedIndex', 0);
+    syncNewCategoryInput('add');
+});
+
+$('#addManualAttendanceBtn').on('click', function() {
+    const $select = $('#addColumnGroupSelect');
+    const $existingCategory = $select.find('option').filter(function() {
+        return String(this.value).trim().toLowerCase() === 'manual attendance';
+    }).first();
+
+    $('#addColumnModalTitle').html('<i class="fas fa-user-check mr-2"></i>Add Manual Attendance');
+    $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Manual Attendance');
+    $('#addColumnLabel').val('Manual Attendance Score');
+    $('#addColumnMaxScore').val($(this).data('max-score'));
+    $('#addColumnWeightPercent').val(10);
+
+    if ($existingCategory.length) {
+        $select.val($existingCategory.val());
+        $('#addColumnGroupNew').val('');
+    } else {
+        $select.val('__new');
+        $('#addColumnGroupNew').val('Manual Attendance');
+    }
+    syncNewCategoryInput('add');
+});
+
 $('.edit-column-btn').on('click', function() {
     const groupLabel = String($(this).data('group-label') || '');
     $('#editColumnId').val($(this).data('column-id'));
@@ -2558,20 +2582,6 @@ $('.edit-column-btn').on('click', function() {
 
 syncNewCategoryInput('add');
 syncNewCategoryInput('edit');
-
-function refreshConfiguredWeightTotal() {
-    let total = 0;
-    $('.grade-weight-input').each(function() {
-        total += Number(this.value) || 0;
-    });
-    $('#configuredWeightTotal')
-        .text(total.toFixed(2) + '%')
-        .toggleClass('text-danger', Math.abs(total - 100) > 0.001)
-        .toggleClass('text-success', Math.abs(total - 100) <= 0.001);
-}
-
-$('.grade-weight-input').on('input', refreshConfiguredWeightTotal);
-refreshConfiguredWeightTotal();
 
 function refreshSelectedColumnControls() {
     const checkedCount = $('.grade-column-checkbox:checked').length;
