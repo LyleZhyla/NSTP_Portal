@@ -653,7 +653,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     if ($action === 'add_column' && $canManageColumns) {
-        $isManualAttendance = ($_POST['score_item_type'] ?? '') === 'manual_attendance';
+        $requestedSystemAttendance = ($_POST['group_label_select'] ?? '') === '__system_attendance';
+        $isManualAttendance = ($_POST['score_item_type'] ?? '') === 'manual_attendance' || $requestedSystemAttendance;
         $label = trim($_POST['label'] ?? '');
         $groupLabel = selectedGradeGroupLabel($_POST);
         $maxScore = (float) ($_POST['max_score'] ?? 0);
@@ -806,7 +807,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 break;
             }
         }
-        $isManualAttendance = $selectedColumn && isManualAttendanceColumn($selectedColumn);
+        $requestedSystemAttendance = ($_POST['group_label_select'] ?? '') === '__system_attendance';
+        $isManualAttendance = ($selectedColumn && isManualAttendanceColumn($selectedColumn)) || $requestedSystemAttendance;
         if ($isManualAttendance) {
             $groupLabel = 'Manual Attendance';
             $weight = 0;
@@ -2353,10 +2355,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) $categoryWeight); ?>"><?php echo htmlspecialchars($categoryLabel); ?> — shares <?php echo formatGradeNumber($categoryWeight, 2); ?>%</option>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                        <option value="__system_attendance" data-weight="<?php echo htmlspecialchars((string) $attendanceWeight); ?>">System Attendance — shares <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</option>
                         <option value="__new">Own percentage (create new category)</option>
                     </select>
                     <input type="text" name="group_label_new" id="addColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
-                    <small class="text-muted" id="addColumnCategoryHelp">Existing categories share one percentage. A new category receives its own percentage.</small>
+                    <small class="text-muted" id="addColumnCategoryHelp">Choose System Attendance to share its percentage, an existing category to share that weight, or create a new category for a separate percentage.</small>
                 </div>
                 <div class="form-row">
                     <div class="form-group col-md-6">
@@ -2406,6 +2409,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <option value="<?php echo htmlspecialchars($categoryLabel); ?>" data-weight="<?php echo htmlspecialchars((string) $categoryWeight); ?>"><?php echo htmlspecialchars($categoryLabel); ?> — shares <?php echo formatGradeNumber($categoryWeight, 2); ?>%</option>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                        <option value="__system_attendance" data-weight="<?php echo htmlspecialchars((string) $attendanceWeight); ?>">System Attendance — shares <?php echo formatGradeNumber($attendanceWeight, 2); ?>%</option>
                         <option value="__new">Own percentage (create new category)</option>
                     </select>
                     <input type="text" name="group_label_new" id="editColumnGroupNew" class="form-control mt-2 d-none" maxlength="120" placeholder="New category name">
@@ -2605,21 +2609,28 @@ function syncNewCategoryInput(prefix) {
     const $select = $('#' + prefix + 'ColumnGroupSelect');
     const $weight = prefix === 'edit' ? $('#editColumnWeightPercent') : $('input[name="weight_percent"]', '#addColumnModal');
     const isNew = $select.val() === '__new';
+    const isSystemAttendance = $select.val() === '__system_attendance';
     const categoryWeight = $select.find('option:selected').data('weight');
     $('#' + prefix + 'ColumnGroupNew')
         .toggleClass('d-none', !isNew)
         .prop('required', isNew);
 
     if (!isNew && categoryWeight !== undefined && categoryWeight !== '') {
-        $weight.val(categoryWeight).prop('readonly', true);
+        $weight.val(categoryWeight).attr('min', isSystemAttendance ? 0 : 1).prop('readonly', true);
         if (prefix === 'add') {
-            $('#addColumnWeightHelp').text('Included under the selected category and uses its existing ' + categoryWeight + '% weight.');
+            $('#addColumnWeightHelp').text(isSystemAttendance
+                ? 'Shares the same ' + categoryWeight + '% used by system attendance.'
+                : 'Included under the selected category and uses its existing ' + categoryWeight + '% weight.');
         }
     } else {
-        $weight.prop('readonly', false);
+        $weight.attr('min', 1).prop('readonly', false);
         if (prefix === 'add') {
             $('#addColumnWeightHelp').text('Set a separate percentage for this new category.');
         }
+    }
+
+    if (prefix === 'add' && $('#addColumnType').val() !== 'manual_attendance') {
+        $('#manualAttendanceGroupingHelp').toggleClass('d-none', !isSystemAttendance);
     }
 }
 
