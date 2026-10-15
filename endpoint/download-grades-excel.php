@@ -199,9 +199,22 @@ if ($role === 'facilitator') {
     $selectedFolder = trim($folderPart);
 }
 
-$sheetOwnerId = ($role === 'coordinator' && $selectedFacilitatorId)
-    ? (int) $selectedFacilitatorId
-    : $userId;
+$sheetOwnerId = $userId;
+if ($role === 'facilitator' && $currentProgram) {
+    $coordinatorStmt = $conn->prepare("
+        SELECT user_id
+        FROM tbl_users
+        WHERE role = 'coordinator' AND program = ?
+        ORDER BY user_id ASC
+        LIMIT 1
+    ");
+    $coordinatorStmt->execute([$currentProgram]);
+    $coordinatorId = (int) $coordinatorStmt->fetchColumn();
+    if ($coordinatorId > 0) {
+        $sheetOwnerId = $coordinatorId;
+    }
+}
+$facilitatorColumnOwnerId = $selectedFacilitatorId ?: $userId;
 $columnsStmt = $conn->prepare("
     SELECT *
     FROM tbl_grade_columns
@@ -210,6 +223,7 @@ $columnsStmt = $conn->prepare("
       AND (
         is_default = 1
         OR created_by IS NULL
+        OR created_by = ?
         OR created_by = ?
       )
       AND NOT EXISTS (
@@ -222,7 +236,7 @@ $columnsStmt = $conn->prepare("
       )
     ORDER BY sort_order ASC, grade_column_id ASC
 ");
-$columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+$columnsStmt->execute([$currentProgram, $sheetOwnerId, $facilitatorColumnOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 

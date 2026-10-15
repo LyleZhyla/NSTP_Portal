@@ -436,6 +436,7 @@ $columnsStmt = $conn->prepare("
         is_default = 1
         OR created_by IS NULL
         OR created_by = ?
+        OR created_by = ?
       )
       AND NOT EXISTS (
         SELECT 1
@@ -542,9 +543,13 @@ if ($userRole === 'coordinator') {
 }
 
 $sheetOwnerId = $columnOwnerId;
-$columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+$facilitatorColumnOwnerId = $userRole === 'facilitator'
+    ? $userId
+    : ($selectedGradeFacilitatorId ?: $sheetOwnerId);
+$columnQueryParams = [$currentProgram, $sheetOwnerId, $facilitatorColumnOwnerId, $sheetOwnerId, $columnVisibilityScope];
+$columnsStmt->execute($columnQueryParams);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
-$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
+$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '0') !== '0';
 $systemAttendanceColumn = null;
 foreach ($gradeColumns as $column) {
     if (isSystemAttendanceColumn($column)) {
@@ -591,7 +596,7 @@ if ($systemAttendanceEnabled && !$systemAttendanceColumn) {
         ");
         $restoreSystemColumn->execute([$legacySystemColumnId, $sheetOwnerId, $columnVisibilityScope, $userId]);
     }
-    $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+    $columnsStmt->execute($columnQueryParams);
     $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -628,11 +633,21 @@ if ($systemAttendanceEnabled) {
             $manualAttendanceSynced = true;
         }
         if ($manualAttendanceSynced) {
-            $columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+            $columnsStmt->execute($columnQueryParams);
             $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
         }
     }
 }
+$systemAttendanceColumn = null;
+foreach ($gradeColumns as $column) {
+    if (isSystemAttendanceColumn($column)) {
+        $systemAttendanceColumn = $column;
+        break;
+    }
+}
+$canAddManualAttendance = $userRole === 'facilitator'
+    && $systemAttendanceEnabled
+    && $systemAttendanceColumn !== null;
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
@@ -716,12 +731,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'settings',
         'remove_system_attendance',
     ];
+    $isFacilitatorManualAttendanceAction = $action === 'add_column'
+        && $canAddManualAttendance
+        && ($_POST['score_item_type'] ?? '') === 'manual_attendance';
 
-    if (in_array($action, $columnManagementActions, true) && !$canManageColumns) {
+    if (in_array($action, $columnManagementActions, true)
+        && !$canManageColumns
+        && !$isFacilitatorManualAttendanceAction) {
         $errors[] = 'Only coordinators can edit grade columns and grade settings.';
     }
 
-    if ($action === 'add_column' && $canManageColumns) {
+    if ($action === 'add_column' && ($canManageColumns || $isFacilitatorManualAttendanceAction)) {
         $scoreItemType = $_POST['score_item_type'] ?? 'score';
         $isSystemAttendance = $scoreItemType === 'system_attendance';
         $isManualAttendance = $scoreItemType === 'manual_attendance';
@@ -788,7 +808,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     }
                 }
                 setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
-                $messages[] = 'System Attendance added under ' . $groupLabel . '.';
+                $messages[] = 'System Attendance opened under ' . $groupLabel . '. Facilitators can now add attendance score items.';
             }
         } else {
             $label = trim($_POST['label'] ?? '');
@@ -797,8 +817,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $weight = (float) ($_POST['weight_percent'] ?? 0);
             if ($isManualAttendance) {
                 $label = $label !== '' ? $label : 'Manual Attendance Score';
+                $manualAttendanceSystemColumn = null;
                 foreach ($gradeColumns as $column) {
                     if (isSystemAttendanceColumn($column)) {
+                        $manualAttendanceSystemColumn = $column;
                         $groupLabel = (string) $column['group_label'];
                         $weight = (float) $column['weight_percent'];
                         break;
@@ -813,7 +835,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
             $groupCode = slugGradeGroup($groupLabel);
 
-            if ($label === '') {
+            if ($isManualAttendance && (!$systemAttendanceEnabled || !$manualAttendanceSystemColumn)) {
+                $errors[] = 'The coordinator must enable System Attendance before adding manual attendance.';
+            } elseif ($label === '') {
                 $errors[] = 'Column name is required.';
             } elseif ($maxScore <= 0) {
                 $errors[] = 'Max score must be greater than zero.';
@@ -834,12 +858,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $maxScore,
                     $weight,
                     500 + time(),
-                    $userId,
+                    $isFacilitatorManualAttendanceAction ? $userId : $sheetOwnerId,
                     $userId,
                 ]);
-                if ($isManualAttendance) {
-                    setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
-                }
                 $messages[] = $isManualAttendance ? 'Manual attendance score added.' : 'New grade column added.';
             }
         }
@@ -1005,7 +1026,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'remove_system_attendance' && $canManageColumns) {
         setGradeSetting($conn, $systemAttendanceEnabledKey, '0', $userId);
-        $messages[] = 'System Attendance removed from the current grading sheet. Saved attendance data and manual scores were kept.';
+        $messages[] = 'System Attendance closed. Saved attendance data and manual scores were kept.';
     }
 
     if ($action === 'settings' && $canManageColumns) {
@@ -1118,7 +1139,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $studentId = (int) ($_POST['student_id'] ?? 0);
         $columnId = (int) ($_POST['column_id'] ?? 0);
         $scoreValue = trim((string) ($_POST['score'] ?? ''));
-        $ajaxSystemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
+        $ajaxSystemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '0') !== '0';
         $ajaxGradeColumns = array_values(array_filter(
             $gradeColumns,
             fn($column) => !isSystemAttendanceColumn($column) || $ajaxSystemAttendanceEnabled
@@ -1270,10 +1291,10 @@ if (!empty($_SESSION['grade_errors'])) {
     unset($_SESSION['grade_errors']);
 }
 
-$columnsStmt->execute([$currentProgram, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+$columnsStmt->execute($columnQueryParams);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
-$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
+$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '0') !== '0';
 $activeGradeColumns = array_values(array_filter(
     $gradeColumns,
     fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
@@ -2258,13 +2279,19 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <button type="button" class="btn btn-primary btn-sm" id="addScoreItemBtn" data-toggle="modal" data-target="#addColumnModal">
                                     <i class="fas fa-plus mr-1"></i>Add Score Item
                                 </button>
+                                <?php if (!$systemAttendanceEnabled): ?>
+                                <button type="button" class="btn btn-success btn-sm" id="openSystemAttendanceBtn" data-toggle="modal" data-target="#addColumnModal">
+                                    <i class="fas fa-lock-open mr-1"></i>Open System Attendance
+                                </button>
+                                <?php endif; ?>
                                 <button
                                     type="button"
                                     class="btn btn-outline-success btn-sm"
                                     id="addManualAttendanceBtn"
                                     data-toggle="modal"
                                     data-target="#addColumnModal"
-                                    data-max-score="<?php echo (int) $totalMeetings; ?>">
+                                    data-max-score="<?php echo (int) $totalMeetings; ?>"
+                                    <?php echo $systemAttendanceEnabled ? '' : 'disabled title="Open System Attendance first"'; ?>>
                                     <i class="fas fa-user-check mr-1"></i>Add Manual Attendance
                                 </button>
                                 <button class="btn btn-outline-secondary btn-sm" data-toggle="modal" data-target="#settingsModal">
@@ -2292,10 +2319,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <?php if ($activeSystemAttendanceColumn): ?>
                                         <small class="text-muted">· <?php echo htmlspecialchars($activeSystemAttendanceColumn['group_label']); ?> · <?php echo formatGradeNumber($activeSystemAttendanceColumn['weight_percent'], 2); ?>% · System</small>
                                     <?php endif; ?>
-                                    <form method="POST" class="d-inline" onsubmit="return confirm('Remove System Attendance from this grading sheet? Attendance records and saved manual scores will be kept.');">
+                                    <form method="POST" class="d-inline" onsubmit="return confirm('Close System Attendance? Facilitators will no longer be able to add attendance items. Existing attendance records and manual scores will be kept.');">
                                         <input type="hidden" name="action" value="remove_system_attendance">
-                                        <button class="btn btn-xs btn-link text-danger p-0" title="Remove System Attendance">
-                                            <i class="fas fa-times"></i>
+                                        <button class="btn btn-xs btn-link text-danger p-0" title="Close System Attendance">
+                                            <i class="fas fa-lock"></i>
                                         </button>
                                     </form>
                                 </span>
@@ -2353,6 +2380,32 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                         </form>
                                     </span>
                                 <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php elseif ($userRole === 'facilitator'): ?>
+                    <div class="card grade-card">
+                        <div class="card-header class-record-tools-header">
+                            <div class="class-record-title">
+                                <strong><i class="fas fa-user-check mr-2"></i>Attendance Score Items</strong>
+                                <div class="small text-muted mt-1">
+                                    <?php echo $canAddManualAttendance
+                                        ? 'System Attendance is open. You may add an attendance score item for your class record.'
+                                        : 'System Attendance is closed. Ask your coordinator to open it first.'; ?>
+                                </div>
+                            </div>
+                            <?php if ($canAddManualAttendance): ?>
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-success btn-sm"
+                                    id="addManualAttendanceBtn"
+                                    data-toggle="modal"
+                                    data-target="#addColumnModal"
+                                    data-max-score="<?php echo (int) $totalMeetings; ?>">
+                                    <i class="fas fa-plus mr-1"></i>Add Attendance
+                                </button>
+                            <?php else: ?>
+                                <span class="badge badge-secondary px-3 py-2"><i class="fas fa-lock mr-1"></i>Closed by coordinator</span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -2501,7 +2554,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <?php include 'footer.php'; ?>
 </div>
 
-<?php if ($canManageColumns): ?>
+<?php if ($canManageColumns || $canAddManualAttendance): ?>
 <div class="modal fade" id="addColumnModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <form method="POST" class="modal-content">
@@ -2514,11 +2567,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="modal-body">
                 <div class="form-group">
                     <label>Score Item</label>
+                    <?php if ($canManageColumns): ?>
                     <select id="addColumnItemType" class="form-control">
                         <option value="score">Custom Score Item</option>
-                        <option value="manual_attendance">Manual Attendance</option>
+                        <option value="manual_attendance" <?php echo $systemAttendanceEnabled ? '' : 'disabled'; ?>><?php echo $systemAttendanceEnabled ? 'Manual Attendance' : 'Manual Attendance (open System Attendance first)'; ?></option>
                         <option value="system_attendance" <?php echo $systemAttendanceEnabled ? 'disabled' : ''; ?>><?php echo $systemAttendanceEnabled ? 'System Attendance (already added)' : 'System Attendance'; ?></option>
                     </select>
+                    <?php else: ?>
+                    <select id="addColumnItemType" class="form-control" disabled>
+                        <option value="manual_attendance" selected>Manual Attendance</option>
+                    </select>
+                    <small class="text-muted">System Attendance was opened by your coordinator.</small>
+                    <?php endif; ?>
                 </div>
                 <div class="alert alert-info py-2 d-none" id="systemAttendanceItemHelp">
                     <strong>System-generated score:</strong> attendance records supply the score automatically. Choose the category that will control its percentage.
@@ -2559,7 +2619,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 </div>
                 <div class="alert alert-info mb-0" id="addColumnScopeHelp">
-                    Added columns are scoped to your current component<?php echo $currentProgram ? ' (' . htmlspecialchars($currentProgram) . ')' : ''; ?> and are included in the weighted grade.
+                    <?php if ($canManageColumns): ?>
+                        Added columns are scoped to your current component<?php echo $currentProgram ? ' (' . htmlspecialchars($currentProgram) . ')' : ''; ?> and are included in the weighted grade.
+                    <?php else: ?>
+                        This attendance item is shown only in your facilitator class record and uses the category configured by your coordinator.
+                    <?php endif; ?>
                 </div>
             </div>
             <div class="modal-footer">
@@ -2570,6 +2634,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     </div>
 </div>
 
+<?php if ($canManageColumns): ?>
 <div class="modal fade" id="editColumnModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <form method="POST" class="modal-content">
@@ -2700,6 +2765,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         </form>
     </div>
 </div>
+<?php endif; ?>
 <?php endif; ?>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -2930,6 +2996,14 @@ $('#addScoreItemBtn').on('click', function() {
     $('#addColumnGroupNew').val('');
     $select.prop('selectedIndex', 0);
     configureAddScoreItemType('score');
+});
+
+$('#openSystemAttendanceBtn').on('click', function() {
+    const $select = $('#addColumnGroupSelect');
+    $('#addColumnWeightPercent').val(10);
+    $('#addColumnGroupNew').val('');
+    $select.prop('selectedIndex', 0);
+    configureAddScoreItemType('system_attendance');
 });
 
 $('#addManualAttendanceBtn').on('click', function() {
