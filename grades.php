@@ -309,9 +309,11 @@ function computeStudentGradeSummary(
     $gradedCount = 0;
     foreach ($gradeColumns as $column) {
         $columnId = (int) $column['grade_column_id'];
-        $scoreValue = isSystemAttendanceColumn($column)
+        $savedScore = $scores[$columnId] ?? null;
+        $hasSavedScore = $savedScore !== null && $savedScore !== '';
+        $scoreValue = isSystemAttendanceColumn($column) && !$hasSavedScore
             ? min((int) $attendanceCount, (int) $totalMeetings)
-            : ($scores[$columnId] ?? null);
+            : $savedScore;
         $isGraded = $scoreValue !== null && $scoreValue !== '';
         $score = $isGraded ? (float) $scoreValue : 0;
 
@@ -744,7 +746,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         && $canAddManualAttendance;
 
     if ($isFacilitatorManualAttendanceRequest && !$canAddManualAttendance) {
-        $errors[] = 'Your coordinator must open additional System Attendance scores first.';
+        $errors[] = 'Your coordinator must open System Attendance editing first.';
     }
 
     if (in_array($action, $columnManagementActions, true)
@@ -1049,12 +1051,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($action === 'set_facilitator_attendance_scores' && $canManageColumns) {
         $allowAdditionalScores = ($_POST['enabled'] ?? '0') === '1';
         if ($allowAdditionalScores && (!$systemAttendanceEnabled || !$systemAttendanceColumn)) {
-            $errors[] = 'Add System Attendance before opening additional attendance scores for facilitators.';
+            $errors[] = 'Add System Attendance before opening attendance editing for facilitators.';
         } else {
             setGradeSetting($conn, $facilitatorAttendanceScoresEnabledKey, $allowAdditionalScores ? '1' : '0', $userId);
             $messages[] = $allowAdditionalScores
-                ? 'Facilitators can now add additional scores under System Attendance.'
-                : 'Additional System Attendance scores are now closed to facilitators.';
+                ? 'Facilitators can now edit System Attendance and add additional scores.'
+                : 'System Attendance editing is now closed to facilitators.';
         }
     }
 
@@ -1175,7 +1177,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         ));
         $columnLookup = [];
         foreach ($ajaxGradeColumns as $column) {
-            if (isSystemAttendanceColumn($column)) {
+            if (isSystemAttendanceColumn($column) && !$canAddManualAttendance) {
                 continue;
             }
             $columnLookup[(int) $column['grade_column_id']] = $column;
@@ -2334,7 +2336,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <input type="hidden" name="enabled" value="<?php echo $facilitatorAttendanceScoresEnabled ? '0' : '1'; ?>">
                                     <button class="btn btn-sm <?php echo $facilitatorAttendanceScoresEnabled ? 'btn-outline-danger' : 'btn-success'; ?>">
                                         <i class="fas <?php echo $facilitatorAttendanceScoresEnabled ? 'fa-lock' : 'fa-lock-open'; ?> mr-1"></i>
-                                        <?php echo $facilitatorAttendanceScoresEnabled ? 'Close Additional Scores' : 'Open Additional Scores'; ?>
+                                        <?php echo $facilitatorAttendanceScoresEnabled ? 'Close Attendance Editing' : 'Open Attendance Editing'; ?>
                                     </button>
                                 </form>
                                 <?php endif; ?>
@@ -2441,11 +2443,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <div class="card grade-card">
                         <div class="card-header class-record-tools-header">
                             <div class="class-record-title">
-                                <strong><i class="fas fa-user-check mr-2"></i>Additional System Attendance Scores</strong>
+                                <strong><i class="fas fa-user-check mr-2"></i>System Attendance Editing</strong>
                                 <div class="small text-muted mt-1">
                                     <?php echo $canAddManualAttendance
-                                        ? 'Your coordinator opened this feature. You may add another score item under the System Attendance category.'
-                                        : 'Ask your coordinator to open additional scores under System Attendance.'; ?>
+                                        ? 'You may override the automatic System Attendance score or add another score item under the same category.'
+                                        : 'Ask your coordinator to open System Attendance editing.'; ?>
                                 </div>
                             </div>
                             <?php if ($canAddManualAttendance): ?>
@@ -2460,7 +2462,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <i class="fas fa-plus mr-1"></i>Add Additional Score
                                 </button>
                             <?php else: ?>
-                                <span class="badge badge-secondary px-3 py-2"><i class="fas fa-lock mr-1"></i>Additional scores closed</span>
+                                <span class="badge badge-secondary px-3 py-2"><i class="fas fa-lock mr-1"></i>Attendance editing closed</span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -2563,7 +2565,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                         $columnId = (int) $column['grade_column_id'];
                                                         $value = $scoresByStudent[$studentId][$columnId] ?? '';
                                                         ?>
-                                                        <?php if (isSystemAttendanceColumn($column)): ?>
+                                                        <?php if (isSystemAttendanceColumn($column) && !$canAddManualAttendance): ?>
                                                             <td class="computed-cell"><?php echo (int) $attendanceCount; ?> / <?php echo (int) $totalMeetings; ?></td>
                                                         <?php else: ?>
                                                         <td class="score-cell">
@@ -2571,6 +2573,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                                 type="number"
                                                                 class="form-control form-control-sm score-input"
                                                                 value="<?php echo htmlspecialchars((string) $value); ?>"
+                                                                <?php if (isSystemAttendanceColumn($column)): ?>
+                                                                    placeholder="Auto: <?php echo (int) $attendanceCount; ?>"
+                                                                    title="Enter a manual System Attendance score, or leave blank to use the automatic attendance count."
+                                                                    data-system-attendance="1"
+                                                                <?php endif; ?>
                                                                 min="0"
                                                                 max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
                                                                 data-max="<?php echo htmlspecialchars((string) $column['max_score']); ?>"
@@ -2598,7 +2605,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             </div>
                         </div>
                         <div class="card-footer text-muted">
-                            Smart NSTP formula: each category applies its configured weight. System Attendance is an auto-computed score item inside its selected category; manual attendance items in that category share the same percentage.
+                            Smart NSTP formula: each category applies its configured weight. System Attendance uses the automatic attendance count unless an authorized facilitator enters a manual override; clearing the override restores the automatic count.
                         </div>
                     </div>
                 </form>

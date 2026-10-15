@@ -145,13 +145,18 @@ function exportComputeGradeSummary(array $gradeColumns, array $scores, array $gr
     $weightedPoints = 0;
     $totalWeight = 0;
     $rawByGroup = [];
+    $hasSystemAttendanceColumn = false;
 
     foreach ($gradeColumns as $column) {
         $groupCode = $column['group_code'];
         $rawByGroup[$groupCode] = $rawByGroup[$groupCode] ?? 0;
         $columnId = (int) $column['grade_column_id'];
-        $score = $scores[$columnId] ?? null;
-        $score = $score === null || $score === '' ? 0 : (float) $score;
+        $savedScore = $scores[$columnId] ?? null;
+        $isSystemAttendance = strpos((string) ($column['column_key'] ?? ''), 'system_attendance_') === 0;
+        $hasSystemAttendanceColumn = $hasSystemAttendanceColumn || $isSystemAttendance;
+        $score = $isSystemAttendance && ($savedScore === null || $savedScore === '')
+            ? min((int) $attendanceCount, (int) $totalMeetings)
+            : ($savedScore === null || $savedScore === '' ? 0 : (float) $savedScore);
         $rawByGroup[$groupCode] += $score;
         $rawTotal += $score;
         $maxTotal += (float) $column['max_score'];
@@ -165,7 +170,7 @@ function exportComputeGradeSummary(array $gradeColumns, array $scores, array $gr
     }
 
     $attendanceWeight = max(0, (float) $attendanceWeight);
-    if ($attendanceWeight > 0) {
+    if ($attendanceWeight > 0 && !$hasSystemAttendanceColumn) {
         $attendancePercent = (min((int) $attendanceCount, (int) $totalMeetings) / max((int) $totalMeetings, 1)) * 100;
         $weightedPoints += ($attendancePercent / 100) * $attendanceWeight;
         $totalWeight += $attendanceWeight;
@@ -452,7 +457,12 @@ foreach ($rows as $index => $row) {
     if ($includeGradeColumns) {
         foreach ($gradeColumns as $column) {
             $columnId = (int) $column['grade_column_id'];
-            $sheet->setCellValue(Coordinate::stringFromColumnIndex($columnIndex) . $rowNumber, $row['scores'][$columnId] ?? '');
+            $savedScore = $row['scores'][$columnId] ?? null;
+            $isSystemAttendance = strpos((string) ($column['column_key'] ?? ''), 'system_attendance_') === 0;
+            $displayScore = $isSystemAttendance && ($savedScore === null || $savedScore === '')
+                ? min((int) $row['attendance_count'], (int) $totalMeetings)
+                : ($savedScore ?? '');
+            $sheet->setCellValue(Coordinate::stringFromColumnIndex($columnIndex) . $rowNumber, $displayScore);
             $columnIndex++;
         }
     }
