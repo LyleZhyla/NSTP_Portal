@@ -206,22 +206,24 @@ function formatGradeNumber($value, $decimals = 2) {
 }
 
 function transmuteGrade($percentage, $passingPercentage = 75, $highestGrade = 1, $passingGrade = 3, $failingGrade = 5) {
-    $percentage = (float) $percentage;
+    $percentage = max(0, min(100, (float) $percentage));
     $passingPercentage = max(0.01, min(99.99, (float) $passingPercentage));
     $highestGrade = (float) $highestGrade;
     $passingGrade = (float) $passingGrade;
     $failingGrade = (float) $failingGrade;
 
     if ($percentage < $passingPercentage) {
-        return $failingGrade;
+        $grade = $failingGrade
+            - ($percentage / $passingPercentage)
+            * ($failingGrade - $passingGrade);
+    } else {
+        $range = max(0.01, 100 - $passingPercentage);
+        $grade = $passingGrade
+            - (($percentage - $passingPercentage) / $range)
+            * ($passingGrade - $highestGrade);
     }
 
-    $range = max(0.01, 100 - $passingPercentage);
-    $grade = $highestGrade
-        + ((100 - min(100, $percentage)) / $range)
-        * ($passingGrade - $highestGrade);
-
-    return round(max($highestGrade, min($passingGrade, $grade)), 2);
+    return round(max($highestGrade, min($failingGrade, $grade)), 2);
 }
 
 function isManualAttendanceColumn(array $column) {
@@ -2640,7 +2642,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <div class="form-group col-md-3"><label class="small">Passing Grade</label><input type="number" name="passing_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $passingGrade); ?>" required></div>
                             <div class="form-group col-md-3"><label class="small">Failing Grade</label><input type="number" name="failing_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $failingGrade); ?>" required></div>
                         </div>
-                        <small class="text-muted">Default: below 75% = 5.00; 75% = 3.00; 100% = 1.00.</small>
+                        <small class="text-muted">The grade updates continuously: by default, 0% = 5.00, 75% = 3.00, and 100% = 1.00.</small>
                     </div>
                 </div>
                 <?php if (!empty($gradeGroups)): ?>
