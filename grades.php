@@ -404,6 +404,7 @@ $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
 $systemAttendanceEnabledKey = 'system_attendance_enabled_' . $settingScope;
+$facilitatorAttendanceScoresEnabledKey = 'facilitator_attendance_scores_enabled_' . $settingScope;
 $passingPercentageKey = 'passing_percentage_' . $settingScope;
 $highestGradeKey = 'highest_grade_' . $settingScope;
 $passingGradeKey = 'passing_grade_' . $settingScope;
@@ -549,7 +550,7 @@ $facilitatorColumnOwnerId = $userRole === 'facilitator'
 $columnQueryParams = [$currentProgram, $sheetOwnerId, $facilitatorColumnOwnerId, $sheetOwnerId, $columnVisibilityScope];
 $columnsStmt->execute($columnQueryParams);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
-$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '0') !== '0';
+$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
 $systemAttendanceColumn = null;
 foreach ($gradeColumns as $column) {
     if (isSystemAttendanceColumn($column)) {
@@ -645,9 +646,11 @@ foreach ($gradeColumns as $column) {
         break;
     }
 }
+$facilitatorAttendanceScoresEnabled = getGradeSetting($conn, $facilitatorAttendanceScoresEnabledKey, '0') !== '0';
 $canAddManualAttendance = $userRole === 'facilitator'
     && $systemAttendanceEnabled
-    && $systemAttendanceColumn !== null;
+    && $systemAttendanceColumn !== null
+    && $facilitatorAttendanceScoresEnabled;
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
@@ -730,14 +733,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'edit_column',
         'settings',
         'remove_system_attendance',
+        'set_facilitator_attendance_scores',
     ];
-    $isFacilitatorManualAttendanceAction = $action === 'add_column'
-        && $canAddManualAttendance
+    $isFacilitatorManualAttendanceRequest = $action === 'add_column'
+        && $userRole === 'facilitator'
         && ($_POST['score_item_type'] ?? '') === 'manual_attendance';
+    $isFacilitatorManualAttendanceAction = $isFacilitatorManualAttendanceRequest
+        && $canAddManualAttendance;
+
+    if ($isFacilitatorManualAttendanceRequest && !$canAddManualAttendance) {
+        $errors[] = 'Your coordinator must open additional System Attendance scores first.';
+    }
 
     if (in_array($action, $columnManagementActions, true)
         && !$canManageColumns
-        && !$isFacilitatorManualAttendanceAction) {
+        && !$isFacilitatorManualAttendanceRequest) {
         $errors[] = 'Only coordinators can edit grade columns and grade settings.';
     }
 
@@ -808,7 +818,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     }
                 }
                 setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
-                $messages[] = 'System Attendance opened under ' . $groupLabel . '. Facilitators can now add attendance score items.';
+                $messages[] = 'System Attendance added under ' . $groupLabel . '.';
             }
         } else {
             $label = trim($_POST['label'] ?? '');
@@ -861,7 +871,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $isFacilitatorManualAttendanceAction ? $userId : $sheetOwnerId,
                     $userId,
                 ]);
-                $messages[] = $isManualAttendance ? 'Manual attendance score added.' : 'New grade column added.';
+                $messages[] = $isManualAttendance
+                    ? ($isFacilitatorManualAttendanceAction
+                        ? 'Additional score added under System Attendance.'
+                        : 'Manual attendance score added.')
+                    : 'New grade column added.';
             }
         }
     }
@@ -1026,7 +1040,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'remove_system_attendance' && $canManageColumns) {
         setGradeSetting($conn, $systemAttendanceEnabledKey, '0', $userId);
-        $messages[] = 'System Attendance closed. Saved attendance data and manual scores were kept.';
+        setGradeSetting($conn, $facilitatorAttendanceScoresEnabledKey, '0', $userId);
+        $messages[] = 'System Attendance removed from the current grading sheet. Saved attendance data and manual scores were kept.';
+    }
+
+    if ($action === 'set_facilitator_attendance_scores' && $canManageColumns) {
+        $allowAdditionalScores = ($_POST['enabled'] ?? '0') === '1';
+        if ($allowAdditionalScores && (!$systemAttendanceEnabled || !$systemAttendanceColumn)) {
+            $errors[] = 'Add System Attendance before opening additional attendance scores for facilitators.';
+        } else {
+            setGradeSetting($conn, $facilitatorAttendanceScoresEnabledKey, $allowAdditionalScores ? '1' : '0', $userId);
+            $messages[] = $allowAdditionalScores
+                ? 'Facilitators can now add additional scores under System Attendance.'
+                : 'Additional System Attendance scores are now closed to facilitators.';
+        }
     }
 
     if ($action === 'settings' && $canManageColumns) {
@@ -1139,7 +1166,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $studentId = (int) ($_POST['student_id'] ?? 0);
         $columnId = (int) ($_POST['column_id'] ?? 0);
         $scoreValue = trim((string) ($_POST['score'] ?? ''));
-        $ajaxSystemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '0') !== '0';
+        $ajaxSystemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
         $ajaxGradeColumns = array_values(array_filter(
             $gradeColumns,
             fn($column) => !isSystemAttendanceColumn($column) || $ajaxSystemAttendanceEnabled
@@ -1294,7 +1321,7 @@ if (!empty($_SESSION['grade_errors'])) {
 $columnsStmt->execute($columnQueryParams);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
-$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '0') !== '0';
+$systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
 $activeGradeColumns = array_values(array_filter(
     $gradeColumns,
     fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
@@ -2281,8 +2308,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 </button>
                                 <?php if (!$systemAttendanceEnabled): ?>
                                 <button type="button" class="btn btn-success btn-sm" id="openSystemAttendanceBtn" data-toggle="modal" data-target="#addColumnModal">
-                                    <i class="fas fa-lock-open mr-1"></i>Open System Attendance
+                                    <i class="fas fa-plus mr-1"></i>Add System Attendance
                                 </button>
+                                <?php endif; ?>
+                                <?php if ($systemAttendanceEnabled && $activeSystemAttendanceColumn): ?>
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="set_facilitator_attendance_scores">
+                                    <input type="hidden" name="enabled" value="<?php echo $facilitatorAttendanceScoresEnabled ? '0' : '1'; ?>">
+                                    <button class="btn btn-sm <?php echo $facilitatorAttendanceScoresEnabled ? 'btn-outline-danger' : 'btn-success'; ?>">
+                                        <i class="fas <?php echo $facilitatorAttendanceScoresEnabled ? 'fa-lock' : 'fa-lock-open'; ?> mr-1"></i>
+                                        <?php echo $facilitatorAttendanceScoresEnabled ? 'Close Additional Scores' : 'Open Additional Scores'; ?>
+                                    </button>
+                                </form>
                                 <?php endif; ?>
                                 <button
                                     type="button"
@@ -2319,10 +2356,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <?php if ($activeSystemAttendanceColumn): ?>
                                         <small class="text-muted">· <?php echo htmlspecialchars($activeSystemAttendanceColumn['group_label']); ?> · <?php echo formatGradeNumber($activeSystemAttendanceColumn['weight_percent'], 2); ?>% · System</small>
                                     <?php endif; ?>
-                                    <form method="POST" class="d-inline" onsubmit="return confirm('Close System Attendance? Facilitators will no longer be able to add attendance items. Existing attendance records and manual scores will be kept.');">
+                                    <form method="POST" class="d-inline" onsubmit="return confirm('Remove System Attendance from this grading sheet? Attendance records and saved manual scores will be kept.');">
                                         <input type="hidden" name="action" value="remove_system_attendance">
-                                        <button class="btn btn-xs btn-link text-danger p-0" title="Close System Attendance">
-                                            <i class="fas fa-lock"></i>
+                                        <button class="btn btn-xs btn-link text-danger p-0" title="Remove System Attendance">
+                                            <i class="fas fa-times"></i>
                                         </button>
                                     </form>
                                 </span>
@@ -2387,11 +2424,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <div class="card grade-card">
                         <div class="card-header class-record-tools-header">
                             <div class="class-record-title">
-                                <strong><i class="fas fa-user-check mr-2"></i>Attendance Score Items</strong>
+                                <strong><i class="fas fa-user-check mr-2"></i>Additional System Attendance Scores</strong>
                                 <div class="small text-muted mt-1">
                                     <?php echo $canAddManualAttendance
-                                        ? 'System Attendance is open. You may add an attendance score item for your class record.'
-                                        : 'System Attendance is closed. Ask your coordinator to open it first.'; ?>
+                                        ? 'Your coordinator opened this feature. You may add another score item under the System Attendance category.'
+                                        : 'Ask your coordinator to open additional scores under System Attendance.'; ?>
                                 </div>
                             </div>
                             <?php if ($canAddManualAttendance): ?>
@@ -2401,11 +2438,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     id="addManualAttendanceBtn"
                                     data-toggle="modal"
                                     data-target="#addColumnModal"
+                                    data-additional-score="1"
                                     data-max-score="<?php echo (int) $totalMeetings; ?>">
-                                    <i class="fas fa-plus mr-1"></i>Add Attendance
+                                    <i class="fas fa-plus mr-1"></i>Add Additional Score
                                 </button>
                             <?php else: ?>
-                                <span class="badge badge-secondary px-3 py-2"><i class="fas fa-lock mr-1"></i>Closed by coordinator</span>
+                                <span class="badge badge-secondary px-3 py-2"><i class="fas fa-lock mr-1"></i>Additional scores closed</span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -2575,9 +2613,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </select>
                     <?php else: ?>
                     <select id="addColumnItemType" class="form-control" disabled>
-                        <option value="manual_attendance" selected>Manual Attendance</option>
+                        <option value="manual_attendance" selected>Additional System Attendance Score</option>
                     </select>
-                    <small class="text-muted">System Attendance was opened by your coordinator.</small>
+                    <small class="text-muted">This will be added under the System Attendance category configured by your coordinator.</small>
                     <?php endif; ?>
                 </div>
                 <div class="alert alert-info py-2 d-none" id="systemAttendanceItemHelp">
@@ -2622,7 +2660,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <?php if ($canManageColumns): ?>
                         Added columns are scoped to your current component<?php echo $currentProgram ? ' (' . htmlspecialchars($currentProgram) . ')' : ''; ?> and are included in the weighted grade.
                     <?php else: ?>
-                        This attendance item is shown only in your facilitator class record and uses the category configured by your coordinator.
+                        This additional score is shown only in your facilitator class record and shares the System Attendance percentage configured by your coordinator.
                     <?php endif; ?>
                 </div>
             </div>
@@ -3008,13 +3046,18 @@ $('#openSystemAttendanceBtn').on('click', function() {
 
 $('#addManualAttendanceBtn').on('click', function() {
     const $select = $('#addColumnGroupSelect');
+    const isFacilitatorAdditionalScore = Number($(this).data('additional-score')) === 1;
 
-    $('#addColumnLabel').val('Manual Attendance Score');
+    $('#addColumnLabel').val(isFacilitatorAdditionalScore ? 'Additional Attendance Score' : 'Manual Attendance Score');
     $('#addColumnMaxScore').val($(this).data('max-score'));
     $('#addColumnWeightPercent').val(1);
     $select.val('__new');
     $('#addColumnGroupNew').val('Manual Attendance');
     configureAddScoreItemType('manual_attendance');
+    if (isFacilitatorAdditionalScore) {
+        $('#addColumnModalTitle').html('<i class="fas fa-user-check mr-2"></i>Add Additional System Attendance Score');
+        $('#addColumnSubmitBtn').html('<i class="fas fa-plus mr-1"></i>Add Additional Score');
+    }
 });
 
 $('.edit-column-btn').on('click', function() {
