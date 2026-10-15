@@ -2366,7 +2366,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <div class="card-header class-record-header d-flex align-items-center flex-wrap">
                             <div class="class-record-heading">
                                 <h3 class="card-title mb-0"><i class="fas fa-table mr-2"></i>Student Class Record</h3>
-                                <div class="small text-muted mt-1">Type a raw score, then press Enter or click outside to save automatically.</div>
+                                <div class="small text-muted mt-1">Type a raw score, then press Enter to save and move down. Use the arrow keys to move between students and score columns.</div>
                             </div>
                             <div class="class-record-legend">
                                 <span><i class="legend-swatch input"></i>Editable score</span>
@@ -2799,6 +2799,34 @@ async function saveScoreInput(input) {
     }
 }
 
+function getNextScoreInput(input, key, shiftKey = false) {
+    const row = input.closest('.grade-row');
+    if (!row) return null;
+
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        const rowInputs = Array.from(row.querySelectorAll('.score-input:not([disabled]):not([readonly])'));
+        const currentIndex = rowInputs.indexOf(input);
+        const nextIndex = currentIndex + (key === 'ArrowLeft' ? -1 : 1);
+        return rowInputs[nextIndex] || null;
+    }
+
+    const moveUp = key === 'ArrowUp' || (key === 'Enter' && shiftKey);
+    let targetRow = moveUp ? row.previousElementSibling : row.nextElementSibling;
+    while (targetRow && !targetRow.classList.contains('grade-row')) {
+        targetRow = moveUp ? targetRow.previousElementSibling : targetRow.nextElementSibling;
+    }
+
+    return targetRow
+        ? targetRow.querySelector('.score-input[data-column="' + input.dataset.column + '"]:not([disabled]):not([readonly])')
+        : null;
+}
+
+function focusScoreInput(input) {
+    input.focus({preventScroll: true});
+    input.select();
+    input.scrollIntoView({behavior: 'auto', block: 'nearest', inline: 'nearest'});
+}
+
 $('.score-input').each(function() {
     this.dataset.savedValue = this.value;
 }).on('input', function() {
@@ -2812,10 +2840,17 @@ $('.score-input').each(function() {
     $saveStatus.text('Waiting to save…').attr('class', 'autosave-status saving');
     queueScoreSave(this);
 }).on('keydown', function(event) {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        this.blur();
+    if (!['Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)
+        || event.altKey || event.ctrlKey || event.metaKey) return;
+
+    event.preventDefault();
+    if (!this.checkValidity()) {
+        this.reportValidity();
+        return;
     }
+    queueScoreSave(this, 0);
+    const nextInput = getNextScoreInput(this, event.key, event.shiftKey);
+    if (nextInput) focusScoreInput(nextInput);
 }).on('change', function() {
     queueScoreSave(this, 0);
 });
