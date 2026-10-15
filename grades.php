@@ -25,7 +25,7 @@ $userId = (int) ($_SESSION['user_id'] ?? 0);
 $userRole = $_SESSION['role'] ?? 'facilitator';
 $userName = $_SESSION['full_name'] ?? 'User';
 
-if (!in_array($userRole, ['coordinator', 'facilitator'], true)) {
+if (!in_array($userRole, ['super_admin', 'coordinator', 'facilitator'], true)) {
     header("Location: profile.php");
     exit();
 }
@@ -399,7 +399,9 @@ seedDefaultGradeColumns($conn);
 $messages = [];
 $errors = [];
 $currentUser = getCurrentUserRecord($conn);
-$currentProgram = normalizeProgram($_SESSION['program'] ?? ($currentUser['program'] ?? null));
+$currentProgram = $userRole === 'super_admin'
+    ? (normalizeProgram($_GET['component'] ?? null) ?: 'CWTS')
+    : normalizeProgram($_SESSION['program'] ?? ($currentUser['program'] ?? null));
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
@@ -410,7 +412,7 @@ $highestGradeKey = 'highest_grade_' . $settingScope;
 $passingGradeKey = 'passing_grade_' . $settingScope;
 $failingGradeKey = 'failing_grade_' . $settingScope;
 $canComputeGrades = $userRole === 'facilitator';
-$canManageColumns = $userRole === 'coordinator';
+$canManageColumns = in_array($userRole, ['super_admin', 'coordinator'], true);
 $columnOwnerId = $userId;
 
 if ($currentProgram && $userRole !== 'coordinator') {
@@ -457,7 +459,7 @@ $selectedGradeFolder = '';
 $selectedGradeFacilitatorId = null;
 $selectedGradeFolderLabel = 'No folder selected';
 
-if ($userRole === 'coordinator') {
+if (in_array($userRole, ['super_admin', 'coordinator'], true)) {
     $stmt = $conn->prepare("
         SELECT ads.user_id AS facilitator_id,
                ads.course_section,
@@ -748,7 +750,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (in_array($action, $columnManagementActions, true)
         && !$canManageColumns
         && !$isFacilitatorManualAttendanceRequest) {
-        $errors[] = 'Only coordinators can edit grade columns and grade settings.';
+        $errors[] = 'Only super admins and coordinators can edit grade columns and grade settings.';
     }
 
     if ($action === 'add_column' && ($canManageColumns || $isFacilitatorManualAttendanceAction)) {
@@ -1300,6 +1302,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $redirectParams = [$messages ? 'saved' : 'error' => 1];
     if (!empty($_GET['grade_folder'])) {
         $redirectParams['grade_folder'] = (string) $_GET['grade_folder'];
+    }
+    if ($userRole === 'super_admin') {
+        $redirectParams['component'] = $currentProgram;
     }
     $query = '?' . http_build_query($redirectParams);
     $_SESSION['grade_messages'] = $messages;
@@ -2223,7 +2228,19 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <div class="card grade-card grade-folder-card grade-sheet-selector">
                     <div class="card-body py-3">
                         <form method="GET" class="row align-items-end">
-                            <div class="col-lg-5 col-md-6 mb-3 mb-md-0">
+                            <?php if ($userRole === 'super_admin'): ?>
+                            <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+                                <label class="mb-1 font-weight-bold" for="component">
+                                    <i class="fas fa-layer-group mr-1 text-primary"></i>Select Component
+                                </label>
+                                <select class="form-control" id="component" name="component" onchange="this.form.submit()">
+                                    <?php foreach (['CWTS', 'LTS', 'ROTC'] as $componentOption): ?>
+                                        <option value="<?php echo $componentOption; ?>" <?php echo $currentProgram === $componentOption ? 'selected' : ''; ?>><?php echo $componentOption; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
+                            <div class="<?php echo $userRole === 'super_admin' ? 'col-lg-4' : 'col-lg-5'; ?> col-md-6 mb-3 mb-md-0">
                                 <label class="mb-1 font-weight-bold" for="grade_folder">
                                     <i class="fas fa-folder-open mr-1 text-success"></i>Select Class Record
                                 </label>
@@ -2246,7 +2263,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <?php endif; ?>
                                 </select>
                             </div>
-                            <div class="col-lg-7 col-md-6">
+                            <div class="<?php echo $userRole === 'super_admin' ? 'col-lg-5' : 'col-lg-7'; ?> col-md-6">
                                 <div class="sheet-context">
                                     <div class="sheet-context-item">
                                         <span class="sheet-context-label">Program</span>
@@ -2300,7 +2317,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <i class="fas fa-chevron-right mr-1" id="activeColumnsIcon"></i>
                                     <i class="fas fa-list mr-2"></i>Score Items
                                 </button>
-                                <div class="small text-muted mt-1">Coordinator controls for the active grading sheet.</div>
+                                <div class="small text-muted mt-1">Administrator controls for the active grading sheet.</div>
                             </div>
                             <div class="class-record-actions">
                                 <button type="button" class="btn btn-primary btn-sm" id="addScoreItemBtn" data-toggle="modal" data-target="#addColumnModal">

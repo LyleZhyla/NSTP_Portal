@@ -200,7 +200,7 @@ if ($role === 'facilitator') {
 }
 
 $sheetOwnerId = $userId;
-if ($role === 'facilitator' && $currentProgram) {
+if (in_array($role, ['super_admin', 'facilitator'], true) && $currentProgram) {
     $coordinatorStmt = $conn->prepare("
         SELECT user_id
         FROM tbl_users

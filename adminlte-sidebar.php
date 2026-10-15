@@ -236,7 +236,7 @@ if (isset($_SESSION['user_id'])) {
                 </li>
                 <?php endif; ?>
 
-                <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['coordinator', 'facilitator'], true)): ?>
+                <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['super_admin', 'coordinator', 'facilitator'], true)): ?>
                 <li class="nav-item">
                     <a href="grades.php" class="nav-link <?= ($currentPage == 'grades.php') ? 'active' : '' ?>">
                         <i class="nav-icon fas fa-calculator"></i>
