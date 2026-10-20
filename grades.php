@@ -432,27 +432,6 @@ if ($currentProgram && $userRole !== 'coordinator') {
     }
 }
 
-$columnsStmt = $conn->prepare("
-    SELECT *
-    FROM tbl_grade_columns
-    WHERE is_active = 1
-      AND (program_scope IS NULL OR program_scope = ?)
-      AND (
-        is_default = 1
-        OR created_by IS NULL
-        OR created_by = ?
-        OR created_by = ?
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM tbl_grade_column_visibility v
-        WHERE v.grade_column_id = tbl_grade_columns.grade_column_id
-          AND v.user_id = ?
-          AND (v.program_scope <=> ?)
-          AND v.is_hidden = 1
-      )
-    ORDER BY sort_order ASC, grade_column_id ASC
-");
 $gradeColumns = [];
 $gradeColumnIds = [];
 
@@ -551,9 +530,16 @@ $sheetOwnerId = $columnOwnerId;
 $facilitatorColumnOwnerId = $userRole === 'facilitator'
     ? $userId
     : ($selectedGradeFacilitatorId ?: $sheetOwnerId);
-$columnQueryParams = [$currentProgram, $sheetOwnerId, $facilitatorColumnOwnerId, $sheetOwnerId, $columnVisibilityScope];
-$columnsStmt->execute($columnQueryParams);
-$gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+$loadGradeColumns = function () use ($conn, $currentProgram, $sheetOwnerId, $facilitatorColumnOwnerId, $columnVisibilityScope) {
+    return loadComponentGradeColumns(
+        $conn,
+        $currentProgram,
+        $sheetOwnerId,
+        $facilitatorColumnOwnerId,
+        $columnVisibilityScope
+    );
+};
+$gradeColumns = $loadGradeColumns();
 $systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
 $systemAttendanceColumn = null;
 foreach ($gradeColumns as $column) {
@@ -601,8 +587,7 @@ if ($systemAttendanceEnabled && !$systemAttendanceColumn) {
         ");
         $restoreSystemColumn->execute([$legacySystemColumnId, $sheetOwnerId, $columnVisibilityScope, $userId]);
     }
-    $columnsStmt->execute($columnQueryParams);
-    $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $gradeColumns = $loadGradeColumns();
 }
 
 if ($systemAttendanceEnabled) {
@@ -638,8 +623,7 @@ if ($systemAttendanceEnabled) {
             $manualAttendanceSynced = true;
         }
         if ($manualAttendanceSynced) {
-            $columnsStmt->execute($columnQueryParams);
-            $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+            $gradeColumns = $loadGradeColumns();
         }
     }
 }
@@ -806,7 +790,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         $groupLabel,
                         $totalMeetingsForColumn,
                         $weight,
-                        $userId,
+                        $sheetOwnerId,
                         $userId,
                     ]);
                 }
@@ -897,12 +881,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!$selectedColumn) {
             $errors[] = 'Column not found in the current class record.';
         } elseif ((int) $selectedColumn['is_default'] === 1) {
-            hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+            hideGradeColumnForCurrentSheet($conn, $columnId, $sheetOwnerId, $columnVisibilityScope);
             $messages[] = 'Column removed from your current class record.';
         } elseif ($userRole === 'coordinator') {
             $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0");
             $stmt->execute([$userId, $columnId]);
-            hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+            hideGradeColumnForCurrentSheet($conn, $columnId, $sheetOwnerId, $columnVisibilityScope);
             $messages[] = 'Custom column removed from the class record.';
         } else {
             $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0 AND created_by = ?");
@@ -910,7 +894,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if ($stmt->rowCount() > 0) {
                 $messages[] = 'Custom column removed from the class record.';
             } else {
-                hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                hideGradeColumnForCurrentSheet($conn, $columnId, $sheetOwnerId, $columnVisibilityScope);
                 $messages[] = 'Column removed from your current class record.';
             }
         }
@@ -935,7 +919,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
                 $column = $activeColumnLookup[$columnId];
                 if ((int) $column['is_default'] === 1) {
-                    hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                    hideGradeColumnForCurrentSheet($conn, $columnId, $sheetOwnerId, $columnVisibilityScope);
                     $removedCount++;
                     continue;
                 }
@@ -943,7 +927,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 if ($userRole === 'coordinator') {
                     $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0");
                     $stmt->execute([$userId, $columnId]);
-                    hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                    hideGradeColumnForCurrentSheet($conn, $columnId, $sheetOwnerId, $columnVisibilityScope);
                     $removedCount++;
                 } else {
                     $stmt = $conn->prepare("UPDATE tbl_grade_columns SET is_active = 0, updated_by = ? WHERE grade_column_id = ? AND is_default = 0 AND created_by = ?");
@@ -951,7 +935,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     if ($stmt->rowCount() > 0) {
                         $removedCount++;
                     } else {
-                        hideGradeColumnForCurrentSheet($conn, $columnId, $userId, $columnVisibilityScope);
+                        hideGradeColumnForCurrentSheet($conn, $columnId, $sheetOwnerId, $columnVisibilityScope);
                         $removedCount++;
                     }
                 }
@@ -967,14 +951,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'new_class_record' && $canManageColumns) {
         foreach ($gradeColumns as $column) {
-            hideGradeColumnForCurrentSheet($conn, (int) $column['grade_column_id'], $userId, $columnVisibilityScope);
+            hideGradeColumnForCurrentSheet($conn, (int) $column['grade_column_id'], $sheetOwnerId, $columnVisibilityScope);
         }
         setGradeSetting($conn, $systemAttendanceEnabledKey, '0', $userId);
         $messages[] = 'Current class record cleared. Add new columns to build a new grading sheet.';
     }
 
     if ($action === 'restore_default_record' && $canManageColumns) {
-        unhideDefaultGradeColumnsForCurrentSheet($conn, $userId, $columnVisibilityScope);
+        unhideDefaultGradeColumnsForCurrentSheet($conn, $sheetOwnerId, $columnVisibilityScope);
         setGradeSetting($conn, $systemAttendanceEnabledKey, '1', $userId);
         $messages[] = 'Default class record restored.';
     }
@@ -1325,8 +1309,7 @@ if (!empty($_SESSION['grade_errors'])) {
     unset($_SESSION['grade_errors']);
 }
 
-$columnsStmt->execute($columnQueryParams);
-$gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+$gradeColumns = $loadGradeColumns();
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 $systemAttendanceEnabled = getGradeSetting($conn, $systemAttendanceEnabledKey, '1') !== '0';
 $activeGradeColumns = array_values(array_filter(

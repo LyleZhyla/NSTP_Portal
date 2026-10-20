@@ -108,3 +108,65 @@ function seedDefaultGradeColumns(PDO $conn) {
     }
 }
 
+/**
+ * Load the component grading template shared by its coordinators, the super
+ * admin, and facilitators. Facilitator-created columns remain private to the
+ * selected facilitator, while every coordinator-created column in the same
+ * component is part of the shared template.
+ */
+function loadComponentGradeColumns(
+    PDO $conn,
+    $program,
+    $sheetOwnerId,
+    $facilitatorColumnOwnerId,
+    $visibilityScope
+) {
+    $normalizedProgram = strtoupper(trim((string) $program));
+    $stmt = $conn->prepare("
+        SELECT c.*
+        FROM tbl_grade_columns c
+        WHERE c.is_active = 1
+          AND (c.program_scope IS NULL OR UPPER(c.program_scope) = ?)
+          AND (
+            c.is_default = 1
+            OR c.created_by IS NULL
+            OR c.created_by = ?
+            OR c.created_by = ?
+            OR EXISTS (
+                SELECT 1
+                FROM tbl_users creator
+                WHERE creator.user_id = c.created_by
+                  AND creator.role = 'coordinator'
+                  AND UPPER(creator.program) = ?
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM tbl_grade_column_visibility v
+            LEFT JOIN tbl_users visibility_owner ON visibility_owner.user_id = v.user_id
+            WHERE v.grade_column_id = c.grade_column_id
+              AND v.program_scope = ?
+              AND v.is_hidden = 1
+              AND (
+                v.user_id = ?
+                OR (
+                    visibility_owner.role = 'coordinator'
+                    AND UPPER(visibility_owner.program) = ?
+                )
+              )
+          )
+        ORDER BY c.sort_order ASC, c.grade_column_id ASC
+    ");
+    $stmt->execute([
+        $normalizedProgram,
+        (int) $sheetOwnerId,
+        (int) $facilitatorColumnOwnerId,
+        $normalizedProgram,
+        (string) $visibilityScope,
+        (int) $sheetOwnerId,
+        $normalizedProgram,
+    ]);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+

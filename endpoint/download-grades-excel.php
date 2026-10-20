@@ -4,6 +4,7 @@ date_default_timezone_set('Asia/Manila');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/grade-schema.php';
 require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -220,29 +221,13 @@ if (in_array($role, ['super_admin', 'facilitator'], true) && $currentProgram) {
     }
 }
 $facilitatorColumnOwnerId = $selectedFacilitatorId ?: $userId;
-$columnsStmt = $conn->prepare("
-    SELECT *
-    FROM tbl_grade_columns
-    WHERE is_active = 1
-      AND (program_scope IS NULL OR program_scope = ?)
-      AND (
-        is_default = 1
-        OR created_by IS NULL
-        OR created_by = ?
-        OR created_by = ?
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM tbl_grade_column_visibility v
-        WHERE v.grade_column_id = tbl_grade_columns.grade_column_id
-          AND v.user_id = ?
-          AND (v.program_scope <=> ?)
-          AND v.is_hidden = 1
-      )
-    ORDER BY sort_order ASC, grade_column_id ASC
-");
-$columnsStmt->execute([$currentProgram, $sheetOwnerId, $facilitatorColumnOwnerId, $sheetOwnerId, $columnVisibilityScope]);
-$gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
+$gradeColumns = loadComponentGradeColumns(
+    $conn,
+    $currentProgram,
+    $sheetOwnerId,
+    $facilitatorColumnOwnerId,
+    $columnVisibilityScope
+);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentWhere = [];
