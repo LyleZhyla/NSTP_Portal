@@ -4,7 +4,11 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 $isGradeAjaxRequest = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
     && ($_POST['action'] ?? '') === 'save_score_ajax';
-if ($isGradeAjaxRequest) {
+$isGradeImportRequest = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
+    && ($_POST['action'] ?? '') === 'import_scores';
+$isGradeDownloadRequest = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET'
+    && ($_GET['action'] ?? '') === 'download_score_template';
+if ($isGradeAjaxRequest || $isGradeImportRequest || $isGradeDownloadRequest) {
     ob_start();
 } else {
     include('./include/theme-loader.php');
@@ -639,6 +643,10 @@ $canAddManualAttendance = $userRole === 'facilitator'
     && $systemAttendanceEnabled
     && $systemAttendanceColumn !== null
     && $facilitatorAttendanceScoresEnabled;
+$importableGradeColumns = array_values(array_filter(
+    $gradeColumns,
+    fn($column) => !isSystemAttendanceColumn($column) || $canAddManualAttendance
+));
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
 $studentParams = [];
@@ -709,6 +717,49 @@ $studentsStmt->execute($studentParams);
 $students = $studentsStmt->fetchAll(PDO::FETCH_ASSOC);
 $accessibleStudentIds = array_map('intval', array_column($students, 'tbl_student_id'));
 $accessibleStudentLookup = array_fill_keys($accessibleStudentIds, true);
+
+if ($isGradeDownloadRequest) {
+    if (!$canComputeGrades) {
+        http_response_code(403);
+        exit('Only facilitators can download a score import template.');
+    }
+    if ($selectedGradeFolder === '' || !$students) {
+        http_response_code(400);
+        exit('Select a class record with students before downloading a template.');
+    }
+
+    require_once __DIR__ . '/vendor/autoload.php';
+    require_once __DIR__ . '/include/grade-score-import.php';
+    $templateColumns = gradeImportEditableColumns($gradeColumns, $canAddManualAttendance);
+    if (!$templateColumns) {
+        http_response_code(400);
+        exit('This class record has no editable score items.');
+    }
+
+    $templateStudents = array_map(function (array $student): array {
+        $student['display_name'] = gradeDisplayStudentName($student);
+        return $student;
+    }, $students);
+    $spreadsheet = gradeCreateScoreTemplate($templateStudents, $templateColumns, [
+        'program' => $currentProgram ?: 'NSTP',
+        'class_label' => $selectedGradeFolderLabel,
+    ]);
+    $safeClassName = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '_', $selectedGradeFolderLabel), '_');
+    if ($safeClassName === '') {
+        $safeClassName = strtolower($currentProgram ?: 'nstp') . '_class';
+    }
+    $filename = 'class_record_scores_' . $safeClassName . '_' . date('Y-m-d') . '.xlsx';
+
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0, no-store');
+    (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+    $spreadsheet->disconnectWorksheets();
+    exit();
+}
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -1283,6 +1334,79 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'save_scores' && !$canComputeGrades) {
         $errors[] = 'Only facilitators can compute and save grades.';
+    }
+
+    if ($action === 'import_scores') {
+        if (!$canComputeGrades) {
+            $errors[] = 'Only facilitators can import scores.';
+        } elseif ($selectedGradeFolder === '' || !$students) {
+            $errors[] = 'Select a class record with students before importing scores.';
+        } elseif (!isset($_FILES['score_file']) || !is_array($_FILES['score_file'])) {
+            $errors[] = 'Choose an Excel score template to import.';
+        } else {
+            $upload = $_FILES['score_file'];
+            $uploadError = (int) ($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+            $uploadSize = (int) ($upload['size'] ?? 0);
+            $extension = strtolower(pathinfo((string) ($upload['name'] ?? ''), PATHINFO_EXTENSION));
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                $errors[] = $uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE
+                    ? 'The score file is too large.'
+                    : 'The score file could not be uploaded. Please try again.';
+            } elseif ($uploadSize <= 0 || $uploadSize > 5 * 1024 * 1024) {
+                $errors[] = 'The score file must be an Excel file no larger than 5 MB.';
+            } elseif ($extension !== 'xlsx') {
+                $errors[] = 'Upload the .xlsx template downloaded from this class record.';
+            } else {
+                try {
+                    require_once __DIR__ . '/vendor/autoload.php';
+                    require_once __DIR__ . '/include/grade-score-import.php';
+                    $importColumns = gradeImportEditableColumns($gradeColumns, $canAddManualAttendance);
+                    $columnLookup = [];
+                    foreach ($importColumns as $column) {
+                        $columnLookup[(int) $column['grade_column_id']] = $column;
+                    }
+                    $studentLookup = [];
+                    foreach ($students as $student) {
+                        $studentLookup[(int) $student['tbl_student_id']] = $student;
+                    }
+                    $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReader('Xlsx');
+                    $reader->setReadDataOnly(false);
+                    $worksheetInfo = $reader->listWorksheetInfo((string) $upload['tmp_name']);
+                    $firstWorksheetInfo = $worksheetInfo[0] ?? [];
+                    if ((int) ($firstWorksheetInfo['totalRows'] ?? 0) > 5000
+                        || (int) ($firstWorksheetInfo['totalColumns'] ?? 0) > 250) {
+                        throw new InvalidArgumentException('The import file is too large.');
+                    }
+                    $spreadsheet = $reader->load((string) $upload['tmp_name']);
+                    $updates = gradeParseScoreImport($spreadsheet, $studentLookup, $columnLookup);
+                    $spreadsheet->disconnectWorksheets();
+
+                    $conn->beginTransaction();
+                    $upsert = $conn->prepare("
+                        INSERT INTO tbl_grade_scores (grade_column_id, tbl_student_id, score, updated_by)
+                        VALUES (?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE score = VALUES(score), updated_by = VALUES(updated_by)
+                    ");
+                    foreach ($updates as $update) {
+                        $upsert->execute([
+                            $update['column_id'],
+                            $update['student_id'],
+                            $update['score'],
+                            $userId,
+                        ]);
+                    }
+                    $conn->commit();
+                    $messages[] = count($updates) . ' score(s) imported successfully.';
+                } catch (Throwable $error) {
+                    if ($conn->inTransaction()) {
+                        $conn->rollBack();
+                    }
+                    $errors[] = $error instanceof InvalidArgumentException
+                        ? $error->getMessage()
+                        : 'The Excel file could not be read. Download a fresh template and try again.';
+                }
+            }
+        }
     }
 
     $redirectParams = [$messages ? 'saved' : 'error' => 1];
@@ -2465,6 +2589,26 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <span><i class="legend-swatch input"></i>Editable score</span>
                                 <span><i class="legend-swatch computed"></i>Auto-computed</span>
                             </div>
+                            <?php if ($canComputeGrades): ?>
+                                <?php
+                                $scoreTemplateParams = $_GET;
+                                unset($scoreTemplateParams['saved'], $scoreTemplateParams['error']);
+                                $scoreTemplateParams['action'] = 'download_score_template';
+                                $scoreImportReady = $selectedGradeFolder !== '' && !empty($students) && !empty($importableGradeColumns);
+                                ?>
+                                <a href="grades.php?<?php echo htmlspecialchars(http_build_query($scoreTemplateParams)); ?>"
+                                   class="btn btn-outline-success btn-sm <?php echo $scoreImportReady ? '' : 'disabled'; ?>"
+                                   <?php echo $scoreImportReady ? '' : 'aria-disabled="true" tabindex="-1"'; ?>>
+                                    <i class="fas fa-file-excel mr-1"></i>Download Template
+                                </a>
+                                <button type="button"
+                                        class="btn btn-success btn-sm"
+                                        data-toggle="modal"
+                                        data-target="#importScoresModal"
+                                        <?php echo $scoreImportReady ? '' : 'disabled'; ?>>
+                                    <i class="fas fa-file-import mr-1"></i>Import Scores
+                                </button>
+                            <?php endif; ?>
                             <button type="button" class="btn btn-outline-secondary btn-sm grade-print-button" onclick="window.print()">
                                 <i class="fas fa-print mr-1"></i>Print Sheet
                             </button>
@@ -2598,6 +2742,34 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
     <?php include 'footer.php'; ?>
 </div>
+
+<?php if ($canComputeGrades): ?>
+<div class="modal fade" id="importScoresModal" tabindex="-1" role="dialog" aria-labelledby="importScoresModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <form method="POST" enctype="multipart/form-data" class="modal-content">
+            <input type="hidden" name="action" value="import_scores">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importScoresModalLabel"><i class="fas fa-file-import mr-2"></i>Import Class Record Scores</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2">
+                    Download the template for this class, enter scores in the yellow cells, then upload the same <strong>.xlsx</strong> file. Blank score cells keep their current values.
+                </div>
+                <div class="form-group mb-1">
+                    <label for="scoreImportFile">Completed score template</label>
+                    <input type="file" name="score_file" id="scoreImportFile" class="form-control-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                    <small class="form-text text-muted">Maximum file size: 5 MB. Scores outside each item's maximum will be rejected.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button class="btn btn-success"><i class="fas fa-upload mr-1"></i>Import Scores</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if ($canManageColumns || $canAddManualAttendance): ?>
 <div class="modal fade" id="addColumnModal" tabindex="-1" role="dialog">
