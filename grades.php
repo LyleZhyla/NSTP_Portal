@@ -639,13 +639,13 @@ foreach ($gradeColumns as $column) {
     }
 }
 $facilitatorAttendanceScoresEnabled = getGradeSetting($conn, $facilitatorAttendanceScoresEnabledKey, '0') !== '0';
-$canAddManualAttendance = $userRole === 'facilitator'
+$canEditSystemAttendanceScore = $userRole === 'facilitator'
     && $systemAttendanceEnabled
     && $systemAttendanceColumn !== null
     && $facilitatorAttendanceScoresEnabled;
 $importableGradeColumns = array_values(array_filter(
     $gradeColumns,
-    fn($column) => !isSystemAttendanceColumn($column) || $canAddManualAttendance
+    fn($column) => !isSystemAttendanceColumn($column) || $canEditSystemAttendanceScore
 ));
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 
@@ -730,7 +730,7 @@ if ($isGradeDownloadRequest) {
 
     require_once __DIR__ . '/vendor/autoload.php';
     require_once __DIR__ . '/include/grade-score-import.php';
-    $templateColumns = gradeImportEditableColumns($gradeColumns, $canAddManualAttendance);
+    $templateColumns = gradeImportEditableColumns($gradeColumns, $canEditSystemAttendanceScore);
     if (!$templateColumns) {
         http_response_code(400);
         exit('This class record has no editable score items.');
@@ -740,10 +740,28 @@ if ($isGradeDownloadRequest) {
         $student['display_name'] = gradeDisplayStudentName($student);
         return $student;
     }, $students);
+    $templateScoresByStudent = [];
+    $templateStudentIds = array_map('intval', array_column($templateStudents, 'tbl_student_id'));
+    $templateColumnIds = array_map('intval', array_column($templateColumns, 'grade_column_id'));
+    if ($templateStudentIds && $templateColumnIds) {
+        $studentPlaceholders = implode(',', array_fill(0, count($templateStudentIds), '?'));
+        $columnPlaceholders = implode(',', array_fill(0, count($templateColumnIds), '?'));
+        $scoreStmt = $conn->prepare("
+            SELECT tbl_student_id, grade_column_id, score
+            FROM tbl_grade_scores
+            WHERE tbl_student_id IN ($studentPlaceholders)
+              AND grade_column_id IN ($columnPlaceholders)
+              AND score IS NOT NULL
+        ");
+        $scoreStmt->execute(array_merge($templateStudentIds, $templateColumnIds));
+        foreach ($scoreStmt->fetchAll(PDO::FETCH_ASSOC) as $scoreRow) {
+            $templateScoresByStudent[(int) $scoreRow['tbl_student_id']][(int) $scoreRow['grade_column_id']] = $scoreRow['score'];
+        }
+    }
     $spreadsheet = gradeCreateScoreTemplate($templateStudents, $templateColumns, [
         'program' => $currentProgram ?: 'NSTP',
         'class_label' => $selectedGradeFolderLabel,
-    ]);
+    ], $templateScoresByStudent);
     $safeClassName = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '_', $selectedGradeFolderLabel), '_');
     if ($safeClassName === '') {
         $safeClassName = strtolower($currentProgram ?: 'nstp') . '_class';
@@ -777,11 +795,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $isFacilitatorManualAttendanceRequest = $action === 'add_column'
         && $userRole === 'facilitator'
         && ($_POST['score_item_type'] ?? '') === 'manual_attendance';
-    $isFacilitatorManualAttendanceAction = $isFacilitatorManualAttendanceRequest
-        && $canAddManualAttendance;
 
-    if ($isFacilitatorManualAttendanceRequest && !$canAddManualAttendance) {
-        $errors[] = 'Your coordinator must open System Attendance editing first.';
+    if ($isFacilitatorManualAttendanceRequest) {
+        $errors[] = 'Facilitators cannot add additional score items.';
     }
 
     if (in_array($action, $columnManagementActions, true)
@@ -790,7 +806,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $errors[] = 'Only super admins and coordinators can edit grade columns and grade settings.';
     }
 
-    if ($action === 'add_column' && ($canManageColumns || $isFacilitatorManualAttendanceAction)) {
+    if ($action === 'add_column' && $canManageColumns) {
         $scoreItemType = $_POST['score_item_type'] ?? 'score';
         $isSystemAttendance = $scoreItemType === 'system_attendance';
         $isManualAttendance = $scoreItemType === 'manual_attendance';
@@ -907,13 +923,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $maxScore,
                     $weight,
                     500 + time(),
-                    $isFacilitatorManualAttendanceAction ? $userId : $sheetOwnerId,
+                    $sheetOwnerId,
                     $userId,
                 ]);
                 $messages[] = $isManualAttendance
-                    ? ($isFacilitatorManualAttendanceAction
-                        ? 'Additional score added under System Attendance.'
-                        : 'Manual attendance score added.')
+                    ? 'Manual attendance score added.'
                     : 'New grade column added.';
             }
         }
@@ -1212,7 +1226,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         ));
         $columnLookup = [];
         foreach ($ajaxGradeColumns as $column) {
-            if (isSystemAttendanceColumn($column) && !$canAddManualAttendance) {
+            if (isSystemAttendanceColumn($column) && !$canEditSystemAttendanceScore) {
                 continue;
             }
             $columnLookup[(int) $column['grade_column_id']] = $column;
@@ -1360,7 +1374,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 try {
                     require_once __DIR__ . '/vendor/autoload.php';
                     require_once __DIR__ . '/include/grade-score-import.php';
-                    $importColumns = gradeImportEditableColumns($gradeColumns, $canAddManualAttendance);
+                    $importColumns = gradeImportEditableColumns($gradeColumns, $canEditSystemAttendanceScore);
                     $columnLookup = [];
                     foreach ($importColumns as $column) {
                         $columnLookup[(int) $column['grade_column_id']] = $column;
@@ -2546,33 +2560,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <?php endif; ?>
                         </div>
                     </div>
-                <?php elseif ($userRole === 'facilitator'): ?>
-                    <div class="card grade-card">
-                        <div class="card-header class-record-tools-header">
-                            <div class="class-record-title">
-                                <strong><i class="fas fa-user-check mr-2"></i>System Attendance Editing</strong>
-                                <div class="small text-muted mt-1">
-                                    <?php echo $canAddManualAttendance
-                                        ? 'You may override the automatic System Attendance score or add another score item under the same category.'
-                                        : 'Ask your coordinator to open System Attendance editing.'; ?>
-                                </div>
-                            </div>
-                            <?php if ($canAddManualAttendance): ?>
-                                <button
-                                    type="button"
-                                    class="btn btn-outline-success btn-sm"
-                                    id="addManualAttendanceBtn"
-                                    data-toggle="modal"
-                                    data-target="#addColumnModal"
-                                    data-additional-score="1"
-                                    data-max-score="<?php echo (int) $totalMeetings; ?>">
-                                    <i class="fas fa-plus mr-1"></i>Add Additional Score
-                                </button>
-                            <?php else: ?>
-                                <span class="badge badge-secondary px-3 py-2"><i class="fas fa-lock mr-1"></i>Attendance editing closed</span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
                 <?php endif; ?>
 
                 <form method="POST">
@@ -2692,7 +2679,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                                         $columnId = (int) $column['grade_column_id'];
                                                         $value = $scoresByStudent[$studentId][$columnId] ?? '';
                                                         ?>
-                                                        <?php if (isSystemAttendanceColumn($column) && !$canAddManualAttendance): ?>
+                                                        <?php if (isSystemAttendanceColumn($column) && !$canEditSystemAttendanceScore): ?>
                                                             <td class="computed-cell"><?php echo (int) $attendanceCount; ?> / <?php echo (int) $totalMeetings; ?></td>
                                                         <?php else: ?>
                                                         <td class="score-cell">
@@ -2754,7 +2741,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
             <div class="modal-body">
                 <div class="alert alert-info py-2">
-                    Download the template for this class, enter scores in the yellow cells, then upload the same <strong>.xlsx</strong> file. Blank score cells keep their current values.
+                    Download the template for this class, review the existing scores already included, enter or update scores in the yellow cells, then upload the same <strong>.xlsx</strong> file. Blank score cells keep their current values.
                 </div>
                 <div class="form-group mb-1">
                     <label for="scoreImportFile">Completed score template</label>
@@ -2771,7 +2758,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 </div>
 <?php endif; ?>
 
-<?php if ($canManageColumns || $canAddManualAttendance): ?>
+<?php if ($canManageColumns): ?>
 <div class="modal fade" id="addColumnModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <form method="POST" class="modal-content">
@@ -2784,18 +2771,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="modal-body">
                 <div class="form-group">
                     <label>Score Item</label>
-                    <?php if ($canManageColumns): ?>
                     <select id="addColumnItemType" class="form-control">
                         <option value="score">Custom Score Item</option>
                         <option value="manual_attendance" <?php echo $systemAttendanceEnabled ? '' : 'disabled'; ?>><?php echo $systemAttendanceEnabled ? 'Manual Attendance' : 'Manual Attendance (open System Attendance first)'; ?></option>
                         <option value="system_attendance" <?php echo $systemAttendanceEnabled ? 'disabled' : ''; ?>><?php echo $systemAttendanceEnabled ? 'System Attendance (already added)' : 'System Attendance'; ?></option>
                     </select>
-                    <?php else: ?>
-                    <select id="addColumnItemType" class="form-control" disabled>
-                        <option value="manual_attendance" selected>Additional System Attendance Score</option>
-                    </select>
-                    <small class="text-muted">This will be added under the System Attendance category configured by your coordinator.</small>
-                    <?php endif; ?>
                 </div>
                 <div class="alert alert-info py-2 d-none" id="systemAttendanceItemHelp">
                     <strong>System-generated score:</strong> attendance records supply the score automatically. Choose the category that will control its percentage.
@@ -2836,11 +2816,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                 </div>
                 <div class="alert alert-info mb-0" id="addColumnScopeHelp">
-                    <?php if ($canManageColumns): ?>
-                        Added columns are scoped to your current component<?php echo $currentProgram ? ' (' . htmlspecialchars($currentProgram) . ')' : ''; ?> and are included in the weighted grade.
-                    <?php else: ?>
-                        This additional score is shown only in your facilitator class record and shares the System Attendance percentage configured by your coordinator.
-                    <?php endif; ?>
+                    Added columns are scoped to your current component<?php echo $currentProgram ? ' (' . htmlspecialchars($currentProgram) . ')' : ''; ?> and are included in the weighted grade.
                 </div>
             </div>
             <div class="modal-footer">
