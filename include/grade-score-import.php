@@ -24,7 +24,7 @@ function gradeImportEditableColumns(array $gradeColumns, bool $allowSystemAttend
     }));
 }
 
-function gradeCreateScoreTemplate(array $students, array $columns, array $context = []): Spreadsheet {
+function gradeCreateScoreTemplate(array $students, array $columns, array $context = [], array $scoresByStudent = []): Spreadsheet {
     $spreadsheet = new Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setTitle('Score Import');
@@ -42,7 +42,7 @@ function gradeCreateScoreTemplate(array $students, array $columns, array $contex
     $sheet->setCellValue('D2', (string) ($context['program'] ?? 'NSTP'));
     $sheet->setCellValue('E2', 'Class Record');
     $sheet->setCellValue('F2', (string) ($context['class_label'] ?? ''));
-    $sheet->setCellValue('A3', 'Enter scores only in the yellow cells. Leave a score blank to keep its current value. Do not edit student details, hidden IDs, or column headings.');
+    $sheet->setCellValue('A3', 'Existing scores are included. Enter or update scores only in the yellow cells. Leave a score blank to keep its current value. Do not edit student details, hidden IDs, or column headings.');
     $sheet->mergeCells("A3:{$layoutLastColumn}3");
 
     $sheet->fromArray(['student_id', '', '', ''], null, 'A4');
@@ -56,10 +56,20 @@ function gradeCreateScoreTemplate(array $students, array $columns, array $contex
 
     foreach ($students as $index => $student) {
         $row = GRADE_SCORE_TEMPLATE_FIRST_DATA_ROW + $index;
+        $studentId = (int) $student['tbl_student_id'];
         $sheet->setCellValueExplicit("A{$row}", (string) (int) $student['tbl_student_id'], DataType::TYPE_STRING);
         $sheet->setCellValueExplicit("B{$row}", (string) ($student['student_number'] ?? ''), DataType::TYPE_STRING);
         $sheet->setCellValue("C{$row}", (string) ($student['display_name'] ?? $student['student_name'] ?? ''));
         $sheet->setCellValue("D{$row}", (string) ($student['course_section'] ?? ''));
+        foreach ($columns as $offset => $column) {
+            $columnId = (int) $column['grade_column_id'];
+            $savedScore = $scoresByStudent[$studentId][$columnId] ?? null;
+            if ($savedScore === null || $savedScore === '') {
+                continue;
+            }
+            $columnLetter = Coordinate::stringFromColumnIndex(GRADE_SCORE_TEMPLATE_FIRST_SCORE_COLUMN + $offset);
+            $sheet->setCellValue("{$columnLetter}{$row}", (float) $savedScore);
+        }
     }
 
     $sheet->getStyle("A1:{$layoutLastColumn}1")->applyFromArray([

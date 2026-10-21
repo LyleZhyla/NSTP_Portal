@@ -22,11 +22,17 @@ $columns = [
     ['grade_column_id' => 22, 'column_key' => 'project', 'label' => 'Project', 'max_score' => 100],
 ];
 
-$spreadsheet = gradeCreateScoreTemplate($students, $columns, ['program' => 'CWTS', 'class_label' => 'BSIT 1-A']);
+$spreadsheet = gradeCreateScoreTemplate(
+    $students,
+    $columns,
+    ['program' => 'CWTS', 'class_label' => 'BSIT 1-A'],
+    [10 => [21 => 17.25]]
+);
 $sheet = $spreadsheet->getActiveSheet();
 assertGradeImport($sheet->getCell('A1')->getValue() === GRADE_SCORE_TEMPLATE_TITLE, 'template title is present');
 assertGradeImport($sheet->getCell('E4')->getValue() === 'grade_column_id:21', 'score column identity is preserved');
 assertGradeImport($sheet->getCell('B6')->getValue() === '2026-001', 'student number stays as text');
+assertGradeImport($sheet->getCell('E6')->getValue() === 17.25, 'existing facilitator score is included in the template');
 assertGradeImport($sheet->getColumnDimension('A')->getVisible() === false, 'internal student ID is hidden');
 assertGradeImport($sheet->getProtection()->getSheet() === true, 'student details and headings are protected');
 assertGradeImport($sheet->getStyle('E6')->getProtection()->getLocked() === \PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED, 'yellow score cells remain editable');
