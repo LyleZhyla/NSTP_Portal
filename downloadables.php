@@ -1285,6 +1285,50 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                 <?php if (!$isGraphsPage): ?>
                 <div class="row">
                     <div class="col-12 mb-3">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-nstp-enrollment-forms.php" id="nstpEnrollmentFormsForm">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-file-pdf mr-2"></i>NSTP Enrolment Forms</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="nstpEnrollmentComponent">Component</label>
+                                    <?php if ($role === 'super_admin'): ?>
+                                    <select class="form-control" id="nstpEnrollmentComponent" name="component">
+                                        <option value="">All Components</option>
+                                        <option value="CWTS">CWTS</option>
+                                        <option value="LTS">LTS</option>
+                                        <option value="ROTC">ROTC</option>
+                                    </select>
+                                    <?php else: ?>
+                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($program ?: 'N/A'); ?>" disabled>
+                                    <input type="hidden" name="component" value="<?php echo htmlspecialchars($program ?: ''); ?>">
+                                    <?php endif; ?>
+                                </div>
+                                <div class="form-group">
+                                    <label for="nstpEnrollmentFolder">Facilitator / Section Folder</label>
+                                    <select class="form-control" id="nstpEnrollmentFolder" name="student_folder">
+                                        <option value="">All Accessible Folders</option>
+                                        <?php foreach ($gradeExportFolders as $folder): ?>
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>" data-component="<?php echo htmlspecialchars($folder['program'] ?? ''); ?>">
+                                            <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <p class="muted-note">Creates one print-ready PDF page per student using the official enrolment form. The selected component is checked automatically, and the recommending coordinator is matched to each student's component.</p>
+                                <button type="submit" class="btn btn-success btn-block">
+                                    <i class="fas fa-file-pdf mr-1"></i> Download Enrolment Forms
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-student-masterlist.php" id="studentMasterlistForm">
                             <div class="card-header">
                                 <h3 class="card-title"><i class="fas fa-users mr-2"></i>Student Masterlist</h3>
@@ -1770,10 +1814,13 @@ const chartPalette = ['#4f7da8', '#6fa08a', '#c98f5a', '#8b80b6', '#d5b15f', '#5
 const studentMasterlistComponent = document.getElementById('studentMasterlistComponent');
 const studentMasterlistFolder = document.getElementById('studentMasterlistFolder');
 const studentMasterlistForm = document.getElementById('studentMasterlistForm');
-if (studentMasterlistComponent && studentMasterlistFolder) {
-    const filterStudentMasterlistFolders = function() {
-        const component = studentMasterlistComponent.value;
-        Array.from(studentMasterlistFolder.options).forEach(function(option) {
+const nstpEnrollmentComponent = document.getElementById('nstpEnrollmentComponent');
+const nstpEnrollmentFolder = document.getElementById('nstpEnrollmentFolder');
+const filterFoldersByComponent = function(componentSelect, folderSelect) {
+    if (!componentSelect || !folderSelect) return;
+    const filterFolders = function() {
+        const component = componentSelect.value;
+        Array.from(folderSelect.options).forEach(function(option) {
             if (!option.value) {
                 option.hidden = false;
                 option.disabled = false;
@@ -1785,14 +1832,16 @@ if (studentMasterlistComponent && studentMasterlistFolder) {
             option.disabled = !isVisible;
         });
 
-        if (studentMasterlistFolder.selectedOptions[0]?.disabled) {
-            studentMasterlistFolder.value = '';
+        if (folderSelect.selectedOptions[0]?.disabled) {
+            folderSelect.value = '';
         }
     };
 
-    studentMasterlistComponent.addEventListener('change', filterStudentMasterlistFolders);
-    filterStudentMasterlistFolders();
-}
+    componentSelect.addEventListener('change', filterFolders);
+    filterFolders();
+};
+filterFoldersByComponent(studentMasterlistComponent, studentMasterlistFolder);
+filterFoldersByComponent(nstpEnrollmentComponent, nstpEnrollmentFolder);
 
 if (studentMasterlistForm) {
     const masterlistFields = Array.from(studentMasterlistForm.querySelectorAll('.student-masterlist-field'));
