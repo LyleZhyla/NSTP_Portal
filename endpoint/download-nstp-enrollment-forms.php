@@ -10,6 +10,9 @@ require_once '../vendor/autoload.php';
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
+ignore_user_abort(true);
+@set_time_limit(0);
+
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
     die('Unauthorized access');
@@ -119,7 +122,7 @@ $studentSql = "
         COALESCE(r.course, '') AS course,
         COALESCE(r.major, '') AS major,
         COALESCE(r.year_section, '') AS year_section,
-        COALESCE(r.formal_picture, '') AS formal_picture,
+        COALESCE(NULLIF(r.formal_picture, ''), NULLIF(student_user.profile_picture, ''), '') AS formal_picture,
         COALESCE(DATE_FORMAT(r.created_at, '%Y-%m-%d'), '') AS registration_date,
         {$componentExpression} AS component
     FROM tbl_student s
@@ -184,23 +187,31 @@ foreach ($coordinatorStmt->fetchAll(PDO::FETCH_ASSOC) as $coordinator) {
 }
 
 $projectRoot = dirname(__DIR__);
-$sealDataUri = nstpEnrollmentImageDataUri('include/logos/nstp.png', $projectRoot);
-$html = nstpEnrollmentRenderHtml($students, $coordinatorNames, $sealDataUri, $projectRoot);
-
-$options = new Options();
-$options->set('isRemoteEnabled', false);
-$options->set('isHtml5ParserEnabled', true);
-$options->set('defaultFont', 'DejaVu Serif');
+$sealImage = nstpEnrollmentImageDataUri('include/logos/nstp.png', $projectRoot);
 $fontCacheDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'tau-nstp-dompdf-fonts';
 if (!is_dir($fontCacheDir)) {
     @mkdir($fontCacheDir, 0775, true);
 }
-$options->set('fontCache', $fontCacheDir);
-$options->set('tempDir', sys_get_temp_dir());
-$dompdf = new Dompdf($options);
-$dompdf->loadHtml($html, 'UTF-8');
-$dompdf->setPaper('A4', 'portrait');
-$dompdf->render();
+
+$renderPdf = static function (array $batch) use ($coordinatorNames, $sealImage, $projectRoot, $fontCacheDir) {
+    $options = new Options();
+    $options->set('isRemoteEnabled', false);
+    $options->set('isHtml5ParserEnabled', true);
+    $options->set('defaultFont', 'DejaVu Serif');
+    $options->set('fontCache', $fontCacheDir);
+    $options->set('tempDir', sys_get_temp_dir());
+    $dompdf = new Dompdf($options);
+    $dompdf->loadHtml(
+        nstpEnrollmentRenderHtml($batch, $coordinatorNames, $sealImage, $projectRoot),
+        'UTF-8'
+    );
+    $dompdf->setPaper('A4', 'portrait');
+    $dompdf->render();
+    $pdf = $dompdf->output();
+    unset($dompdf);
+    gc_collect_cycles();
+    return $pdf;
+};
 
 $filenameParts = ['nstp-enrollment-forms'];
 if ($selectedComponent) {
@@ -210,5 +221,64 @@ if ($selectedSection !== '') {
     $filenameParts[] = strtolower(preg_replace('/[^A-Za-z0-9]+/', '-', $selectedSection));
 }
 $filename = trim(implode('-', $filenameParts), '-') . '.pdf';
-$dompdf->stream($filename, ['Attachment' => true]);
+$batches = nstpEnrollmentStudentBatches($students, 20);
+
+if (count($batches) === 1) {
+    $pdf = $renderPdf($batches[0]);
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($pdf));
+    echo $pdf;
+    exit;
+}
+
+$zipPath = tempnam(sys_get_temp_dir(), 'nstp-enrollment-');
+if ($zipPath === false) {
+    http_response_code(500);
+    die('Unable to prepare the enrolment form download.');
+}
+@unlink($zipPath);
+$zipPath .= '.zip';
+$zip = new ZipArchive();
+if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+    @unlink($zipPath);
+    http_response_code(500);
+    die('Unable to prepare the enrolment form ZIP file.');
+}
+
+try {
+    $partTotal = count($batches);
+    foreach ($batches as $batchIndex => $batch) {
+        $partNumber = $batchIndex + 1;
+        $partName = pathinfo($filename, PATHINFO_FILENAME)
+            . '-part-' . str_pad((string) $partNumber, 2, '0', STR_PAD_LEFT)
+            . '-of-' . str_pad((string) $partTotal, 2, '0', STR_PAD_LEFT)
+            . '.pdf';
+        if (!$zip->addFromString($partName, $renderPdf($batch))) {
+            throw new RuntimeException('Unable to add a PDF batch to the ZIP file.');
+        }
+    }
+    if (!$zip->close()) {
+        throw new RuntimeException('Unable to finish the enrolment form ZIP file.');
+    }
+
+    $zipFilename = pathinfo($filename, PATHINFO_FILENAME) . '.zip';
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zipFilename . '"');
+    header('Content-Length: ' . filesize($zipPath));
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    readfile($zipPath);
+} catch (Throwable $error) {
+    try {
+        $zip->close();
+    } catch (Throwable $closeError) {
+        // The archive may already be closed after a finalization failure.
+    }
+    @unlink($zipPath);
+    error_log('NSTP enrolment form batch error: ' . $error->getMessage());
+    http_response_code(500);
+    die('Unable to generate all enrolment form batches. Please try a smaller folder selection.');
+}
+
+@unlink($zipPath);
 exit;

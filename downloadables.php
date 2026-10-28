@@ -1320,7 +1320,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <p class="muted-note">Creates one print-ready PDF page per student using the official enrolment form. The selected component is checked automatically, and the recommending coordinator is matched to each student's component.</p>
+                                <p class="muted-note">Creates one print-ready page per student using the official enrolment form. Small selections download as one PDF; large selections download as a ZIP of PDF batches so the server can process them reliably. The recommending coordinator is matched to each student's component.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-file-pdf mr-1"></i> Download Enrolment Forms
                                 </button>

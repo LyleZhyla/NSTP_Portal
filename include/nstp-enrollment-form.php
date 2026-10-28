@@ -26,7 +26,9 @@ function nstpEnrollmentFullName(array $student) {
         trim((string) ($student['last_name'] ?? '')),
         trim((string) ($student['extension_name'] ?? '')),
     ];
-    $name = trim(implode(' ', array_filter($parts, static fn($part) => $part !== '')));
+    $name = trim(implode(' ', array_filter($parts, static function ($part) {
+        return $part !== '' && strtoupper($part) !== 'N/A';
+    })));
     return $name !== '' ? $name : trim((string) ($student['student_name'] ?? ''));
 }
 
@@ -75,6 +77,11 @@ function nstpEnrollmentImageDataUri($path, $projectRoot) {
     return $contents === false ? '' : 'data:' . $mime . ';base64,' . base64_encode($contents);
 }
 
+function nstpEnrollmentStudentBatches(array $students, $batchSize = 20) {
+    $batchSize = max(1, (int) $batchSize);
+    return array_chunk(array_values($students), $batchSize);
+}
+
 function nstpEnrollmentRenderHtml(array $students, array $coordinatorNames, $sealDataUri, $projectRoot) {
     $pages = '';
     $componentLabels = [
@@ -104,7 +111,7 @@ function nstpEnrollmentRenderHtml(array $students, array $coordinatorNames, $sea
 
         $pages .= '<section class="student-form">'
             . '<div class="university-header">'
-            . '<img class="university-seal" src="' . nstpEnrollmentEscape($sealDataUri) . '" alt="TAU NSTP logo">'
+            . '<div class="university-seal"></div>'
             . '<div class="republic">Republic of the Philippines</div>'
             . '<div class="university-name">TARLAC AGRICULTURAL UNIVERSITY</div>'
             . '<div class="university-location">Camiling, Tarlac</div>'
@@ -135,7 +142,11 @@ function nstpEnrollmentRenderHtml(array $students, array $coordinatorNames, $sea
             . '</tr></table>'
             . '<div class="address-title temporary-title">TEMPORARY ADDRESS <span>(if boarding/staying at dormitory)</span></div>'
             . '<table class="address-grid"><tr>'
-            . '<td>&nbsp;<span>House No.</span></td><td>&nbsp;<span>Street</span></td><td>&nbsp;<span>Barangay</span></td><td>&nbsp;<span>City/Municipality</span></td><td>&nbsp;<span>Province</span></td>'
+            . '<td>' . nstpEnrollmentText($student['house_no'] ?? '') . '<span>House No.</span></td>'
+            . '<td>' . nstpEnrollmentText($student['street'] ?? '') . '<span>Street</span></td>'
+            . '<td>' . nstpEnrollmentText($student['barangay'] ?? '') . '<span>Barangay</span></td>'
+            . '<td>' . nstpEnrollmentText($student['city_municipality'] ?? '') . '<span>City/Municipality</span></td>'
+            . '<td>' . nstpEnrollmentText($student['province'] ?? '') . '<span>Province</span></td>'
             . '</tr></table>'
             . '<div class="applicant-signature"><div class="signature-name">' . nstpEnrollmentEscape($fullName) . '</div><div class="signature-caption">(Signature over Printed Name of Applicant)</div></div>'
             . '<div class="approval-grid"><div class="approval-column"><strong>Recommending Approval:</strong><div class="approval-name">' . nstpEnrollmentEscape($coordinatorName) . '</div><div class="approval-role">' . nstpEnrollmentEscape($component ?: 'NSTP') . ' Coordinator</div></div>'
@@ -147,7 +158,7 @@ function nstpEnrollmentRenderHtml(array $students, array $coordinatorNames, $sea
     return '<!doctype html><html><head><meta charset="utf-8"><style>'
         . '@page{size:A4 portrait;margin:0}*{box-sizing:border-box}body{margin:0;font-family:"DejaVu Serif",serif;color:#111;font-size:10.2pt}'
         . '.student-form{position:relative;width:186mm;height:283.5mm;padding:7mm 12mm 6mm;page-break-after:always;overflow:hidden}.student-form:last-child{page-break-after:auto}'
-        . '.university-header{position:relative;height:25mm;margin:0 -12mm;background:#087b05;color:#fff;padding:3.2mm 12mm 2mm 45mm}.university-seal{position:absolute;left:12mm;top:-1.5mm;width:31mm;height:31mm;object-fit:contain}.republic{font-size:9.5pt;font-weight:bold}.university-name{font-size:18pt;font-weight:bold;letter-spacing:.2pt;line-height:1.05}.university-location{font-size:9.5pt}.header-rule{height:1.8mm;margin:1.1mm -12mm 1.5mm;border-top:1.1mm solid #087b05;border-bottom:.4mm solid #aaa}.program-banner{width:64%;margin:0 auto 2.2mm;border:1.6pt solid #888;border-radius:5pt;text-align:center;color:#777;font-size:13.5pt;font-weight:bold;padding:1.2mm}.form-title{text-align:center;font-size:13pt;font-weight:bold;margin:0 0 1mm}'
+        . '.university-header{position:relative;height:25mm;margin:0 -12mm;background:#087b05;color:#fff;padding:3.2mm 12mm 2mm 45mm}.university-seal{position:absolute;left:12mm;top:-1.5mm;width:31mm;height:31mm;background-image:url("' . $sealDataUri . '");background-repeat:no-repeat;background-position:center;background-size:contain}.republic{font-size:9.5pt;font-weight:bold}.university-name{font-size:18pt;font-weight:bold;letter-spacing:.2pt;line-height:1.05}.university-location{font-size:9.5pt}.header-rule{height:1.8mm;margin:1.1mm -12mm 1.5mm;border-top:1.1mm solid #087b05;border-bottom:.4mm solid #aaa}.program-banner{width:64%;margin:0 auto 2.2mm;border:1.6pt solid #888;border-radius:5pt;text-align:center;color:#777;font-size:13.5pt;font-weight:bold;padding:1.2mm}.form-title{text-align:center;font-size:13pt;font-weight:bold;margin:0 0 1mm}'
         . '.component-photo{width:100%;table-layout:fixed;border-collapse:collapse}.component-cell{width:77%;vertical-align:top;padding:0 2mm 0 0}.photo-cell{width:23%;vertical-align:top;text-align:right}.component-instruction{font-size:9.5pt;margin-bottom:1.6mm}.component-option{height:4.2mm;margin-left:5mm;white-space:nowrap}.check-box{display:inline-block;width:6mm;height:3.5mm;line-height:3.2mm;border:1pt solid #111;text-align:center;font:700 8pt sans-serif;margin-right:3mm}.photo-box{display:inline-block;width:31mm;height:40mm;border:1pt solid #111;text-align:center;vertical-align:top;overflow:hidden}.photo-box img{width:100%;height:100%}.photo-placeholder{display:block;margin-top:17mm;color:#777;font-size:7.5pt}.date-row{margin-top:2.5mm}.data-line{display:inline-block;min-width:53mm;border-bottom:.7pt solid #111;padding:0 .8mm .3mm;vertical-align:bottom;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.data-line.short{min-width:23mm;max-width:23mm}.data-line.medium{min-width:25mm;max-width:25mm}'
         . '.section-title{text-align:center;font-size:12pt;margin:1.3mm 0 1.2mm}.profile-grid{width:100%;border-collapse:separate;border-spacing:0 1.25mm}.profile-grid td{width:50%;vertical-align:bottom;white-space:nowrap}.profile-grid td:nth-child(2){padding-left:3mm}.profile-grid .data-line{max-width:54mm}.profile-grid .course-data{font-size:8pt}.address-title{font-size:10.5pt;margin-top:1.5mm}.address-title span{font-size:9pt}.address-grid{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:.8mm}.address-grid td{border-bottom:.7pt solid #111;text-align:center;height:6.6mm;padding:0 .8mm;font-size:8.2pt;vertical-align:bottom}.address-grid td span{display:block;border-top:.7pt solid #111;margin:1.1mm -.8mm -5.2mm;padding-top:.4mm;font-size:8pt;white-space:nowrap}.temporary-title{margin-top:6.2mm}'
         . '.applicant-signature{width:43%;margin:10.5mm auto 0;text-align:center}.signature-name{border-bottom:.8pt solid #111;min-height:5.5mm;padding:0 1mm .5mm;font-size:9.5pt}.signature-caption{font-style:italic;margin-top:1.2mm;font-size:8.6pt}.approval-grid{position:absolute;left:12mm;top:235mm;width:186mm;height:27mm}.approval-column{position:absolute;left:0;top:0;width:45%;padding:0 3mm}.approved-column{left:52%;text-align:left}.approval-grid strong{font-size:10pt}.approval-name{width:56mm;border-bottom:.8pt solid #111;margin-top:5mm;min-height:5mm;padding-bottom:.5mm;text-align:center;font-size:9.5pt}.approved-column .approval-name{margin-left:auto;margin-right:auto}.approval-name.director{font-weight:bold}.approval-role{width:56mm;text-align:center;margin-top:1.2mm;font-size:8.5pt;font-style:italic}.approved-column .approval-role{margin-left:auto;margin-right:auto}'
