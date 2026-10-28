@@ -187,7 +187,7 @@ foreach ($coordinatorStmt->fetchAll(PDO::FETCH_ASSOC) as $coordinator) {
 }
 
 $projectRoot = dirname(__DIR__);
-$sealImage = nstpEnrollmentImageDataUri('include/logos/nstp.png', $projectRoot);
+$sealImage = nstpEnrollmentImageDataUri('include/logos/tau-seal.png', $projectRoot);
 $fontCacheDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'tau-nstp-dompdf-fonts';
 if (!is_dir($fontCacheDir)) {
     @mkdir($fontCacheDir, 0775, true);

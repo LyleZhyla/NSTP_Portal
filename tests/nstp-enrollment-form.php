@@ -67,7 +67,7 @@ $coordinators = [
     'ROTC' => 'Ramon ROTC Coordinator',
 ];
 $projectRoot = dirname(__DIR__);
-$seal = nstpEnrollmentImageDataUri('include/logos/nstp.png', $projectRoot);
+$seal = nstpEnrollmentImageDataUri('include/logos/tau-seal.png', $projectRoot);
 $html = nstpEnrollmentRenderHtml($sampleStudents, $coordinators, $seal, $projectRoot);
 
 nstpFormAssert(substr_count($html, 'class="student-form"') === 2, 'Each student must have exactly one form page.');
