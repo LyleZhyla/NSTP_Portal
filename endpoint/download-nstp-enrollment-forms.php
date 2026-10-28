@@ -122,7 +122,29 @@ $studentSql = "
         COALESCE(r.course, '') AS course,
         COALESCE(r.major, '') AS major,
         COALESCE(r.year_section, '') AS year_section,
-        COALESCE(NULLIF(r.formal_picture, ''), NULLIF(student_user.profile_picture, ''), '') AS formal_picture,
+        COALESCE(
+            NULLIF(NULLIF(r.formal_picture, ''), 'include/logo.png'),
+            (
+                SELECT NULLIF(picture_registration.formal_picture, '')
+                FROM tbl_public_student_registrations picture_registration
+                WHERE picture_registration.registrant_role = 'student'
+                  AND COALESCE(picture_registration.status, 'submitted') <> 'account_deleted'
+                  AND picture_registration.formal_picture IS NOT NULL
+                  AND TRIM(picture_registration.formal_picture) <> ''
+                  AND picture_registration.formal_picture <> 'include/logo.png'
+                  AND (
+                      (s.user_id IS NOT NULL AND picture_registration.user_id = s.user_id)
+                      OR (
+                          NULLIF(s.student_number, '') IS NOT NULL
+                          AND picture_registration.student_number = s.student_number
+                      )
+                  )
+                ORDER BY picture_registration.registration_id DESC
+                LIMIT 1
+            ),
+            NULLIF(NULLIF(student_user.profile_picture, ''), 'include/logo.png'),
+            ''
+        ) AS formal_picture,
         COALESCE(DATE_FORMAT(r.created_at, '%Y-%m-%d'), '') AS registration_date,
         {$componentExpression} AS component
     FROM tbl_student s

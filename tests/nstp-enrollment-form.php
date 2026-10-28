@@ -12,6 +12,11 @@ function nstpFormAssert($condition, $message) {
     }
 }
 
+$testPhoto = trim((string) getenv('NSTP_FORM_TEST_PHOTO'));
+if ($testPhoto === '') {
+    $testPhoto = 'include/logos/cwts.png';
+}
+
 $sampleStudents = [
     [
         'student_name' => 'Ana M. Santos',
@@ -34,7 +39,7 @@ $sampleStudents = [
         'city_municipality' => 'Camiling',
         'province' => 'Tarlac',
         'registration_date' => '2026-10-28',
-        'formal_picture' => 'include/logos/cwts.png',
+        'formal_picture' => $testPhoto,
     ],
     [
         'student_name' => 'Ben D. Cruz',
