@@ -35,6 +35,7 @@ if (!in_array($userRole, ['super_admin', 'coordinator', 'facilitator'], true)) {
 }
 
 require_once __DIR__ . '/include/grade-schema.php';
+require_once __DIR__ . '/include/grade-calculation.php';
 
 function slugGradeGroup($value) {
     $slug = strtolower(trim((string) $value));
@@ -209,25 +210,15 @@ function formatGradeNumber($value, $decimals = 2) {
     return number_format((float) $value, $decimals);
 }
 
-function transmuteGrade($percentage, $passingPercentage = 75, $highestGrade = 1, $passingGrade = 3, $failingGrade = 5) {
-    $percentage = max(0, min(100, (float) $percentage));
-    $passingPercentage = max(0.01, min(99.99, (float) $passingPercentage));
-    $highestGrade = (float) $highestGrade;
-    $passingGrade = (float) $passingGrade;
-    $failingGrade = (float) $failingGrade;
-
-    if ($percentage < $passingPercentage) {
-        $grade = $failingGrade
-            - ($percentage / $passingPercentage)
-            * ($failingGrade - $passingGrade);
-    } else {
-        $range = max(0.01, 100 - $passingPercentage);
-        $grade = $passingGrade
-            - (($percentage - $passingPercentage) / $range)
-            * ($passingGrade - $highestGrade);
-    }
-
-    return round(max($highestGrade, min($failingGrade, $grade)), 2);
+function transmuteGrade($percentage, $passingPercentage = 75, $highestGrade = 1, $passingGrade = 3, $failingGrade = 5, $program = null) {
+    return transmuteGradeForProgram(
+        $percentage,
+        $program,
+        $passingPercentage,
+        $highestGrade,
+        $passingGrade,
+        $failingGrade
+    );
 }
 
 function isManualAttendanceColumn(array $column) {
@@ -301,7 +292,8 @@ function computeStudentGradeSummary(
     $passingPercentage = 75,
     $highestGrade = 1,
     $passingGrade = 3,
-    $failingGrade = 5
+    $failingGrade = 5,
+    $program = null
 ) {
     $rawTotal = 0;
     $maxTotal = 0;
@@ -388,7 +380,7 @@ function computeStudentGradeSummary(
         'weighted_percent' => $weightedPercent,
         'current_percentage' => $currentPercentage,
         'total_weight' => $totalWeight,
-        'final_grade' => transmuteGrade($weightedPercent, $passingPercentage, $highestGrade, $passingGrade, $failingGrade),
+        'final_grade' => transmuteGrade($weightedPercent, $passingPercentage, $highestGrade, $passingGrade, $failingGrade, $program),
         'graded_count' => $gradedCount,
         'total_count' => $totalItems,
         'pending_count' => max(0, $totalItems - $gradedCount),
@@ -408,6 +400,7 @@ $currentUser = getCurrentUserRecord($conn);
 $currentProgram = $userRole === 'super_admin'
     ? (normalizeProgram($_GET['component'] ?? null) ?: 'CWTS')
     : normalizeProgram($_SESSION['program'] ?? ($currentUser['program'] ?? null));
+$defaultTotalMeetings = $currentProgram === 'LTS' ? 13 : 11;
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
@@ -560,11 +553,11 @@ if ($systemAttendanceEnabled && !$systemAttendanceColumn) {
         fn($column) => !isManualAttendanceColumn($column)
     )));
     $legacyScoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $legacyGroups));
-    $attendanceWeight = max(0, 100 - $legacyScoreWeight);
-    $attendanceGroupLabel = 'Attendance';
+    $attendanceWeight = $currentProgram === 'LTS' ? 30 : max(0, 100 - $legacyScoreWeight);
+    $attendanceGroupLabel = $currentProgram === 'LTS' ? 'Class Standing/Attendance' : 'Attendance';
     $attendanceGroupCode = slugGradeGroup($attendanceGroupLabel);
     $attendanceColumnKey = 'system_attendance_' . substr(sha1($settingScope . ':' . $sheetOwnerId), 0, 24);
-    $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+    $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
     $stmt = $conn->prepare("
         INSERT IGNORE INTO tbl_grade_columns
             (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active, created_by, updated_by)
@@ -603,6 +596,35 @@ if ($systemAttendanceEnabled) {
         }
     }
     if ($systemAttendanceColumn) {
+        if ($currentProgram === 'LTS') {
+            $ltsAttendanceGroupLabel = 'Class Standing/Attendance';
+            $ltsAttendanceGroupCode = slugGradeGroup($ltsAttendanceGroupLabel);
+            $ltsAttendanceMaximum = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
+            if ($systemAttendanceColumn['group_code'] !== $ltsAttendanceGroupCode
+                || (float) $systemAttendanceColumn['weight_percent'] !== 30.0
+                || (float) $systemAttendanceColumn['max_score'] !== (float) $ltsAttendanceMaximum) {
+                $syncLtsAttendance = $conn->prepare("
+                    UPDATE tbl_grade_columns
+                    SET group_code = ?, group_label = ?, max_score = ?, weight_percent = 30, updated_by = ?
+                    WHERE grade_column_id = ?
+                ");
+                $syncLtsAttendance->execute([
+                    $ltsAttendanceGroupCode,
+                    $ltsAttendanceGroupLabel,
+                    $ltsAttendanceMaximum,
+                    $userId,
+                    (int) $systemAttendanceColumn['grade_column_id'],
+                ]);
+                $gradeColumns = $loadGradeColumns();
+                foreach ($gradeColumns as $column) {
+                    if (isSystemAttendanceColumn($column)) {
+                        $systemAttendanceColumn = $column;
+                        break;
+                    }
+                }
+            }
+        }
+
         $syncLegacyManualAttendance = $conn->prepare("
             UPDATE tbl_grade_columns
             SET group_code = ?, group_label = ?, weight_percent = ?, updated_by = ?
@@ -730,7 +752,14 @@ if ($isGradeDownloadRequest) {
 
     require_once __DIR__ . '/vendor/autoload.php';
     require_once __DIR__ . '/include/grade-score-import.php';
-    $templateColumns = gradeImportEditableColumns($gradeColumns, $canEditSystemAttendanceScore);
+    $templateColumns = array_values(array_filter(
+        $gradeColumns,
+        fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
+    ));
+    foreach ($templateColumns as &$templateColumn) {
+        $templateColumn['_import_editable'] = !isSystemAttendanceColumn($templateColumn);
+    }
+    unset($templateColumn);
     if (!$templateColumns) {
         http_response_code(400);
         exit('This class record has no editable score items.');
@@ -756,6 +785,46 @@ if ($isGradeDownloadRequest) {
         $scoreStmt->execute(array_merge($templateStudentIds, $templateColumnIds));
         foreach ($scoreStmt->fetchAll(PDO::FETCH_ASSOC) as $scoreRow) {
             $templateScoresByStudent[(int) $scoreRow['tbl_student_id']][(int) $scoreRow['grade_column_id']] = $scoreRow['score'];
+        }
+    }
+    $templateSystemAttendanceColumn = null;
+    foreach ($templateColumns as $templateColumn) {
+        if (isSystemAttendanceColumn($templateColumn)) {
+            $templateSystemAttendanceColumn = $templateColumn;
+            break;
+        }
+    }
+    if ($templateSystemAttendanceColumn && $templateStudentIds) {
+        $studentPlaceholders = implode(',', array_fill(0, count($templateStudentIds), '?'));
+        $attendanceStmt = $conn->prepare("
+            SELECT tbl_student_id, COUNT(DISTINCT attendance_date) AS attendance_count
+            FROM (
+                SELECT tbl_student_id, DATE(time_in) AS attendance_date
+                FROM tbl_attendance
+                WHERE tbl_student_id IN ($studentPlaceholders)
+                UNION ALL
+                SELECT tbl_student_id, DATE(time_in) AS attendance_date
+                FROM tbl_attendance_archive
+                WHERE tbl_student_id IN ($studentPlaceholders)
+            ) attendance_days
+            GROUP BY tbl_student_id
+        ");
+        $attendanceStmt->execute(array_merge($templateStudentIds, $templateStudentIds));
+        $attendanceCountsByStudent = [];
+        foreach ($attendanceStmt->fetchAll(PDO::FETCH_ASSOC) as $attendanceRow) {
+            $attendanceCountsByStudent[(int) $attendanceRow['tbl_student_id']] = (int) $attendanceRow['attendance_count'];
+        }
+        $systemColumnId = (int) $templateSystemAttendanceColumn['grade_column_id'];
+        $systemMaximum = (float) $templateSystemAttendanceColumn['max_score'];
+        foreach ($templateStudentIds as $templateStudentId) {
+            $savedOverride = $templateScoresByStudent[$templateStudentId][$systemColumnId] ?? null;
+            if ($savedOverride !== null && $savedOverride !== '') {
+                continue;
+            }
+            $templateScoresByStudent[$templateStudentId][$systemColumnId] = min(
+                $systemMaximum,
+                (float) ($attendanceCountsByStudent[$templateStudentId] ?? 0)
+            );
         }
     }
     $spreadsheet = gradeCreateScoreTemplate($templateStudents, $templateColumns, [
@@ -828,7 +897,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $errors[] = 'Category weight must be greater than zero.';
             } else {
                 $groupCode = slugGradeGroup($groupLabel);
-                $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+                $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
                 $systemColumn = null;
                 foreach ($gradeColumns as $column) {
                     if (isSystemAttendanceColumn($column)) {
@@ -1110,7 +1179,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     if ($action === 'settings' && $canManageColumns) {
-        $meetings = max(1, (int) ($_POST['total_meetings'] ?? 11));
+        $meetings = max(1, (int) ($_POST['total_meetings'] ?? $defaultTotalMeetings));
         $passingPercentageInput = (float) ($_POST['passing_percentage'] ?? 75);
         $highestGradeInput = (float) ($_POST['highest_grade'] ?? 1);
         $passingGradeInput = (float) ($_POST['passing_grade'] ?? 3);
@@ -1274,7 +1343,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             ) attendance_days
         ");
         $attendanceStmt->execute([$studentId, $studentId]);
-        $ajaxTotalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+        $ajaxTotalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
         $ajaxGroups = buildGradeGroups($ajaxGradeColumns);
         $ajaxPassingPercentage = (float) getGradeSetting($conn, $passingPercentageKey, '75');
         $ajaxHighestGrade = (float) getGradeSetting($conn, $highestGradeKey, '1');
@@ -1289,7 +1358,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $ajaxPassingPercentage,
             $ajaxHighestGrade,
             $ajaxPassingGrade,
-            $ajaxFailingGrade
+            $ajaxFailingGrade,
+            $currentProgram
         );
 
         echo json_encode([
@@ -1514,7 +1584,7 @@ if (!empty($accessibleStudentIds)) {
     }
 }
 
-$totalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, '11'));
+$totalMeetings = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
 $passingPercentage = (float) getGradeSetting($conn, $passingPercentageKey, '75');
 $highestGrade = (float) getGradeSetting($conn, $highestGradeKey, '1');
 $passingGrade = (float) getGradeSetting($conn, $passingGradeKey, '3');
@@ -1550,7 +1620,8 @@ foreach ($students as $student) {
         $passingPercentage,
         $highestGrade,
         $passingGrade,
-        $failingGrade
+        $failingGrade,
+        $currentProgram
     );
     $gradeSummariesByStudent[$studentId] = $summary;
     $completionTotal += (float) $summary['completion_percentage'];
@@ -2581,11 +2652,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 $scoreTemplateParams = $_GET;
                                 unset($scoreTemplateParams['saved'], $scoreTemplateParams['error']);
                                 $scoreTemplateParams['action'] = 'download_score_template';
+                                $hasTemplateColumns = !empty(array_filter(
+                                    $gradeColumns,
+                                    fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
+                                ));
+                                $scoreTemplateReady = $selectedGradeFolder !== '' && !empty($students) && $hasTemplateColumns;
                                 $scoreImportReady = $selectedGradeFolder !== '' && !empty($students) && !empty($importableGradeColumns);
                                 ?>
                                 <a href="grades.php?<?php echo htmlspecialchars(http_build_query($scoreTemplateParams)); ?>"
-                                   class="btn btn-outline-success btn-sm <?php echo $scoreImportReady ? '' : 'disabled'; ?>"
-                                   <?php echo $scoreImportReady ? '' : 'aria-disabled="true" tabindex="-1"'; ?>>
+                                   class="btn btn-outline-success btn-sm <?php echo $scoreTemplateReady ? '' : 'disabled'; ?>"
+                                   <?php echo $scoreTemplateReady ? '' : 'aria-disabled="true" tabindex="-1"'; ?>>
                                     <i class="fas fa-file-excel mr-1"></i>Download Template
                                 </a>
                                 <button type="button"
@@ -2894,6 +2970,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </div>
                     <div class="col-lg-8">
                         <label class="d-block">1.00–5.00 Transmutation</label>
+                        <?php if ($currentProgram === 'LTS'): ?>
+                        <input type="hidden" name="passing_percentage" value="<?php echo htmlspecialchars((string) $passingPercentage); ?>">
+                        <input type="hidden" name="highest_grade" value="<?php echo htmlspecialchars((string) $highestGrade); ?>">
+                        <input type="hidden" name="passing_grade" value="<?php echo htmlspecialchars((string) $passingGrade); ?>">
+                        <input type="hidden" name="failing_grade" value="<?php echo htmlspecialchars((string) $failingGrade); ?>">
+                        <div class="alert alert-info py-2 mb-0">
+                            <strong>LTS formula:</strong> 5 − 4 × (Recorded Weighted ÷ 100).
+                            This follows the LTS grade sheet: 100% = 1.00, 75% = 2.00, and 50% = 3.00.
+                        </div>
+                        <?php else: ?>
                         <div class="form-row">
                             <div class="form-group col-md-3"><label class="small">Passing %</label><input type="number" name="passing_percentage" class="form-control" min="1" max="99.99" step="0.01" value="<?php echo htmlspecialchars((string) $passingPercentage); ?>" required></div>
                             <div class="form-group col-md-3"><label class="small">Highest Grade</label><input type="number" name="highest_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $highestGrade); ?>" required></div>
@@ -2901,6 +2987,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <div class="form-group col-md-3"><label class="small">Failing Grade</label><input type="number" name="failing_grade" class="form-control" min="0" max="5" step="0.01" value="<?php echo htmlspecialchars((string) $failingGrade); ?>" required></div>
                         </div>
                         <small class="text-muted">The grade updates continuously: by default, 0% = 5.00, 75% = 3.00, and 100% = 1.00.</small>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php if (!empty($gradeGroups)): ?>

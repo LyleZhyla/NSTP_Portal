@@ -5,6 +5,7 @@ date_default_timezone_set('Asia/Manila');
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
 require_once '../include/grade-schema.php';
+require_once '../include/grade-calculation.php';
 require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -106,12 +107,6 @@ function exportGradeSetting(PDO $conn, $key, $default) {
     return $value === false ? $default : $value;
 }
 
-function exportTransmuteGrade($equivalentPoints, $denominator = 100) {
-    $denominator = max((float) $denominator, 1);
-    $grade = 5 - (4 / $denominator * (float) $equivalentPoints);
-    return max(1, min(5, $grade));
-}
-
 function exportBuildGradeGroups(array $gradeColumns) {
     $groups = [];
     foreach ($gradeColumns as $column) {
@@ -133,14 +128,26 @@ function exportBuildGradeGroups(array $gradeColumns) {
 
     foreach ($groups as $groupCode => $group) {
         $uniqueWeights = array_values(array_unique(array_map(fn($weight) => number_format((float) $weight, 4, '.', ''), $group['weights'])));
-        $groups[$groupCode]['weight'] = ($group['has_custom'] || count($uniqueWeights) > 1)
-            ? array_sum($group['weights'])
+        $groups[$groupCode]['weight'] = count($uniqueWeights) > 1
+            ? array_sum(array_map('floatval', $uniqueWeights))
             : (float) ($group['weights'][0] ?? 0);
     }
     return $groups;
 }
 
-function exportComputeGradeSummary(array $gradeColumns, array $scores, array $gradeGroups, $attendanceCount, $totalMeetings, $attendanceWeight) {
+function exportComputeGradeSummary(
+    array $gradeColumns,
+    array $scores,
+    array $gradeGroups,
+    $attendanceCount,
+    $totalMeetings,
+    $attendanceWeight,
+    $program,
+    $passingPercentage,
+    $highestGrade,
+    $passingGrade,
+    $failingGrade
+) {
     $rawTotal = 0;
     $maxTotal = 0;
     $weightedPoints = 0;
@@ -185,11 +192,19 @@ function exportComputeGradeSummary(array $gradeColumns, array $scores, array $gr
         'max_total' => $maxTotal,
         'score_percent' => $scorePercent,
         'weighted_percent' => $weightedPercent,
-        'final_grade' => exportTransmuteGrade($weightedPercent),
+        'final_grade' => transmuteGradeForProgram(
+            $weightedPercent,
+            $program,
+            $passingPercentage,
+            $highestGrade,
+            $passingGrade,
+            $failingGrade
+        ),
     ];
 }
 
 exportEnsureGradeTables($conn);
+seedDefaultGradeColumns($conn);
 
 $folderKey = trim((string) ($_GET['grade_folder'] ?? ''));
 $selectedFacilitatorId = null;
@@ -316,7 +331,12 @@ if ($studentIds) {
 }
 
 $gradeGroups = exportBuildGradeGroups($gradeColumns);
-$totalMeetings = max(1, (int) exportGradeSetting($conn, 'total_meetings_' . $settingScope, '11'));
+$defaultTotalMeetings = $currentProgram === 'LTS' ? 13 : 11;
+$totalMeetings = max(1, (int) exportGradeSetting($conn, 'total_meetings_' . $settingScope, (string) $defaultTotalMeetings));
+$passingPercentage = (float) exportGradeSetting($conn, 'passing_percentage_' . $settingScope, '75');
+$highestGrade = (float) exportGradeSetting($conn, 'highest_grade_' . $settingScope, '1');
+$passingGrade = (float) exportGradeSetting($conn, 'passing_grade_' . $settingScope, '3');
+$failingGrade = (float) exportGradeSetting($conn, 'failing_grade_' . $settingScope, '5');
 $scoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $gradeGroups));
 $attendanceWeight = max(0, 100 - $scoreWeight);
 $resultFilter = strtolower(trim((string) ($_GET['result_filter'] ?? 'all')));
@@ -352,7 +372,19 @@ $rows = [];
 foreach ($students as $student) {
     $studentId = (int) $student['tbl_student_id'];
     $scores = $scoresByStudent[$studentId] ?? [];
-    $summary = exportComputeGradeSummary($gradeColumns, $scores, $gradeGroups, $attendanceCounts[$studentId] ?? 0, $totalMeetings, $attendanceWeight);
+    $summary = exportComputeGradeSummary(
+        $gradeColumns,
+        $scores,
+        $gradeGroups,
+        $attendanceCounts[$studentId] ?? 0,
+        $totalMeetings,
+        $attendanceWeight,
+        $currentProgram,
+        $passingPercentage,
+        $highestGrade,
+        $passingGrade,
+        $failingGrade
+    );
     $passed = (float) $summary['final_grade'] <= 3.0;
 
     if ($resultFilter === 'passed' && !$passed) {

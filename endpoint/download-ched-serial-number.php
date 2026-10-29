@@ -3,6 +3,8 @@ session_start();
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/grade-schema.php';
+require_once '../include/grade-calculation.php';
 require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -218,12 +220,6 @@ function chedGradeSetting(PDO $conn, $key, $default) {
     return $value === false ? $default : $value;
 }
 
-function chedTransmuteGrade($equivalentPoints, $denominator = 100) {
-    $denominator = max((float) $denominator, 1);
-    $grade = 5 - (4 / $denominator * (float) $equivalentPoints);
-    return max(1, min(5, $grade));
-}
-
 function chedBuildGradeGroups(array $gradeColumns) {
     $groups = [];
     foreach ($gradeColumns as $column) {
@@ -244,14 +240,26 @@ function chedBuildGradeGroups(array $gradeColumns) {
 
     foreach ($groups as $groupCode => $group) {
         $uniqueWeights = array_values(array_unique(array_map(fn($weight) => number_format((float) $weight, 4, '.', ''), $group['weights'])));
-        $groups[$groupCode]['weight'] = ($group['has_custom'] || count($uniqueWeights) > 1)
-            ? array_sum($group['weights'])
+        $groups[$groupCode]['weight'] = count($uniqueWeights) > 1
+            ? array_sum(array_map('floatval', $uniqueWeights))
             : (float) ($group['weights'][0] ?? 0);
     }
     return $groups;
 }
 
-function chedComputeGradeSummary(array $gradeColumns, array $scores, array $gradeGroups, $attendanceCount, $totalMeetings, $attendanceWeight) {
+function chedComputeGradeSummary(
+    array $gradeColumns,
+    array $scores,
+    array $gradeGroups,
+    $attendanceCount,
+    $totalMeetings,
+    $attendanceWeight,
+    $program,
+    $passingPercentage,
+    $highestGrade,
+    $passingGrade,
+    $failingGrade
+) {
     $rawTotal = 0;
     $maxTotal = 0;
     $weightedPoints = 0;
@@ -293,7 +301,14 @@ function chedComputeGradeSummary(array $gradeColumns, array $scores, array $grad
 
     return [
         'weighted_percent' => $weightedPercent,
-        'final_grade' => chedTransmuteGrade($weightedPercent),
+        'final_grade' => transmuteGradeForProgram(
+            $weightedPercent,
+            $program,
+            $passingPercentage,
+            $highestGrade,
+            $passingGrade,
+            $failingGrade
+        ),
     ];
 }
 
@@ -377,7 +392,7 @@ $stmt->execute($queryParams);
 $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 chedEnsureGradeTables($conn);
-chedSeedDefaultGradeColumns($conn);
+seedDefaultGradeColumns($conn);
 
 $settingScope = strtolower($component);
 $columnVisibilityScope = $component;
@@ -386,7 +401,11 @@ $columnsStmt = $conn->prepare("
     SELECT *
     FROM tbl_grade_columns
     WHERE is_active = 1
-      AND (program_scope IS NULL OR program_scope = ?)
+      AND (
+        (? = 'LTS' AND UPPER(COALESCE(program_scope, '')) = 'LTS')
+        OR
+        (? <> 'LTS' AND (program_scope IS NULL OR UPPER(program_scope) = ?))
+      )
       AND (
         is_default = 1
         OR created_by IS NULL
@@ -402,7 +421,7 @@ $columnsStmt = $conn->prepare("
       )
     ORDER BY sort_order ASC, grade_column_id ASC
 ");
-$columnsStmt->execute([$component, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
+$columnsStmt->execute([$component, $component, $component, $sheetOwnerId, $sheetOwnerId, $columnVisibilityScope]);
 $gradeColumns = $columnsStmt->fetchAll(PDO::FETCH_ASSOC);
 $gradeColumnIds = array_map('intval', array_column($gradeColumns, 'grade_column_id'));
 $studentIds = array_map('intval', array_column($students, 'tbl_student_id'));
@@ -446,10 +465,15 @@ if ($studentIds) {
 }
 
 $gradeGroups = chedBuildGradeGroups($gradeColumns);
-$totalMeetings = max(1, (int) chedGradeSetting($conn, 'total_meetings_' . $settingScope, '11'));
+$defaultTotalMeetings = $component === 'LTS' ? 13 : 11;
+$totalMeetings = max(1, (int) chedGradeSetting($conn, 'total_meetings_' . $settingScope, (string) $defaultTotalMeetings));
+$passingPercentage = (float) chedGradeSetting($conn, 'passing_percentage_' . $settingScope, '75');
+$highestGrade = (float) chedGradeSetting($conn, 'highest_grade_' . $settingScope, '1');
+$passingGrade = (float) chedGradeSetting($conn, 'passing_grade_' . $settingScope, '3');
+$failingGrade = (float) chedGradeSetting($conn, 'failing_grade_' . $settingScope, '5');
 $scoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $gradeGroups));
 $attendanceWeight = max(0, 100 - $scoreWeight);
-$students = array_values(array_filter($students, function ($student) use ($gradeColumns, $gradeGroups, $scoresByStudent, $attendanceCounts, $totalMeetings, $attendanceWeight) {
+$students = array_values(array_filter($students, function ($student) use ($gradeColumns, $gradeGroups, $scoresByStudent, $attendanceCounts, $totalMeetings, $attendanceWeight, $component, $passingPercentage, $highestGrade, $passingGrade, $failingGrade) {
     $studentId = (int) $student['tbl_student_id'];
     $summary = chedComputeGradeSummary(
         $gradeColumns,
@@ -457,7 +481,12 @@ $students = array_values(array_filter($students, function ($student) use ($grade
         $gradeGroups,
         $attendanceCounts[$studentId] ?? 0,
         $totalMeetings,
-        $attendanceWeight
+        $attendanceWeight,
+        $component,
+        $passingPercentage,
+        $highestGrade,
+        $passingGrade,
+        $failingGrade
     );
 
     return (float) $summary['final_grade'] <= 3.0;

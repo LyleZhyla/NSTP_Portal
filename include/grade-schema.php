@@ -1,4 +1,21 @@
 <?php
+
+function ltsDefaultGradeColumns() {
+    return [
+        ['lts_quiz_1', 'Quiz 1: Philippine Constitution', 'lts_quiz', 'Quiz', 15, 20, 10],
+        ['lts_quiz_2', 'Quiz 2: Philippine Constitution', 'lts_quiz', 'Quiz', 15, 20, 20],
+        ['lts_midterm_exam', 'Midterm Exam', 'lts_term_test', 'Term Test', 100, 20, 40],
+        ['lts_final_exam_video_lesson', 'Final Exam (Video Lesson)', 'lts_term_test', 'Term Test', 100, 20, 50],
+        ['lts_requirement_gad', 'GAD', 'lts_requirements', 'Requirements', 100, 30, 70],
+        ['lts_requirement_bomb_threat', 'Bomb Threat', 'lts_requirements', 'Requirements', 100, 30, 80],
+        ['lts_requirement_drug_education', 'Drug Education', 'lts_requirements', 'Requirements', 100, 30, 90],
+        ['lts_requirement_lesson_plan', 'Lesson Plan', 'lts_requirements', 'Requirements', 24, 30, 100],
+        ['lts_requirement_im', 'Instructional Material', 'lts_requirements', 'Requirements', 20, 30, 110],
+        ['lts_requirement_video_lesson', 'Video Lesson', 'lts_requirements', 'Requirements', 32, 30, 120],
+        ['lts_participation', 'Participation', 'class_standing_attendance', 'Class Standing/Attendance', 30, 30, 140],
+    ];
+}
+
 function ensureGradeTables(PDO $conn) {
     $conn->exec("
         CREATE TABLE IF NOT EXISTS tbl_grade_columns (
@@ -106,6 +123,29 @@ function seedDefaultGradeColumns(PDO $conn) {
     foreach ($defaults as $column) {
         $stmt->execute($column);
     }
+
+    $ltsColumnCountStmt = $conn->query("
+        SELECT COUNT(*)
+        FROM tbl_grade_columns
+        WHERE UPPER(COALESCE(program_scope, '')) = 'LTS'
+          AND column_key NOT LIKE 'system_attendance_%'
+          AND is_active = 1
+    ");
+    if ((int) $ltsColumnCountStmt->fetchColumn() > 0) {
+        return;
+    }
+
+    $ltsDefaults = ltsDefaultGradeColumns();
+
+    $ltsStmt = $conn->prepare("
+        INSERT IGNORE INTO tbl_grade_columns
+            (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active)
+        VALUES (?, 'LTS', ?, ?, ?, ?, ?, ?, 1, 1)
+    ");
+
+    foreach ($ltsDefaults as $column) {
+        $ltsStmt->execute($column);
+    }
 }
 
 /**
@@ -126,7 +166,11 @@ function loadComponentGradeColumns(
         SELECT c.*
         FROM tbl_grade_columns c
         WHERE c.is_active = 1
-          AND (c.program_scope IS NULL OR UPPER(c.program_scope) = ?)
+          AND (
+            (? = 'LTS' AND UPPER(COALESCE(c.program_scope, '')) = 'LTS')
+            OR
+            (? <> 'LTS' AND (c.program_scope IS NULL OR UPPER(c.program_scope) = ?))
+          )
           AND (
             c.is_default = 1
             OR c.created_by IS NULL
@@ -158,6 +202,8 @@ function loadComponentGradeColumns(
         ORDER BY c.sort_order ASC, c.grade_column_id ASC
     ");
     $stmt->execute([
+        $normalizedProgram,
+        $normalizedProgram,
         $normalizedProgram,
         (int) $sheetOwnerId,
         (int) $facilitatorColumnOwnerId,
