@@ -274,9 +274,24 @@ if ($role === 'super_admin') {
 }
 
 if ($selectedFacilitatorId && $selectedFolder !== '' && !($currentProgram === 'ROTC' && $selectedFolder === 'rotc_all')) {
-    $studentWhere[] = "s.created_by = ? AND s.course_section = ?";
-    $studentParams[] = $selectedFacilitatorId;
-    $studentParams[] = $selectedFolder;
+    $folderAccessStmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM tbl_admin_sections ads
+        INNER JOIN tbl_users facilitator ON facilitator.user_id = ads.user_id
+        WHERE ads.user_id = ?
+          AND ads.course_section = ?
+          AND facilitator.role = 'facilitator'
+          AND facilitator.program = ?
+    ");
+    $folderAccessStmt->execute([$selectedFacilitatorId, $selectedFolder, $currentProgram]);
+    if ((int) $folderAccessStmt->fetchColumn() === 0) {
+        die('Unauthorized grade folder access');
+    }
+
+    // Folder membership is authoritative. A stale or missing student.created_by
+    // must not remove a student from the assigned folder's grading sheet.
+    $studentWhere = ["s.course_section = ?"];
+    $studentParams = [$selectedFolder];
     $selectedFolderLabel = $selectedFolder;
 }
 

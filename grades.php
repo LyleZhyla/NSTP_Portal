@@ -446,8 +446,7 @@ if (in_array($userRole, ['super_admin', 'coordinator'], true)) {
         FROM tbl_admin_sections ads
         INNER JOIN tbl_users u ON u.user_id = ads.user_id
         LEFT JOIN tbl_student s
-            ON s.created_by = ads.user_id
-           AND s.course_section = ads.course_section
+            ON s.course_section = ads.course_section
         WHERE u.role = 'facilitator' AND u.program = ?
         GROUP BY ads.user_id, ads.course_section, u.full_name, u.username
         ORDER BY facilitator_name ASC, ads.course_section ASC
@@ -478,8 +477,7 @@ if (in_array($userRole, ['super_admin', 'coordinator'], true)) {
         SELECT ads.course_section, COUNT(s.tbl_student_id) AS student_count
         FROM tbl_admin_sections ads
         LEFT JOIN tbl_student s
-            ON s.created_by = ads.user_id
-           AND s.course_section = ads.course_section
+            ON s.course_section = ads.course_section
         WHERE ads.user_id = ?
         GROUP BY ads.course_section
         ORDER BY ads.course_section ASC
@@ -718,10 +716,10 @@ if ($selectedGradeFolder === '__rotc_all__' && $currentProgram === 'ROTC') {
         FROM tbl_student s
         LEFT JOIN tbl_users u ON s.created_by = u.user_id
         {$registrationJoinSql}
-        WHERE s.created_by = ? AND s.course_section = ?
+        WHERE s.course_section = ?
         {$studentOrderSql}
     ";
-    $studentParams = [$selectedGradeFacilitatorId, $selectedGradeFolder];
+    $studentParams = [$selectedGradeFolder];
 } else {
     $studentSql = "
         SELECT s.*,
