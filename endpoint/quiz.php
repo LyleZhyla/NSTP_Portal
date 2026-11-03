@@ -157,6 +157,33 @@ try {
             'message' => 'Quiz schedule updated.',
         ]);
     }
+    if ($action === 'release_all') {
+        $conn->beginTransaction();
+        $quiz = quizFind($conn, $id, true);
+        if (!quizCanManage($actor, $quiz)) throw new DomainException('You cannot manage this quiz.');
+
+        $studentStmt = $conn->prepare("SELECT DISTINCT user_id FROM tbl_quiz_responses WHERE quiz_id=? AND state='submitted' AND needs_review=0 AND released=0 ORDER BY user_id");
+        $studentStmt->execute([$id]);
+        $studentIds = array_map('intval', $studentStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $releaseStmt = $conn->prepare("UPDATE tbl_quiz_responses SET released=1 WHERE quiz_id=? AND state='submitted' AND needs_review=0 AND released=0");
+        $releaseStmt->execute([$id]);
+        $released = $releaseStmt->rowCount();
+
+        foreach ($studentIds as $studentId) quizSyncGrade($conn, $quiz, $studentId);
+
+        $pendingStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_quiz_responses WHERE quiz_id=? AND state='submitted' AND needs_review=1");
+        $pendingStmt->execute([$id]);
+        $pending = (int)$pendingStmt->fetchColumn();
+        $conn->commit();
+        quizReply(200, [
+            'released' => $released,
+            'pending' => $pending,
+            'message' => $released > 0
+                ? $released . ' fully graded score' . ($released === 1 ? '' : 's') . ' released.'
+                : 'No fully graded scores are waiting for release.',
+        ]);
+    }
     if (in_array($action,['response','grade','attachment'],true)) {
         $responseId = (int)($post ? ($data['response_id']??0) : ($_GET['response_id']??0));
         $stmt=$conn->prepare('SELECT r.*,u.full_name,u.username FROM tbl_quiz_responses r JOIN tbl_users u ON u.user_id=r.user_id WHERE r.response_id=?'); $stmt->execute([$responseId]); $response=$stmt->fetch(PDO::FETCH_ASSOC);
@@ -206,7 +233,7 @@ try {
             while($row=$stmt->fetch(PDO::FETCH_ASSOC)){$answers=json_decode($row['answers_json'],true);$line=[$row['full_name'],$row['username'],$row['submitted_at'],$row['score'],$row['total_points'],$row['needs_review'],$row['released']];foreach($questions as $q){$v=$answers[$q['id']]??'';$line[]=is_array($v)?quizJson($v):$v;}fputcsv($out,array_map($safe,$line));}fclose($out);exit;
         }
         $page=max(1,min(100000,(int)($_GET['page']??1)));$offset=($page-1)*50;
-        $stmt=$conn->prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS pending, AVG(score) AS average_score FROM tbl_quiz_responses WHERE quiz_id=? AND state='submitted'");$stmt->execute([$id]);$summary=$stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt=$conn->prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN needs_review=0 AND released=0 THEN 1 ELSE 0 END) AS ready_to_release, AVG(score) AS average_score FROM tbl_quiz_responses WHERE quiz_id=? AND state='submitted'");$stmt->execute([$id]);$summary=$stmt->fetch(PDO::FETCH_ASSOC);
         $stmt=$conn->prepare("SELECT r.response_id,(SELECT COUNT(*) FROM tbl_quiz_focus_events f WHERE f.response_id=r.response_id) AS violations,r.score,r.total_points,r.needs_review,r.released,r.submitted_at,u.full_name,u.username FROM tbl_quiz_responses r JOIN tbl_users u ON u.user_id=r.user_id WHERE r.quiz_id=? AND r.state='submitted' ORDER BY r.response_id DESC LIMIT 50 OFFSET {$offset}");$stmt->execute([$id]);
         quizReply(200,['title'=>$quiz['title'],'summary'=>$summary,'responses'=>$stmt->fetchAll(PDO::FETCH_ASSOC),'page'=>$page]);
     }

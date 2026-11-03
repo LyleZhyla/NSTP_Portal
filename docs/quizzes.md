@@ -24,7 +24,8 @@ the quiz tables automatically using the configured database connection.
   text keys. Paragraphs, grids, files, and questions without a key are manually
   graded when points are assigned. Blank optional answers receive zero points.
 - Grade review, per-question score overrides and feedback, held/released scores,
-  response count/average/pending statistics, paginated responses, and CSV export.
+  bulk release for all fully graded responses, response count/average/pending
+  statistics, paginated responses, and CSV export.
 
 ## Access and data integrity
 
@@ -35,6 +36,9 @@ responses. Answer keys and feedback are omitted from student payloads until the
 manager releases the score. Immediate release only occurs when no manual grading
 is pending. Enabling both response editing and immediate release allows students
 to revise answers after seeing released feedback; choose those settings knowingly.
+Managers can also use **Release All Scores** on the Responses page. The action
+releases every held response that is fully graded, while responses awaiting manual
+review remain private until their grading is completed.
 
 After the first student draft or response is created, the definition is locked.
 Duplicate the quiz to change its questions/settings. Status can still be changed.

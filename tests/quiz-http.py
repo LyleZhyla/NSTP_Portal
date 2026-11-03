@@ -170,6 +170,21 @@ try:
     check(api('grade', response_id=rid, answers_version=detail['answers_version'], grades=grades, release=True)[0] == 200, 'manual grade and release')
     own = get('response', 4, response_id=rid)[1]
     check(float(own['score']) == 6 and own['grades'] and own['released'], 'student sees released score')
+    bulk = api('save', definition=definition([q('bulk_choice'), q('bulk_essay', 'paragraph')]))[1]
+    api('status', id=bulk['id'], status='published')
+    bulk_ready = api('submit', 4, id=bulk['id'], answers={'bulk_choice': 'B', 'bulk_essay': 'Reviewed response'})[1]
+    bulk_pending = api('submit', 7, id=bulk['id'], answers={'bulk_choice': 'B', 'bulk_essay': 'Pending response'})[1]
+    bulk_detail = get('response', response_id=bulk_ready['response_id'])[1]
+    bulk_grades = {key: {'points': 2, 'feedback': 'Reviewed.'} for key in bulk_detail['grades']}
+    check(api('grade', response_id=bulk_ready['response_id'], answers_version=bulk_detail['answers_version'], grades=bulk_grades, release=False)[0] == 200, 'manager can hold a completed grade')
+    bulk_summary = get('responses', id=bulk['id'])[1]['summary']
+    check(int(bulk_summary['ready_to_release']) == 1 and int(bulk_summary['pending']) == 1, 'response summary separates ready and pending scores')
+    check(api('release_all', 4, id=bulk['id'])[0] == 403 and api('release_all', 2, id=bulk['id'])[0] == 403, 'bulk release requires quiz management access')
+    status, bulk_release = api('release_all', id=bulk['id'])
+    check(status == 200 and bulk_release['released'] == 1 and bulk_release['pending'] == 1, 'bulk release publishes only fully graded scores')
+    check(get('response', 4, response_id=bulk_ready['response_id'])[1]['released'] is True, 'bulk-released score is visible to its student')
+    check(get('response', 7, response_id=bulk_pending['response_id'])[1]['released'] is False, 'bulk release keeps manually pending score private')
+    check(api('release_all', id=bulk['id'])[1]['released'] == 0, 'bulk release retry is idempotent')
     status, headers, body = request('/endpoint/quiz.php?action=export&id=' + str(quiz_id))
     check(status == 200 and b"'=2+2" in body and b'choice' in body, 'CSV export and formula escaping')
     check(api('status', id=quiz_id, status='closed')[0] == 200 and api('start', 7, id=quiz_id)[0] == 403, 'closed quiz rejects new responses')
