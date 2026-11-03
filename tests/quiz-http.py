@@ -283,7 +283,21 @@ try:
     duplicate_definition = get('load', id=dup['id'], mode='edit')[1]['definition']
     check(duplicate_definition['grade_column_id'] == 0 and duplicate_definition['grade_column_ids'] == [], 'duplicate does not silently reuse grading destinations')
     current = get('load', id=linked['id'], mode='edit')[1]
-    check(api('save', 2, id=linked['id'], revision=current['revision'], definition=definition(grade_column_id=0))[0] == 403, 'destination locks once responses exist')
+    check(api('save', 2, id=linked['id'], revision=current['revision'], definition=definition(grade_column_id=0))[0] == 403, 'full quiz save remains locked once responses exist')
+    forgotten_definition = definition([q('forgotten_destination')], release_immediately=True)
+    forgotten_definition.update(components=['CWTS'], levels=[])
+    forgotten = api('save', 2, definition=forgotten_definition)[1]
+    api('status', 2, id=forgotten['id'], status='published')
+    api('submit', 4, id=forgotten['id'], answers={'forgotten_destination': 'B'})
+    forgotten_current = get('load', 2, id=forgotten['id'], mode='edit')[1]
+    check(api('grade_destinations', 4, id=forgotten['id'], revision=forgotten_current['revision'], grade_column_ids=[2])[0] == 403, 'student cannot change score destinations')
+    check(api('grade_destinations', 2, id=forgotten['id'], revision=forgotten_current['revision'] - 1, grade_column_ids=[2])[0] == 403, 'stale score destination update rejected')
+    status, destination_update = api('grade_destinations', 2, id=forgotten['id'], revision=forgotten_current['revision'], grade_column_ids=[2])
+    check(status == 200 and destination_update['grade_column_ids'] == [2], 'manager adds a forgotten score destination after responses exist')
+    check(db.execute('SELECT score FROM tbl_grade_scores WHERE grade_column_id=2 AND tbl_student_id=4').fetchone() == (100,), 'new score destination backfills an existing released score')
+    status, destination_remap = api('grade_destinations', 2, id=forgotten['id'], revision=destination_update['revision'], grade_column_ids=[1])
+    check(status == 200 and destination_remap['grade_column_ids'] == [1], 'manager can remap a locked quiz score destination')
+    check(db.execute('SELECT score FROM tbl_grade_scores WHERE grade_column_id=2 AND tbl_student_id=4').fetchone() == (None,), 'removed destination is recalculated without the remapped quiz')
     multi_definition = definition([q('multi_scored')], grade_column_ids=[2, 4], release_immediately=True)
     multi_definition.update(components=['CWTS', 'LTS'], levels=[])
     status, multi = api('save', definition=multi_definition)

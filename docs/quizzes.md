@@ -75,8 +75,10 @@ maps to 37.5 in a 50-point column. Pending/unreleased quizzes are excluded;
 withdrawing release removes their contribution (blank if none remain).
 This replaces manual entries in the destination cell. Keep these columns for
 quiz scores; later manual sheet edits can be overwritten on the next quiz update.
-The destination locks after the first student draft, preserving existing score
-mappings. Duplicates reset the destination to practice/no sync. Inactive/deleted
+Score destinations remain editable after student drafts or responses exist. Use
+the separate **Save score destinations** action in the locked quiz panel; existing
+released, fully graded responses are recalculated in added and removed destination
+columns. Duplicates reset the destination to practice/no sync. Inactive/deleted
 columns stop receiving updates. Changes to a column maximum take effect at the
 next submission or grade update. Quiz grade writes and sheet writes share one
 transaction. A student must have exactly one linked student record to sync.

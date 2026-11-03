@@ -72,15 +72,24 @@ function quizSaveGradeLink(PDO $conn, $quizId, array $definition) {
 }
 
 // Called in the same transaction as grading/submission so the two records agree.
-function quizSyncGrade(PDO $conn, array $quiz, $userId) {
+function quizSyncGrade(PDO $conn, array $quiz, $userId, ?array $columnIds = null) {
+    if ($columnIds === null) {
+        $destinationStmt = $conn->prepare('SELECT grade_column_id FROM tbl_quiz_grade_destinations WHERE quiz_id=? ORDER BY grade_column_id');
+        $destinationStmt->execute([$quiz['quiz_id']]);
+        $columnIds = $destinationStmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+    $columnIds = array_values(array_unique(array_filter(array_map('intval', $columnIds), fn($id) => $id > 0)));
+    if (!$columnIds) return;
+
     $stmt = $conn->prepare('SELECT * FROM tbl_student WHERE user_id=?');
     $stmt->execute([$userId]);
     $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (count($students) !== 1) throw new InvalidArgumentException('The student account needs one linked grading-sheet student record before its score can be saved.');
     $student = $students[0];
     $program = studentProgramForAttendance($conn, $student);
-    $columnStmt = $conn->prepare("SELECT c.* FROM tbl_quiz_grade_destinations d INNER JOIN tbl_grade_columns c ON c.grade_column_id=d.grade_column_id WHERE d.quiz_id=? AND c.is_active=1 AND (c.program_scope IS NULL OR c.program_scope=?) FOR UPDATE");
-    $columnStmt->execute([$quiz['quiz_id'],$program]);
+    $placeholders = implode(',', array_fill(0, count($columnIds), '?'));
+    $columnStmt = $conn->prepare("SELECT c.* FROM tbl_grade_columns c WHERE c.grade_column_id IN ({$placeholders}) AND c.is_active=1 AND (c.program_scope IS NULL OR c.program_scope=?) ORDER BY c.grade_column_id FOR UPDATE");
+    $columnStmt->execute(array_merge($columnIds, [$program]));
     foreach ($columnStmt->fetchAll(PDO::FETCH_ASSOC) as $column) {
         $columnId = (int)$column['grade_column_id'];
         // A locking read sees concurrent committed submissions, even under REPEATABLE READ.

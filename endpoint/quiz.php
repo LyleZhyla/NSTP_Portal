@@ -74,6 +74,38 @@ try {
         $conn->commit();
         quizReply(200, ['revision'=>$revision, 'components'=>$definition['components'], 'levels'=>$definition['levels']]);
     }
+    if ($action === 'grade_destinations') {
+        $conn->beginTransaction();
+        $quiz = quizFind($conn, $id, true);
+        if (!quizCanManage($actor, $quiz)) throw new DomainException('You cannot manage this quiz.');
+        if ((int)($data['revision'] ?? 0) !== (int)$quiz['revision']) throw new DomainException('This quiz changed in another window. Reload before updating score destinations.');
+
+        $definition = json_decode($quiz['definition_json'], true, 512, JSON_THROW_ON_ERROR);
+        $newIds = is_array($data['grade_column_ids'] ?? null)
+            ? array_values(array_unique(array_filter(array_map('intval', $data['grade_column_ids']), fn($columnId) => $columnId > 0)))
+            : [];
+        $oldIds = array_values(array_unique(array_filter(array_map('intval', $definition['grade_column_ids'] ?? []), fn($columnId) => $columnId > 0)));
+        $definition['grade_column_ids'] = $newIds;
+        $definition['grade_column_id'] = count($newIds) === 1 ? $newIds[0] : 0;
+        quizValidateGradeDestination($conn, $actor, $definition);
+
+        $studentStmt = $conn->prepare("SELECT DISTINCT user_id FROM tbl_quiz_responses WHERE quiz_id=? AND state='submitted' AND released=1 AND needs_review=0 ORDER BY user_id");
+        $studentStmt->execute([$id]);
+        $studentIds = array_map('intval', $studentStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $conn->prepare('UPDATE tbl_quizzes SET definition_json=?, revision=revision+1 WHERE quiz_id=?')->execute([quizJson($definition), $id]);
+        quizSaveGradeLink($conn, $id, $definition);
+        $affectedColumnIds = array_values(array_unique(array_merge($oldIds, $newIds)));
+        foreach ($studentIds as $studentId) quizSyncGrade($conn, $quiz, $studentId, $affectedColumnIds);
+
+        $revision = (int)$quiz['revision'] + 1;
+        $conn->commit();
+        quizReply(200, [
+            'revision' => $revision,
+            'grade_column_ids' => $newIds,
+            'message' => 'Score destinations updated. Existing released scores were recalculated.',
+        ]);
+    }
     if (in_array($action, ['status','duplicate'], true)) {
         $conn->beginTransaction(); $quiz = quizFind($conn,$id,true);
         if (!quizCanManage($actor,$quiz)) throw new DomainException('You cannot manage this quiz.');
