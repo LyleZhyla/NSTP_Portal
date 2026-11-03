@@ -20,22 +20,26 @@ $students = [[
 $columns = [
     ['grade_column_id' => 21, 'column_key' => 'quiz_1', 'label' => 'Quiz 1', 'max_score' => 20],
     ['grade_column_id' => 22, 'column_key' => 'project', 'label' => 'Project', 'max_score' => 100],
+    ['grade_column_id' => 23, 'column_key' => 'system_attendance_test', 'label' => 'System Attendance', 'max_score' => 11, '_import_editable' => false],
 ];
 
 $spreadsheet = gradeCreateScoreTemplate(
     $students,
     $columns,
     ['program' => 'CWTS', 'class_label' => 'BSIT 1-A'],
-    [10 => [21 => 17.25]]
+    [10 => [21 => 17.25, 23 => 8]]
 );
 $sheet = $spreadsheet->getActiveSheet();
 assertGradeImport($sheet->getCell('A1')->getValue() === GRADE_SCORE_TEMPLATE_TITLE, 'template title is present');
 assertGradeImport($sheet->getCell('E4')->getValue() === 'grade_column_id:21', 'score column identity is preserved');
 assertGradeImport($sheet->getCell('B6')->getValue() === '2026-001', 'student number stays as text');
 assertGradeImport($sheet->getCell('E6')->getValue() === 17.25, 'existing facilitator score is included in the template');
+assertGradeImport($sheet->getCell('G4')->getValue() === 'auto_grade_column_id:23', 'system attendance is marked as automatic');
+assertGradeImport($sheet->getCell('G6')->getValue() === 8.0, 'automatic system attendance is included in the template');
 assertGradeImport($sheet->getColumnDimension('A')->getVisible() === false, 'internal student ID is hidden');
 assertGradeImport($sheet->getProtection()->getSheet() === true, 'student details and headings are protected');
 assertGradeImport($sheet->getStyle('E6')->getProtection()->getLocked() === \PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED, 'yellow score cells remain editable');
+assertGradeImport($sheet->getStyle('G6')->getProtection()->getLocked() === \PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED, 'automatic system attendance remains protected');
 assertGradeImport($sheet->getCell('E6')->getDataValidation()->getType() === \PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_DECIMAL, 'score cells include numeric validation');
 
 $sheet->setCellValue('E6', 18.5);

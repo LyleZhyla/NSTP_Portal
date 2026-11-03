@@ -171,7 +171,7 @@ function exportComputeGradeSummary(
     }
 
     foreach ($gradeGroups as $groupCode => $group) {
-        $groupPercent = (($rawByGroup[$groupCode] ?? 0) / max((float) $group['max'], 1)) * 100;
+        $groupPercent = gradeGroupPercentage($rawByGroup[$groupCode] ?? 0, max((float) $group['max'], 1), $groupCode, $program);
         $groupWeight = (float) $group['weight'];
         $weightedPoints += ($groupPercent / 100) * $groupWeight;
         $totalWeight += $groupWeight;
@@ -346,7 +346,7 @@ if ($studentIds) {
 }
 
 $gradeGroups = exportBuildGradeGroups($gradeColumns);
-$defaultTotalMeetings = $currentProgram === 'LTS' ? 13 : 11;
+$defaultTotalMeetings = $currentProgram === 'ROTC' ? 15 : ($currentProgram === 'LTS' ? 13 : 11);
 $totalMeetings = max(1, (int) exportGradeSetting($conn, 'total_meetings_' . $settingScope, (string) $defaultTotalMeetings));
 $passingPercentage = (float) exportGradeSetting($conn, 'passing_percentage_' . $settingScope, '75');
 $highestGrade = (float) exportGradeSetting($conn, 'highest_grade_' . $settingScope, '1');

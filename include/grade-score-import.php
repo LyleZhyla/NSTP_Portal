@@ -42,15 +42,18 @@ function gradeCreateScoreTemplate(array $students, array $columns, array $contex
     $sheet->setCellValue('D2', (string) ($context['program'] ?? 'NSTP'));
     $sheet->setCellValue('E2', 'Class Record');
     $sheet->setCellValue('F2', (string) ($context['class_label'] ?? ''));
-    $sheet->setCellValue('A3', 'Existing scores are included. Enter or update scores only in the yellow cells. Leave a score blank to keep its current value. Do not edit student details, hidden IDs, or column headings.');
+    $sheet->setCellValue('A3', 'Existing scores are included. System Attendance is automatic and locked. Enter or update scores only in the yellow cells. Leave a score blank to keep its current value. Do not edit student details, hidden IDs, or column headings.');
     $sheet->mergeCells("A3:{$layoutLastColumn}3");
 
     $sheet->fromArray(['student_id', '', '', ''], null, 'A4');
     $headers = ['Student ID', 'Student Number', 'Student Name', 'Course & Section'];
     foreach ($columns as $offset => $column) {
         $columnIndex = GRADE_SCORE_TEMPLATE_FIRST_SCORE_COLUMN + $offset;
-        $sheet->setCellValue(Coordinate::stringFromColumnIndex($columnIndex) . '4', 'grade_column_id:' . (int) $column['grade_column_id']);
-        $headers[] = (string) $column['label'] . ' (Max ' . rtrim(rtrim(number_format((float) $column['max_score'], 2, '.', ''), '0'), '.') . ')';
+        $isImportEditable = ($column['_import_editable'] ?? true) !== false;
+        $markerPrefix = $isImportEditable ? 'grade_column_id:' : 'auto_grade_column_id:';
+        $sheet->setCellValue(Coordinate::stringFromColumnIndex($columnIndex) . '4', $markerPrefix . (int) $column['grade_column_id']);
+        $automaticLabel = $isImportEditable ? '' : 'Automatic, ';
+        $headers[] = (string) $column['label'] . ' (' . $automaticLabel . 'Max ' . rtrim(rtrim(number_format((float) $column['max_score'], 2, '.', ''), '0'), '.') . ')';
     }
     $sheet->fromArray($headers, null, 'A' . GRADE_SCORE_TEMPLATE_HEADER_ROW);
 
@@ -89,13 +92,23 @@ function gradeCreateScoreTemplate(array $students, array $columns, array $contex
     ]);
     $sheet->getStyle("A6:{$lastScoreColumn}{$lastDataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('D8E2DC');
     if ($columns && $students) {
-        $scoreStart = Coordinate::stringFromColumnIndex(GRADE_SCORE_TEMPLATE_FIRST_SCORE_COLUMN);
-        $sheet->getStyle("{$scoreStart}6:{$lastScoreColumn}{$lastDataRow}")->applyFromArray([
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF3CD']],
-            'protection' => ['locked' => Protection::PROTECTION_UNPROTECTED],
-        ]);
         foreach ($columns as $offset => $column) {
             $columnLetter = Coordinate::stringFromColumnIndex(GRADE_SCORE_TEMPLATE_FIRST_SCORE_COLUMN + $offset);
+            $isImportEditable = ($column['_import_editable'] ?? true) !== false;
+            $sheet->getStyle("{$columnLetter}6:{$columnLetter}{$lastDataRow}")->applyFromArray([
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => $isImportEditable ? 'FFF3CD' : 'E2E8F0'],
+                ],
+                'protection' => [
+                    'locked' => $isImportEditable
+                        ? Protection::PROTECTION_UNPROTECTED
+                        : Protection::PROTECTION_PROTECTED,
+                ],
+            ]);
+            if (!$isImportEditable) {
+                continue;
+            }
             for ($row = GRADE_SCORE_TEMPLATE_FIRST_DATA_ROW; $row <= $lastDataRow; $row++) {
                 $validation = $sheet->getCell("{$columnLetter}{$row}")->getDataValidation();
                 $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_DECIMAL);
@@ -148,6 +161,9 @@ function gradeParseScoreImport(Spreadsheet $spreadsheet, array $studentLookup, a
     for ($columnIndex = GRADE_SCORE_TEMPLATE_FIRST_SCORE_COLUMN; $columnIndex <= $highestColumnIndex; $columnIndex++) {
         $marker = trim((string) $sheet->getCell(Coordinate::stringFromColumnIndex($columnIndex) . '4')->getValue());
         if ($marker === '') {
+            continue;
+        }
+        if (preg_match('/^auto_grade_column_id:\d+$/', $marker)) {
             continue;
         }
         if (!preg_match('/^grade_column_id:(\d+)$/', $marker, $matches)) {

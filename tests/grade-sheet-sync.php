@@ -40,14 +40,16 @@ $conn->exec("INSERT INTO tbl_users VALUES
     (9, 'coordinator', 'LTS'),
     (20, 'facilitator', 'LTS'),
     (21, 'facilitator', 'LTS'),
-    (30, 'coordinator', 'CWTS')");
+    (30, 'coordinator', 'CWTS'),
+    (40, 'coordinator', 'ROTC')");
 $conn->exec("INSERT INTO tbl_grade_columns VALUES
     (1, 'default_hidden', NULL, 'Hidden default', 'default', 'Default', 10, 10, 10, 1, 1, NULL),
     (2, 'first_lts_coordinator', 'LTS', 'First coordinator item', 'activity', 'Activity', 100, 60, 20, 0, 1, 8),
     (3, 'new_lts_coordinator', 'LTS', 'New coordinator item', 'project', 'Project', 100, 40, 30, 0, 1, 9),
     (4, 'selected_facilitator', 'LTS', 'Selected facilitator attendance', 'attendance', 'Attendance', 10, 10, 40, 0, 1, 20),
     (5, 'other_facilitator', 'LTS', 'Other facilitator attendance', 'attendance', 'Attendance', 10, 10, 50, 0, 1, 21),
-    (6, 'cwts_coordinator', 'CWTS', 'CWTS item', 'activity', 'Activity', 100, 100, 60, 0, 1, 30)");
+    (6, 'cwts_coordinator', 'CWTS', 'CWTS item', 'activity', 'Activity', 100, 100, 60, 0, 1, 30),
+    (7, 'rotc_attitude', 'ROTC', 'Attitude', 'rotc_attitude', 'Attitude', 100, 30, 20, 1, 1, NULL)");
 $conn->exec("INSERT INTO tbl_grade_column_visibility VALUES (1, 9, 'LTS', 1)");
 
 $columns = loadComponentGradeColumns($conn, 'LTS', 8, 20, 'LTS');
@@ -59,3 +61,7 @@ assertGradeSheetSync(in_array('selected_facilitator', $keys, true), 'selected fa
 assertGradeSheetSync(!in_array('other_facilitator', $keys, true), 'another facilitator private column stays isolated');
 assertGradeSheetSync(!in_array('cwts_coordinator', $keys, true), 'another component coordinator column stays isolated');
 assertGradeSheetSync(!in_array('default_hidden', $keys, true), 'a column hidden by an LTS coordinator is hidden for all LTS views');
+
+$rotcColumns = loadComponentGradeColumns($conn, 'ROTC', 40, 40, 'ROTC');
+$rotcKeys = array_column($rotcColumns, 'column_key');
+assertGradeSheetSync($rotcKeys === ['rotc_attitude'], 'ROTC sheet uses only its component-specific grading template');

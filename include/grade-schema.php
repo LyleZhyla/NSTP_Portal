@@ -16,6 +16,14 @@ function ltsDefaultGradeColumns() {
     ];
 }
 
+function rotcDefaultGradeColumns() {
+    return [
+        ['rotc_attitude', 'Attitude', 'rotc_attitude', 'Attitude', 100, 30, 20],
+        ['rotc_midterm_exam', 'Midterm Exam', 'rotc_midterm_exam', 'Midterm Exam', 50, 20, 30],
+        ['rotc_final_exam', 'Final Exam', 'rotc_final_exam', 'Final Exam', 50, 20, 40],
+    ];
+}
+
 function ensureGradeTables(PDO $conn) {
     $conn->exec("
         CREATE TABLE IF NOT EXISTS tbl_grade_columns (
@@ -131,20 +139,26 @@ function seedDefaultGradeColumns(PDO $conn) {
           AND column_key NOT LIKE 'system_attendance_%'
           AND is_active = 1
     ");
-    if ((int) $ltsColumnCountStmt->fetchColumn() > 0) {
-        return;
+    if ((int) $ltsColumnCountStmt->fetchColumn() === 0) {
+        $ltsStmt = $conn->prepare("
+            INSERT IGNORE INTO tbl_grade_columns
+                (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active)
+            VALUES (?, 'LTS', ?, ?, ?, ?, ?, ?, 1, 1)
+        ");
+
+        foreach (ltsDefaultGradeColumns() as $column) {
+            $ltsStmt->execute($column);
+        }
     }
 
-    $ltsDefaults = ltsDefaultGradeColumns();
-
-    $ltsStmt = $conn->prepare("
+    $rotcStmt = $conn->prepare("
         INSERT IGNORE INTO tbl_grade_columns
             (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active)
-        VALUES (?, 'LTS', ?, ?, ?, ?, ?, ?, 1, 1)
+        VALUES (?, 'ROTC', ?, ?, ?, ?, ?, ?, 1, 1)
     ");
 
-    foreach ($ltsDefaults as $column) {
-        $ltsStmt->execute($column);
+    foreach (rotcDefaultGradeColumns() as $column) {
+        $rotcStmt->execute($column);
     }
 }
 
@@ -169,7 +183,9 @@ function loadComponentGradeColumns(
           AND (
             (? = 'LTS' AND UPPER(COALESCE(c.program_scope, '')) = 'LTS')
             OR
-            (? <> 'LTS' AND (c.program_scope IS NULL OR UPPER(c.program_scope) = ?))
+            (? = 'ROTC' AND UPPER(COALESCE(c.program_scope, '')) = 'ROTC')
+            OR
+            (? NOT IN ('LTS', 'ROTC') AND (c.program_scope IS NULL OR UPPER(c.program_scope) = ?))
           )
           AND (
             c.is_default = 1
@@ -202,6 +218,7 @@ function loadComponentGradeColumns(
         ORDER BY c.sort_order ASC, c.grade_column_id ASC
     ");
     $stmt->execute([
+        $normalizedProgram,
         $normalizedProgram,
         $normalizedProgram,
         $normalizedProgram,

@@ -333,7 +333,7 @@ function computeStudentGradeSummary(
     $activeWeight = 0;
     foreach ($gradeGroups as $groupCode => $group) {
         $groupMax = max((float) $group['max'], 1);
-        $groupPercent = (($rawByGroup[$groupCode] ?? 0) / $groupMax) * 100;
+        $groupPercent = gradeGroupPercentage($rawByGroup[$groupCode] ?? 0, $groupMax, $groupCode, $program);
         $groupWeight = (float) $group['weight'];
         $groupWeighted = ($groupPercent / 100) * $groupWeight;
         $weightedPoints += $groupWeighted;
@@ -342,7 +342,8 @@ function computeStudentGradeSummary(
         $gradedMaximum = (float) ($gradedMaxByGroup[$groupCode] ?? 0);
         $currentGroupWeighted = null;
         if ($gradedMaximum > 0) {
-            $currentGroupWeighted = (($gradedRawByGroup[$groupCode] ?? 0) / $gradedMaximum) * $groupWeight;
+            $currentGroupPercent = gradeGroupPercentage($gradedRawByGroup[$groupCode] ?? 0, $gradedMaximum, $groupCode, $program);
+            $currentGroupWeighted = ($currentGroupPercent / 100) * $groupWeight;
             $currentWeightedPoints += $currentGroupWeighted;
             $activeWeight += $groupWeight;
         }
@@ -400,7 +401,7 @@ $currentUser = getCurrentUserRecord($conn);
 $currentProgram = $userRole === 'super_admin'
     ? (normalizeProgram($_GET['component'] ?? null) ?: 'CWTS')
     : normalizeProgram($_SESSION['program'] ?? ($currentUser['program'] ?? null));
-$defaultTotalMeetings = $currentProgram === 'LTS' ? 13 : 11;
+$defaultTotalMeetings = $currentProgram === 'ROTC' ? 15 : ($currentProgram === 'LTS' ? 13 : 11);
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 $totalMeetingsKey = 'total_meetings_' . $settingScope;
@@ -551,23 +552,27 @@ if ($systemAttendanceEnabled && !$systemAttendanceColumn) {
         fn($column) => !isManualAttendanceColumn($column)
     )));
     $legacyScoreWeight = array_sum(array_map(fn($group) => (float) $group['weight'], $legacyGroups));
-    $attendanceWeight = $currentProgram === 'LTS' ? 30 : max(0, 100 - $legacyScoreWeight);
+    $attendanceWeight = in_array($currentProgram, ['LTS', 'ROTC'], true) ? 30 : max(0, 100 - $legacyScoreWeight);
     $attendanceGroupLabel = $currentProgram === 'LTS' ? 'Class Standing/Attendance' : 'Attendance';
     $attendanceGroupCode = slugGradeGroup($attendanceGroupLabel);
+    $attendanceColumnLabel = $currentProgram === 'ROTC' ? 'Attendance' : 'System Attendance';
+    $attendanceSortOrder = $currentProgram === 'ROTC' ? 10 : 490;
     $attendanceColumnKey = 'system_attendance_' . substr(sha1($settingScope . ':' . $sheetOwnerId), 0, 24);
     $totalMeetingsForColumn = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
     $stmt = $conn->prepare("
         INSERT IGNORE INTO tbl_grade_columns
             (column_key, program_scope, label, group_code, group_label, max_score, weight_percent, sort_order, is_default, is_active, created_by, updated_by)
-        VALUES (?, ?, 'System Attendance', ?, ?, ?, ?, 490, 0, 1, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
     ");
     $stmt->execute([
         $attendanceColumnKey,
         $currentProgram,
+        $attendanceColumnLabel,
         $attendanceGroupCode,
         $attendanceGroupLabel,
         $totalMeetingsForColumn,
         $attendanceWeight,
+        $attendanceSortOrder,
         $sheetOwnerId,
         $userId,
     ]);
@@ -610,6 +615,35 @@ if ($systemAttendanceEnabled) {
                     $ltsAttendanceGroupCode,
                     $ltsAttendanceGroupLabel,
                     $ltsAttendanceMaximum,
+                    $userId,
+                    (int) $systemAttendanceColumn['grade_column_id'],
+                ]);
+                $gradeColumns = $loadGradeColumns();
+                foreach ($gradeColumns as $column) {
+                    if (isSystemAttendanceColumn($column)) {
+                        $systemAttendanceColumn = $column;
+                        break;
+                    }
+                }
+            }
+        } elseif ($currentProgram === 'ROTC') {
+            $rotcAttendanceGroupLabel = 'Attendance';
+            $rotcAttendanceGroupCode = slugGradeGroup($rotcAttendanceGroupLabel);
+            $rotcAttendanceMaximum = max(1, (int) getGradeSetting($conn, $totalMeetingsKey, (string) $defaultTotalMeetings));
+            if ($systemAttendanceColumn['label'] !== 'Attendance'
+                || $systemAttendanceColumn['group_code'] !== $rotcAttendanceGroupCode
+                || (float) $systemAttendanceColumn['weight_percent'] !== 30.0
+                || (float) $systemAttendanceColumn['max_score'] !== (float) $rotcAttendanceMaximum
+                || (int) $systemAttendanceColumn['sort_order'] !== 10) {
+                $syncRotcAttendance = $conn->prepare("
+                    UPDATE tbl_grade_columns
+                    SET label = 'Attendance', group_code = ?, group_label = ?, max_score = ?, weight_percent = 30, sort_order = 10, updated_by = ?
+                    WHERE grade_column_id = ?
+                ");
+                $syncRotcAttendance->execute([
+                    $rotcAttendanceGroupCode,
+                    $rotcAttendanceGroupLabel,
+                    $rotcAttendanceMaximum,
                     $userId,
                     (int) $systemAttendanceColumn['grade_column_id'],
                 ]);
@@ -2976,6 +3010,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <div class="alert alert-info py-2 mb-0">
                             <strong>LTS formula:</strong> 5 − 4 × (Recorded Weighted ÷ 100).
                             This follows the LTS grade sheet: 100% = 1.00, 75% = 2.00, and 50% = 3.00.
+                        </div>
+                        <?php elseif ($currentProgram === 'ROTC'): ?>
+                        <input type="hidden" name="passing_percentage" value="75">
+                        <input type="hidden" name="highest_grade" value="1">
+                        <input type="hidden" name="passing_grade" value="3">
+                        <input type="hidden" name="failing_grade" value="5">
+                        <div class="alert alert-info py-2 mb-0">
+                            <strong>ROTC template:</strong> Attendance 30%, Attitude 30%, Midterm Exam 20%, and Final Exam 20%.
+                            Exams use the 50–100 base conversion. Equivalent grades follow the ROTC report bands from 1.00 to 3.00; below 75% is 5.00.
                         </div>
                         <?php else: ?>
                         <div class="form-row">
