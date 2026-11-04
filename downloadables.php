@@ -499,6 +499,8 @@ if ($canDownloadRotcProfiles) {
         ];
     }
 }
+$rotcSchoolYearStart = (int) date('n') >= 6 ? (int) date('Y') : (int) date('Y') - 1;
+$defaultRotcSchoolYear = $rotcSchoolYearStart . '-' . ($rotcSchoolYearStart + 1);
 
 $downloadStats = [
     'students' => 0,
@@ -1625,6 +1627,52 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                     </div>
 
                     <?php if ($canDownloadRotcProfiles): ?>
+                    <div class="col-12 mb-3">
+                        <form class="card download-card collapsed-card" method="get" action="endpoint/download-grades-excel.php">
+                            <input type="hidden" name="format" value="rotc_report">
+                            <input type="hidden" name="component" value="ROTC">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-file-excel mr-2"></i>ROTC Report of Grades</h3>
+                                <div class="card-tools">
+                                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="rotcGradeFolder">Folder</label>
+                                    <select class="form-control" id="rotcGradeFolder" name="grade_folder">
+                                        <option value="">All Accessible ROTC Folders</option>
+                                        <?php foreach ($rotcProfileFolders as $folder): ?>
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                            <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' cadets)'); ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 form-group">
+                                        <label for="rotcGradeSemester">Semester</label>
+                                        <select class="form-control" id="rotcGradeSemester" name="semester">
+                                            <option value="1st Semester">1st Semester</option>
+                                            <option value="2nd Semester">2nd Semester</option>
+                                            <option value="Summer">Summer</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 form-group">
+                                        <label for="rotcGradeSchoolYear">School Year</label>
+                                        <input type="text" class="form-control" id="rotcGradeSchoolYear" name="school_year" value="<?php echo htmlspecialchars($defaultRotcSchoolYear); ?>" pattern="\d{4}-\d{4}" placeholder="2026-2027">
+                                    </div>
+                                </div>
+                                <p class="muted-note">Downloads the official ROTC-style workbook with COG and ROG tabs. Grades use the 30% attendance, 30% attitude, 20% midterm, and 20% final computation from the uploaded template.</p>
+                                <button type="submit" class="btn btn-success btn-block">
+                                    <i class="fas fa-download mr-1"></i> Download ROTC Report of Grades
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
                     <div class="col-12 mb-3">
                         <form class="card download-card collapsed-card" method="get" action="endpoint/download-rotc-cadets-profile.php">
                             <div class="card-header">

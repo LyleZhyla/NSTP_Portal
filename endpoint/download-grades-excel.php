@@ -6,6 +6,7 @@ require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
 require_once '../include/grade-schema.php';
 require_once '../include/grade-calculation.php';
+require_once '../include/rotc-grade-report.php';
 require_once '../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -28,6 +29,11 @@ if (!in_array($role, ['super_admin', 'coordinator', 'facilitator'], true)) {
 $userId = (int) $currentUser['user_id'];
 $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null));
 $currentProgram = $role === 'super_admin' ? normalizeProgram($_GET['component'] ?? null) : $program;
+$exportFormat = strtolower(trim((string) ($_GET['format'] ?? 'standard')));
+$isRotcReport = $exportFormat === 'rotc_report';
+if ($isRotcReport && $currentProgram !== 'ROTC') {
+    die('ROTC Report of Grades is only available for ROTC records.');
+}
 $settingScope = $currentProgram ? strtolower($currentProgram) : 'global';
 $columnVisibilityScope = $currentProgram ?: 'global';
 
@@ -98,6 +104,12 @@ function exportEnsureGradeTables(PDO $conn) {
     if (!in_array('updated_at', $columns, true)) {
         $conn->exec("ALTER TABLE tbl_grade_columns ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
     }
+}
+
+function exportTableColumnExists(PDO $conn, $table, $column) {
+    $stmt = $conn->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
+    $stmt->execute([$column]);
+    return (bool) $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
 function exportGradeSetting(PDO $conn, $key, $default) {
@@ -295,10 +307,38 @@ if ($selectedFacilitatorId && $selectedFolder !== '' && !($currentProgram === 'R
     $selectedFolderLabel = $selectedFolder;
 }
 
+$registrationFieldSql = [];
+if ($isRotcReport) {
+    foreach (['gender', 'course', 'rotc_ms_level'] as $registrationField) {
+        $registrationFieldSql[] = exportTableColumnExists($conn, 'tbl_public_student_registrations', $registrationField)
+            ? "r.`{$registrationField}`"
+            : "NULL AS `{$registrationField}`";
+    }
+}
+$registrationSelect = $isRotcReport
+    ? ", registration.gender, registration.course, registration.rotc_ms_level"
+    : '';
+$registrationJoin = $isRotcReport
+    ? "
+    LEFT JOIN (
+        SELECT r.student_number, " . implode(', ', $registrationFieldSql) . "
+        FROM tbl_public_student_registrations r
+        INNER JOIN (
+            SELECT student_number, MAX(registration_id) AS latest_registration_id
+            FROM tbl_public_student_registrations
+            WHERE registrant_role = 'student'
+              AND component = 'ROTC'
+              AND student_number IS NOT NULL
+              AND student_number <> ''
+            GROUP BY student_number
+        ) latest_registration ON latest_registration.latest_registration_id = r.registration_id
+    ) registration ON registration.student_number = s.student_number"
+    : '';
 $studentSql = "
-    SELECT s.*, COALESCE(NULLIF(creator.full_name, ''), creator.username, 'Unassigned') AS facilitator_name
+    SELECT s.*, COALESCE(NULLIF(creator.full_name, ''), creator.username, 'Unassigned') AS facilitator_name{$registrationSelect}
     FROM tbl_student s
     LEFT JOIN tbl_users creator ON s.created_by = creator.user_id
+    {$registrationJoin}
     WHERE " . ($studentWhere ? implode(' AND ', $studentWhere) : '1 = 1') . "
     ORDER BY s.course_section ASC, s.student_name ASC
 ";
@@ -416,6 +456,28 @@ foreach ($students as $student) {
         'result' => $passed ? 'Passed' : 'Failed',
         'attendance_count' => $attendanceCounts[$studentId] ?? 0,
     ];
+}
+
+if ($isRotcReport) {
+    $semester = trim((string) ($_GET['semester'] ?? '1st Semester'));
+    if (!in_array($semester, ['1st Semester', '2nd Semester', 'Summer'], true)) {
+        $semester = '1st Semester';
+    }
+    $schoolYear = trim((string) ($_GET['school_year'] ?? ''));
+    if ($schoolYear !== '' && !preg_match('/^\d{4}-\d{4}$/', $schoolYear)) {
+        $schoolYear = '';
+    }
+    $spreadsheet = createRotcGradeReportSpreadsheet($rows, $gradeColumns, [
+        'semester' => $semester,
+        'school_year' => $schoolYear,
+    ]);
+    $filename = 'rotc_report_of_grades_' . date('Y-m-d_H-i-s') . '.xlsx';
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+    $writer = new Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit;
 }
 
 $spreadsheet = new Spreadsheet();
