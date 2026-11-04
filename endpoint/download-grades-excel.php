@@ -32,6 +32,7 @@ $program = normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? 
 $currentProgram = $role === 'super_admin' ? normalizeProgram($_GET['component'] ?? null) : $program;
 $exportFormat = strtolower(trim((string) ($_GET['format'] ?? 'standard')));
 $isRotcReport = $exportFormat === 'rotc_report';
+$isRotcGradeExport = $currentProgram === 'ROTC';
 if ($isRotcReport && $currentProgram !== 'ROTC') {
     die('ROTC Report of Grades is only available for ROTC records.');
 }
@@ -309,17 +310,17 @@ if ($selectedFacilitatorId && $selectedFolder !== '' && !($currentProgram === 'R
 }
 
 $registrationFieldSql = [];
-if ($isRotcReport) {
+if ($isRotcGradeExport) {
     foreach (['gender', 'course', 'rotc_ms_level', 'last_name', 'first_name', 'middle_name'] as $registrationField) {
         $registrationFieldSql[] = exportTableColumnExists($conn, 'tbl_public_student_registrations', $registrationField)
             ? "r.`{$registrationField}`"
             : "NULL AS `{$registrationField}`";
     }
 }
-$registrationSelect = $isRotcReport
+$registrationSelect = $isRotcGradeExport
     ? ", registration.gender, registration.course, registration.rotc_ms_level, registration.last_name, registration.first_name, registration.middle_name"
     : '';
-$registrationJoin = $isRotcReport
+$registrationJoin = $isRotcGradeExport
     ? "
     LEFT JOIN (
         SELECT r.student_number, " . implode(', ', $registrationFieldSql) . "
@@ -346,7 +347,7 @@ $studentSql = "
 $studentStmt = $conn->prepare($studentSql);
 $studentStmt->execute($studentParams);
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
-if ($isRotcReport) {
+if ($isRotcGradeExport) {
     $genderFilter = strtoupper(trim((string) ($_GET['gender_filter'] ?? '')));
     if (!in_array($genderFilter, ['', 'MALE', 'FEMALE', 'UNSPECIFIED'], true)) {
         $genderFilter = '';
@@ -427,6 +428,17 @@ $baseColumns = [
     'final_grade' => 'Final Grade',
     'result' => 'Result',
 ];
+if ($isRotcGradeExport && !$isRotcReport) {
+    $baseColumns = array_merge(
+        array_slice($baseColumns, 0, 4, true),
+        [
+            'gender' => 'Gender',
+            'course' => 'Course',
+            'ms_level' => 'MS Level',
+        ],
+        array_slice($baseColumns, 4, null, true)
+    );
+}
 $defaultColumns = ['number', 'student_number', 'student_name', 'course_section', 'attendance_count', 'weighted_percent', 'final_grade', 'result'];
 $requestedColumns = $_GET['columns'] ?? $defaultColumns;
 if (!is_array($requestedColumns)) {
@@ -435,6 +447,12 @@ if (!is_array($requestedColumns)) {
 $selectedBaseColumns = array_values(array_intersect($requestedColumns, array_keys($baseColumns)));
 if (empty($selectedBaseColumns)) {
     $selectedBaseColumns = $defaultColumns;
+}
+if ($isRotcGradeExport && !$isRotcReport && ($_GET['include_rotc_criteria'] ?? '') === '1') {
+    $rotcCriteriaColumns = ['gender', 'course', 'ms_level'];
+    $insertAt = array_search('course_section', $selectedBaseColumns, true);
+    $insertAt = $insertAt === false ? min(3, count($selectedBaseColumns)) : $insertAt + 1;
+    array_splice($selectedBaseColumns, $insertAt, 0, array_values(array_diff($rotcCriteriaColumns, $selectedBaseColumns)));
 }
 $includeGradeColumns = isset($_GET['include_scores']) && $_GET['include_scores'] === '1';
 
@@ -547,8 +565,11 @@ foreach ($rows as $index => $row) {
     $values = [
         'number' => $index + 1,
         'student_number' => $student['student_number'] ?? '',
-        'student_name' => $student['student_name'] ?? '',
+        'student_name' => $isRotcGradeExport ? rotcReportStudentName($student) : ($student['student_name'] ?? ''),
         'course_section' => $student['course_section'] ?? '',
+        'gender' => $isRotcGradeExport ? rotcReportGender($student['gender'] ?? '') : '',
+        'course' => $isRotcGradeExport ? academicCourseAbbreviation($student['course'] ?? $student['course_section'] ?? '') : '',
+        'ms_level' => $isRotcGradeExport ? rotcReportMsLevel($student) : '',
         'facilitator' => $student['facilitator_name'] ?? '',
         'attendance_count' => (int) $row['attendance_count'] . ' / ' . $totalMeetings,
         'raw_total' => number_format((float) $summary['raw_total'], 2) . ' / ' . number_format((float) $summary['max_total'], 2),

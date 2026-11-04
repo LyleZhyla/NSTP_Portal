@@ -1582,7 +1582,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     <select class="form-control" id="gradeFolder" name="grade_folder">
                                         <option value="">All Accessible Folders</option>
                                         <?php foreach ($gradeExportFolders as $folder): ?>
-                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>">
+                                        <option value="<?php echo htmlspecialchars($folder['key']); ?>" data-component="<?php echo htmlspecialchars($folder['program'] ?? ''); ?>">
                                             <?php echo htmlspecialchars($folder['label'] . ' (' . $folder['student_count'] . ' students)'); ?>
                                         </option>
                                         <?php endforeach; ?>
@@ -1595,6 +1595,51 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <option value="passed">Passed Only</option>
                                         <option value="failed">Failed Only</option>
                                     </select>
+                                </div>
+                                <?php $showRotcGradeCriteria = $role !== 'super_admin' && $program === 'ROTC'; ?>
+                                <div id="rotcStudentGradeCriteria" class="border rounded p-3 mb-3"<?php echo $showRotcGradeCriteria ? '' : ' style="display:none;"'; ?>>
+                                    <h6 class="font-weight-bold mb-3">ROTC Download Criteria</h6>
+                                    <div class="custom-control custom-switch mb-3">
+                                        <input type="checkbox" class="custom-control-input" id="includeRotcGradeCriteria" name="include_rotc_criteria" value="1" checked<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                        <label class="custom-control-label" for="includeRotcGradeCriteria">Include Gender, Course Abbreviation, and MS Level columns</label>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 form-group">
+                                            <label for="studentGradeGender">Gender</label>
+                                            <select class="form-control rotc-grade-control" id="studentGradeGender" name="gender_filter"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                                <option value="">All Genders</option>
+                                                <option value="MALE">Male</option>
+                                                <option value="FEMALE">Female</option>
+                                                <option value="UNSPECIFIED">Unspecified</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4 form-group">
+                                            <label for="studentGradeCourse">Course</label>
+                                            <select class="form-control rotc-grade-control" id="studentGradeCourse" name="course_filter"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                                <option value="">All Courses</option>
+                                                <?php foreach ($rotcCourseAbbreviations as $courseAbbreviation): ?>
+                                                <option value="<?php echo htmlspecialchars($courseAbbreviation); ?>"><?php echo htmlspecialchars($courseAbbreviation); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4 form-group">
+                                            <label for="studentGradeMsLevel">MS Level</label>
+                                            <select class="form-control rotc-grade-control" id="studentGradeMsLevel" name="ms_level_filter"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                                <option value="">All MS Levels</option>
+                                                <option value="MS-1">MS-1</option>
+                                                <option value="MS-31">MS-31</option>
+                                                <option value="MS-41">MS-41</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group mb-0">
+                                        <label for="studentGradeNameOrder">Name Order</label>
+                                        <select class="form-control rotc-grade-control" id="studentGradeNameOrder" name="name_order"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                            <option value="last_name_asc">Last Name (A-Z)</option>
+                                            <option value="last_name_desc">Last Name (Z-A)</option>
+                                        </select>
+                                    </div>
+                                    <small class="form-text text-muted">The All options include every accessible ROTC student. Names are exported as LAST NAME, FIRST NAME M.</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Data to Include</label>
@@ -1663,35 +1708,6 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     </select>
                                 </div>
                                 <div class="row">
-                                    <div class="col-md-4 form-group">
-                                        <label for="rotcGradeGender">Gender</label>
-                                        <select class="form-control" id="rotcGradeGender" name="gender_filter">
-                                            <option value="">All Genders</option>
-                                            <option value="MALE">Male</option>
-                                            <option value="FEMALE">Female</option>
-                                            <option value="UNSPECIFIED">Unspecified</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-4 form-group">
-                                        <label for="rotcGradeCourse">Course</label>
-                                        <select class="form-control" id="rotcGradeCourse" name="course_filter">
-                                            <option value="">All Courses</option>
-                                            <?php foreach ($rotcCourseAbbreviations as $courseAbbreviation): ?>
-                                            <option value="<?php echo htmlspecialchars($courseAbbreviation); ?>"><?php echo htmlspecialchars($courseAbbreviation); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-4 form-group">
-                                        <label for="rotcGradeMsLevel">MS Level</label>
-                                        <select class="form-control" id="rotcGradeMsLevel" name="ms_level_filter">
-                                            <option value="">All MS Levels</option>
-                                            <option value="MS-1">MS-1</option>
-                                            <option value="MS-31">MS-31</option>
-                                            <option value="MS-41">MS-41</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div class="row">
                                     <div class="col-md-6 form-group">
                                         <label for="rotcGradeSemester">Semester</label>
                                         <select class="form-control" id="rotcGradeSemester" name="semester">
@@ -1705,14 +1721,7 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <input type="text" class="form-control" id="rotcGradeSchoolYear" name="school_year" value="<?php echo htmlspecialchars($defaultRotcSchoolYear); ?>" pattern="\d{4}-\d{4}" placeholder="2026-2027">
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label for="rotcGradeNameOrder">Name Order</label>
-                                    <select class="form-control" id="rotcGradeNameOrder" name="name_order">
-                                        <option value="last_name_asc">Last Name (A-Z)</option>
-                                        <option value="last_name_desc">Last Name (Z-A)</option>
-                                    </select>
-                                </div>
-                                <p class="muted-note">Choose All to include every ROTC cadet, or filter by gender, abbreviated course, and MS level. Names are formatted and sorted by last name.</p>
+                                <p class="muted-note">Downloads the official ROTC-style workbook with COG and ROG tabs.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download ROTC Report of Grades
                                 </button>
@@ -2241,6 +2250,24 @@ if (downloadSaturdayGraphBtn) {
         }, 'image/png');
     });
 }
+
+const gradeComponentSelect = document.getElementById('gradeComponent');
+const rotcStudentGradeCriteria = document.getElementById('rotcStudentGradeCriteria');
+const fixedRotcGradeUser = <?php echo json_encode($role !== 'super_admin' && $program === 'ROTC'); ?>;
+function updateRotcStudentGradeCriteria() {
+    if (!rotcStudentGradeCriteria) {
+        return;
+    }
+    const isRotc = gradeComponentSelect ? gradeComponentSelect.value === 'ROTC' : fixedRotcGradeUser;
+    rotcStudentGradeCriteria.style.display = isRotc ? '' : 'none';
+    rotcStudentGradeCriteria.querySelectorAll('input, select').forEach(control => {
+        control.disabled = !isRotc;
+    });
+}
+if (gradeComponentSelect) {
+    gradeComponentSelect.addEventListener('change', updateRotcStudentGradeCriteria);
+}
+updateRotcStudentGradeCriteria();
 
 function buildQrParams() {
     const adminId = document.getElementById('qrAdminId').value;
