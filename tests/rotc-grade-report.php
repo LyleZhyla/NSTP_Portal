@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../include/user-permissions.php';
+require_once __DIR__ . '/../include/college-courses.php';
 require_once __DIR__ . '/../include/rotc-grade-report.php';
 
 function assertRotcReport($condition, $message) {
@@ -18,7 +19,7 @@ $gradeColumns = [
 $rows = [[
     'student' => [
         'student_name' => 'Dela Cruz, Juan',
-        'course' => 'BSIT',
+        'course' => 'Bachelor of Science in Information Technology',
         'course_section' => 'MS-1 Alpha',
         'rotc_ms_level' => 'MS-1',
         'gender' => 'Male',
@@ -44,6 +45,11 @@ assertRotcReport($cog->getCell('N12')->getValue() === '=IF(L12>=75,"PASSED","FAI
 assertRotcReport($rog->getCell('D12')->getValue() === '=COG!L12', 'ROG total must link to COG.');
 assertRotcReport($rog->getCell('E12')->getValue() === '=COG!M12', 'ROG equivalent must link to COG.');
 assertRotcReport($rog->getCell('F12')->getValue() === '=COG!N12', 'ROG remarks must link to COG.');
+assertRotcReport($cog->getCell('C12')->getValue() === 'BSIT', 'COG course must use its abbreviation.');
+assertRotcReport($rog->getCell('C12')->getValue() === 'BSIT', 'ROG course must use its abbreviation.');
+assertRotcReport((float) $rog->getCell('D12')->getOldCalculatedValue() === 93.5, 'ROG must contain the calculated COG percentage.');
+assertRotcReport((float) $rog->getCell('E12')->getOldCalculatedValue() === 1.25, 'ROG must contain the calculated equivalent.');
+assertRotcReport($rog->getCell('F12')->getOldCalculatedValue() === 'PASSED', 'ROG must contain the calculated remarks.');
 assertRotcReport(count($cog->getDrawingCollection()) === 2, 'COG should contain both official logos.');
 assertRotcReport(count($rog->getDrawingCollection()) === 2, 'ROG should contain both official logos.');
 

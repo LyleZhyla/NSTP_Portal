@@ -25,6 +25,16 @@ function rotcReportEquivalentFormula($percentageCell) {
         . '>=78,2.75,IF(' . $percentageCell . '>=75,3.00,5.00)))))))))';
 }
 
+function rotcReportEquivalentValue($percentage) {
+    $percentage = (float) $percentage;
+    foreach ([96 => 1.00, 93 => 1.25, 90 => 1.50, 88 => 1.75, 85 => 2.00, 83 => 2.25, 80 => 2.50, 78 => 2.75, 75 => 3.00] as $minimum => $equivalent) {
+        if ($percentage >= $minimum) {
+            return $equivalent;
+        }
+    }
+    return 5.00;
+}
+
 function rotcReportAddHeader(Worksheet $sheet, $startRow, $lastColumn, $title, $semesterLabel, $groupLabel, $leftLogoPath, $rightLogoPath) {
     $headerEnd = $startRow + 10;
     $sheet->mergeCells("B{$startRow}:" . chr(ord($lastColumn) - 1) . $startRow);
@@ -172,7 +182,10 @@ function createRotcGradeReportSpreadsheet(array $rows, array $gradeColumns, arra
             $dataRow = $dataStart + $index;
             $summaryRow = $rogDataStart + $index;
             $name = strtoupper(trim((string) ($student['student_name'] ?? '')));
-            $course = strtoupper(trim((string) ($student['course'] ?? $student['course_section'] ?? '')));
+            $rawCourse = trim((string) ($student['course'] ?? $student['course_section'] ?? ''));
+            $course = function_exists('academicCourseAbbreviation')
+                ? academicCourseAbbreviation($rawCourse)
+                : strtoupper($rawCourse);
             $attitudeId = $scoreColumnIds['rotc_attitude'] ?? 0;
             $midtermId = $scoreColumnIds['rotc_midterm_exam'] ?? 0;
             $finalId = $scoreColumnIds['rotc_final_exam'] ?? 0;
@@ -180,14 +193,33 @@ function createRotcGradeReportSpreadsheet(array $rows, array $gradeColumns, arra
             $midterm = $midtermId ? ($scores[$midtermId] ?? '') : '';
             $final = $finalId ? ($scores[$finalId] ?? '') : '';
 
-            $cog->fromArray([$index + 1, $name, $course, (int) ($row['attendance_count'] ?? 0), null, $attitude, null, $midterm, null, $final], null, "A{$dataRow}");
+            $attendance = min(15, max(0, (int) ($row['attendance_count'] ?? 0)));
+            $attitudeValue = $attitude === '' || $attitude === null ? 0 : (float) $attitude;
+            $midtermValue = $midterm === '' || $midterm === null ? 0 : (float) $midterm;
+            $finalValue = $final === '' || $final === null ? 0 : (float) $final;
+            $attendancePoints = ($attendance / 15) * 100 * 0.30;
+            $attitudePoints = ($attitudeValue / 100) * 100 * 0.30;
+            $midtermPoints = (($midtermValue / 50) * 50 + 50) * 0.20;
+            $finalPoints = (($finalValue / 50) * 50 + 50) * 0.20;
+            $totalPercentage = $attendancePoints + $attitudePoints + $midtermPoints + $finalPoints;
+            $equivalentValue = rotcReportEquivalentValue($totalPercentage);
+            $remarksValue = $totalPercentage >= 75 ? 'PASSED' : 'FAILED';
+
+            $cog->fromArray([$index + 1, $name, $course, $attendance, null, $attitude, null, $midterm, null, $final], null, "A{$dataRow}");
             $cog->setCellValue("E{$dataRow}", "=D{$dataRow}/15*(50+50)*30%");
+            $cog->getCell("E{$dataRow}")->setCalculatedValue($attendancePoints);
             $cog->setCellValue("G{$dataRow}", "=F{$dataRow}/100*(50+50)*30%");
+            $cog->getCell("G{$dataRow}")->setCalculatedValue($attitudePoints);
             $cog->setCellValue("I{$dataRow}", "=(H{$dataRow}/50*50+50)*20%");
+            $cog->getCell("I{$dataRow}")->setCalculatedValue($midtermPoints);
             $cog->setCellValue("K{$dataRow}", "=(J{$dataRow}/50*50+50)*20%");
+            $cog->getCell("K{$dataRow}")->setCalculatedValue($finalPoints);
             $cog->setCellValue("L{$dataRow}", "=E{$dataRow}+G{$dataRow}+I{$dataRow}+K{$dataRow}");
+            $cog->getCell("L{$dataRow}")->setCalculatedValue($totalPercentage);
             $cog->setCellValue("M{$dataRow}", rotcReportEquivalentFormula("L{$dataRow}"));
+            $cog->getCell("M{$dataRow}")->setCalculatedValue($equivalentValue);
             $cog->setCellValue("N{$dataRow}", "=IF(L{$dataRow}>=75,\"PASSED\",\"FAILED\")");
+            $cog->getCell("N{$dataRow}")->setCalculatedValue($remarksValue);
             $cog->getStyle("A{$dataRow}:N{$dataRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $cog->getStyle("A{$dataRow}:N{$dataRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
             $cog->getStyle("A{$dataRow}:A{$dataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -197,8 +229,11 @@ function createRotcGradeReportSpreadsheet(array $rows, array $gradeColumns, arra
 
             $rog->fromArray([$index + 1, $name, $course], null, "A{$summaryRow}");
             $rog->setCellValue("D{$summaryRow}", "=COG!L{$dataRow}");
+            $rog->getCell("D{$summaryRow}")->setCalculatedValue($totalPercentage);
             $rog->setCellValue("E{$summaryRow}", "=COG!M{$dataRow}");
+            $rog->getCell("E{$summaryRow}")->setCalculatedValue($equivalentValue);
             $rog->setCellValue("F{$summaryRow}", "=COG!N{$dataRow}");
+            $rog->getCell("F{$summaryRow}")->setCalculatedValue($remarksValue);
             $rog->getStyle("A{$summaryRow}:F{$summaryRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $rog->getStyle("A{$summaryRow}:F{$summaryRow}")->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
             $rog->getStyle("A{$summaryRow}:A{$summaryRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);

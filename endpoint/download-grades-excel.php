@@ -4,6 +4,7 @@ date_default_timezone_set('Asia/Manila');
 
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
+require_once '../include/college-courses.php';
 require_once '../include/grade-schema.php';
 require_once '../include/grade-calculation.php';
 require_once '../include/rotc-grade-report.php';

@@ -171,6 +171,35 @@ function academicCourseAliases() {
     ];
 }
 
+function academicCourseAbbreviation($course) {
+    $courseMatch = canonicalAcademicCourse($course);
+    $canonicalCourse = $courseMatch['course'] ?? trim((string) $course);
+    $abbreviations = [
+        'Bachelor of Animal Science' => 'BAS',
+        'Bachelor of Science in Food Technology' => 'BSFT',
+        'Bachelor of Science in Agriculture' => 'BSA',
+        'Bachelor of Science in Forestry' => 'BSF',
+        'Bachelor of Arts in Economics' => 'BAE',
+        'Bachelor of Science in Psychology' => 'BSPsych',
+        'Bachelor of Science in Development Communication' => 'BSDC',
+        'Bachelor of Science in Business Administration' => 'BSBA',
+        'Bachelor of Science in Entrepreneurship' => 'BSEntrep',
+        'Bachelor of Science in Agribusiness' => 'BSAB',
+        'Bachelor of Science in Tourism Management' => 'BSTM',
+        'Bachelor of Elementary Education (BEEd)' => 'BEEd',
+        'Bachelor of Elementary Childhood Education (BECEd)' => 'BECEd',
+        'Bachelor of Secondary Education (BSEd)' => 'BSEd',
+        'Bachelor of Technology and Livelihood Education (BTLEd)' => 'BTLEd',
+        'Bachelor of Science in Exercise and Sports Science' => 'BSESS',
+        'Bachelor of Science in Agricultural & Biosystems Engineering' => 'BSABE',
+        'Bachelor of Science in Geodetic Engineering' => 'BSGE',
+        'Bachelor of Science in Information Technology' => 'BSIT',
+        'Doctor of Veterinary Medicine' => 'DVM',
+    ];
+
+    return $abbreviations[$canonicalCourse] ?? strtoupper(trim((string) $course));
+}
+
 function academicMajorAliases() {
     return [
         'fm' => 'Financial Management',
