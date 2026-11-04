@@ -63,4 +63,33 @@ try {
 assertGradeImport($rejected, 'scores above the current maximum are rejected');
 
 $spreadsheet->disconnectWorksheets();
+
+$editableAttendanceColumns = $columns;
+$editableAttendanceColumns[2]['_import_editable'] = true;
+$editableAttendanceSpreadsheet = gradeCreateScoreTemplate(
+    $students,
+    $editableAttendanceColumns,
+    ['program' => 'CWTS', 'class_label' => 'BSIT 1-A'],
+    [10 => [21 => 17.25, 23 => 8]]
+);
+$editableAttendanceSheet = $editableAttendanceSpreadsheet->getActiveSheet();
+assertGradeImport($editableAttendanceSheet->getCell('G4')->getValue() === 'grade_column_id:23', 'open system attendance is marked as importable');
+assertGradeImport($editableAttendanceSheet->getStyle('G6')->getProtection()->getLocked() === \PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED, 'open system attendance cells are editable');
+assertGradeImport($editableAttendanceSheet->getCell('G6')->getDataValidation()->getType() === \PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_DECIMAL, 'open system attendance cells include numeric validation');
+assertGradeImport(strpos((string) $editableAttendanceSheet->getCell('A3')->getValue(), 'Attendance editing is open') !== false, 'template explains that attendance overrides are enabled');
+
+$editableAttendanceSheet->setCellValue('G6', 9.5);
+$editableColumnLookup = [
+    21 => $editableAttendanceColumns[0],
+    22 => $editableAttendanceColumns[1],
+    23 => $editableAttendanceColumns[2],
+];
+$editableUpdates = gradeParseScoreImport($editableAttendanceSpreadsheet, $studentLookup, $editableColumnLookup);
+$attendanceUpdates = array_values(array_filter(
+    $editableUpdates,
+    fn(array $update): bool => $update['column_id'] === 23
+));
+assertGradeImport(count($attendanceUpdates) === 1 && $attendanceUpdates[0]['score'] === 9.5, 'open system attendance overrides are parsed for import');
+$editableAttendanceSpreadsheet->disconnectWorksheets();
+
 echo "Grade score import tests completed.\n";

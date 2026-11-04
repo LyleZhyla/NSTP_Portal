@@ -29,6 +29,14 @@ function gradeCreateScoreTemplate(array $students, array $columns, array $contex
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setTitle('Score Import');
 
+    $hasEditableSystemAttendance = false;
+    foreach ($columns as $column) {
+        if (gradeImportIsSystemAttendanceColumn($column) && ($column['_import_editable'] ?? true) !== false) {
+            $hasEditableSystemAttendance = true;
+            break;
+        }
+    }
+
     $lastScoreColumnIndex = max(4, GRADE_SCORE_TEMPLATE_FIRST_SCORE_COLUMN + count($columns) - 1);
     $lastScoreColumn = Coordinate::stringFromColumnIndex($lastScoreColumnIndex);
     $layoutLastColumn = Coordinate::stringFromColumnIndex(max(6, $lastScoreColumnIndex));
@@ -42,7 +50,10 @@ function gradeCreateScoreTemplate(array $students, array $columns, array $contex
     $sheet->setCellValue('D2', (string) ($context['program'] ?? 'NSTP'));
     $sheet->setCellValue('E2', 'Class Record');
     $sheet->setCellValue('F2', (string) ($context['class_label'] ?? ''));
-    $sheet->setCellValue('A3', 'Existing scores are included. System Attendance is automatic and locked. Enter or update scores only in the yellow cells. Leave a score blank to keep its current value. Do not edit student details, hidden IDs, or column headings.');
+    $attendanceInstruction = $hasEditableSystemAttendance
+        ? 'Attendance editing is open, so System Attendance can be overridden in its yellow cells.'
+        : 'System Attendance is automatic and locked.';
+    $sheet->setCellValue('A3', 'Existing scores are included. ' . $attendanceInstruction . ' Enter or update scores only in the yellow cells. Leave a score blank to keep its current value. Do not edit student details, hidden IDs, or column headings.');
     $sheet->mergeCells("A3:{$layoutLastColumn}3");
 
     $sheet->fromArray(['student_id', '', '', ''], null, 'A4');

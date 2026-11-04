@@ -789,7 +789,8 @@ if ($isGradeDownloadRequest) {
         fn($column) => !isSystemAttendanceColumn($column) || $systemAttendanceEnabled
     ));
     foreach ($templateColumns as &$templateColumn) {
-        $templateColumn['_import_editable'] = !isSystemAttendanceColumn($templateColumn);
+        $templateColumn['_import_editable'] = !isSystemAttendanceColumn($templateColumn)
+            || $canEditSystemAttendanceScore;
     }
     unset($templateColumn);
     if (!$templateColumns) {
