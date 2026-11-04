@@ -19,6 +19,9 @@ $gradeColumns = [
 $rows = [[
     'student' => [
         'student_name' => 'Dela Cruz, Juan',
+        'last_name' => 'Dela Cruz',
+        'first_name' => 'Juan',
+        'middle_name' => 'Santos',
         'course' => 'Bachelor of Science in Information Technology',
         'course_section' => 'MS-1 Alpha',
         'rotc_ms_level' => 'MS-1',
@@ -50,8 +53,19 @@ assertRotcReport($rog->getCell('C12')->getValue() === 'BSIT', 'ROG course must u
 assertRotcReport((float) $rog->getCell('D12')->getOldCalculatedValue() === 93.5, 'ROG must contain the calculated COG percentage.');
 assertRotcReport((float) $rog->getCell('E12')->getOldCalculatedValue() === 1.25, 'ROG must contain the calculated equivalent.');
 assertRotcReport($rog->getCell('F12')->getOldCalculatedValue() === 'PASSED', 'ROG must contain the calculated remarks.');
+assertRotcReport($cog->getCell('B12')->getValue() === 'DELA CRUZ, JUAN S.', 'Student name must use last-name-first format.');
 assertRotcReport(count($cog->getDrawingCollection()) === 2, 'COG should contain both official logos.');
 assertRotcReport(count($rog->getDrawingCollection()) === 2, 'ROG should contain both official logos.');
+
+$filterStudents = [
+    ['last_name' => 'Zulu', 'first_name' => 'Ana', 'gender' => 'Female', 'course' => 'Bachelor of Science in Agriculture', 'rotc_ms_level' => 'MS-31'],
+    ['last_name' => 'Abad', 'first_name' => 'Ben', 'gender' => 'Male', 'course' => 'Bachelor of Science in Information Technology', 'rotc_ms_level' => 'MS-1'],
+    ['last_name' => 'Cruz', 'first_name' => 'Cara', 'gender' => 'Female', 'course' => 'Bachelor of Science in Information Technology', 'rotc_ms_level' => 'MS-1'],
+];
+$filteredStudents = rotcReportFilterAndSortStudents($filterStudents, 'FEMALE', 'BSIT', 'MS-1', 'last_name_asc');
+assertRotcReport(count($filteredStudents) === 1 && $filteredStudents[0]['last_name'] === 'Cruz', 'ROTC gender, course, and MS-level filters must work together.');
+$sortedStudents = rotcReportFilterAndSortStudents($filterStudents, '', '', '', 'last_name_asc');
+assertRotcReport(array_column($sortedStudents, 'last_name') === ['Abad', 'Cruz', 'Zulu'], 'ROTC students must sort by last name A-Z.');
 
 $temporaryFile = tempnam(sys_get_temp_dir(), 'rotc-report-') . '.xlsx';
 $writer = new PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);

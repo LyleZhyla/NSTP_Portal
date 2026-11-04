@@ -12,6 +12,7 @@ date_default_timezone_set('Asia/Manila');
 include('./conn/conn.php');
 require_once './include/user-permissions.php';
 require_once './include/student-component-counts.php';
+require_once './include/college-courses.php';
 
 $currentUser = getCurrentUserRecord($conn);
 if (!$currentUser || !in_array($currentUser['role'] ?? '', ['super_admin', 'coordinator', 'facilitator'], true)) {
@@ -501,6 +502,16 @@ if ($canDownloadRotcProfiles) {
 }
 $rotcSchoolYearStart = (int) date('n') >= 6 ? (int) date('Y') : (int) date('Y') - 1;
 $defaultRotcSchoolYear = $rotcSchoolYearStart . '-' . ($rotcSchoolYearStart + 1);
+$rotcCourseAbbreviations = [];
+foreach (getCollegeCourseData() as $collegeItem) {
+    foreach ($collegeItem['courses'] as $courseItem) {
+        $courseAbbreviation = academicCourseAbbreviation($courseItem['name'] ?? '');
+        if ($courseAbbreviation !== '') {
+            $rotcCourseAbbreviations[$courseAbbreviation] = $courseAbbreviation;
+        }
+    }
+}
+ksort($rotcCourseAbbreviations, SORT_NATURAL | SORT_FLAG_CASE);
 
 $downloadStats = [
     'students' => 0,
@@ -1652,6 +1663,35 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     </select>
                                 </div>
                                 <div class="row">
+                                    <div class="col-md-4 form-group">
+                                        <label for="rotcGradeGender">Gender</label>
+                                        <select class="form-control" id="rotcGradeGender" name="gender_filter">
+                                            <option value="">All Genders</option>
+                                            <option value="MALE">Male</option>
+                                            <option value="FEMALE">Female</option>
+                                            <option value="UNSPECIFIED">Unspecified</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 form-group">
+                                        <label for="rotcGradeCourse">Course</label>
+                                        <select class="form-control" id="rotcGradeCourse" name="course_filter">
+                                            <option value="">All Courses</option>
+                                            <?php foreach ($rotcCourseAbbreviations as $courseAbbreviation): ?>
+                                            <option value="<?php echo htmlspecialchars($courseAbbreviation); ?>"><?php echo htmlspecialchars($courseAbbreviation); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 form-group">
+                                        <label for="rotcGradeMsLevel">MS Level</label>
+                                        <select class="form-control" id="rotcGradeMsLevel" name="ms_level_filter">
+                                            <option value="">All MS Levels</option>
+                                            <option value="MS-1">MS-1</option>
+                                            <option value="MS-31">MS-31</option>
+                                            <option value="MS-41">MS-41</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row">
                                     <div class="col-md-6 form-group">
                                         <label for="rotcGradeSemester">Semester</label>
                                         <select class="form-control" id="rotcGradeSemester" name="semester">
@@ -1665,7 +1705,14 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <input type="text" class="form-control" id="rotcGradeSchoolYear" name="school_year" value="<?php echo htmlspecialchars($defaultRotcSchoolYear); ?>" pattern="\d{4}-\d{4}" placeholder="2026-2027">
                                     </div>
                                 </div>
-                                <p class="muted-note">Downloads the official ROTC-style workbook with COG and ROG tabs. Grades use the 30% attendance, 30% attitude, 20% midterm, and 20% final computation from the uploaded template.</p>
+                                <div class="form-group">
+                                    <label for="rotcGradeNameOrder">Name Order</label>
+                                    <select class="form-control" id="rotcGradeNameOrder" name="name_order">
+                                        <option value="last_name_asc">Last Name (A-Z)</option>
+                                        <option value="last_name_desc">Last Name (Z-A)</option>
+                                    </select>
+                                </div>
+                                <p class="muted-note">Choose All to include every ROTC cadet, or filter by gender, abbreviated course, and MS level. Names are formatted and sorted by last name.</p>
                                 <button type="submit" class="btn btn-success btn-block">
                                     <i class="fas fa-download mr-1"></i> Download ROTC Report of Grades
                                 </button>

@@ -310,14 +310,14 @@ if ($selectedFacilitatorId && $selectedFolder !== '' && !($currentProgram === 'R
 
 $registrationFieldSql = [];
 if ($isRotcReport) {
-    foreach (['gender', 'course', 'rotc_ms_level'] as $registrationField) {
+    foreach (['gender', 'course', 'rotc_ms_level', 'last_name', 'first_name', 'middle_name'] as $registrationField) {
         $registrationFieldSql[] = exportTableColumnExists($conn, 'tbl_public_student_registrations', $registrationField)
             ? "r.`{$registrationField}`"
             : "NULL AS `{$registrationField}`";
     }
 }
 $registrationSelect = $isRotcReport
-    ? ", registration.gender, registration.course, registration.rotc_ms_level"
+    ? ", registration.gender, registration.course, registration.rotc_ms_level, registration.last_name, registration.first_name, registration.middle_name"
     : '';
 $registrationJoin = $isRotcReport
     ? "
@@ -346,6 +346,20 @@ $studentSql = "
 $studentStmt = $conn->prepare($studentSql);
 $studentStmt->execute($studentParams);
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
+if ($isRotcReport) {
+    $genderFilter = strtoupper(trim((string) ($_GET['gender_filter'] ?? '')));
+    if (!in_array($genderFilter, ['', 'MALE', 'FEMALE', 'UNSPECIFIED'], true)) {
+        $genderFilter = '';
+    }
+    $courseFilter = strtoupper(trim((string) ($_GET['course_filter'] ?? '')));
+    $msLevelFilter = normalizeRotcMsLevel($_GET['ms_level_filter'] ?? null) ?: '';
+    $nameOrder = strtolower(trim((string) ($_GET['name_order'] ?? 'last_name_asc')));
+    if (!in_array($nameOrder, ['last_name_asc', 'last_name_desc'], true)) {
+        $nameOrder = 'last_name_asc';
+    }
+
+    $students = rotcReportFilterAndSortStudents($students, $genderFilter, $courseFilter, $msLevelFilter, $nameOrder);
+}
 $studentIds = array_map('intval', array_column($students, 'tbl_student_id'));
 
 $scoresByStudent = [];

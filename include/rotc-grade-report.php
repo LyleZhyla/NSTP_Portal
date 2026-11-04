@@ -35,6 +35,70 @@ function rotcReportEquivalentValue($percentage) {
     return 5.00;
 }
 
+function rotcReportLastName(array $student) {
+    $lastName = trim((string) ($student['last_name'] ?? ''));
+    if ($lastName !== '') {
+        return $lastName;
+    }
+    $studentName = trim((string) ($student['student_name'] ?? ''));
+    if (strpos($studentName, ',') !== false) {
+        return trim(explode(',', $studentName, 2)[0]);
+    }
+    $nameParts = preg_split('/\s+/', $studentName, -1, PREG_SPLIT_NO_EMPTY);
+    return $nameParts ? (string) end($nameParts) : '';
+}
+
+function rotcReportStudentName(array $student) {
+    $lastName = trim((string) ($student['last_name'] ?? ''));
+    $firstName = trim((string) ($student['first_name'] ?? ''));
+    $middleName = trim((string) ($student['middle_name'] ?? ''));
+    if ($lastName !== '' || $firstName !== '') {
+        $middleInitial = $middleName !== '' ? ' ' . strtoupper(substr($middleName, 0, 1)) . '.' : '';
+        return strtoupper(trim($lastName . ($firstName !== '' ? ', ' . $firstName . $middleInitial : '')));
+    }
+    return strtoupper(trim((string) ($student['student_name'] ?? '')));
+}
+
+function rotcReportMsLevel(array $student) {
+    $msLevel = function_exists('normalizeRotcMsLevel')
+        ? normalizeRotcMsLevel($student['rotc_ms_level'] ?? null)
+        : null;
+    if (!$msLevel && function_exists('normalizeRotcMsLevel')) {
+        $msLevel = normalizeRotcMsLevel($student['course_section'] ?? null);
+    }
+    return $msLevel ?: 'MS-1';
+}
+
+function rotcReportFilterAndSortStudents(array $students, $genderFilter = '', $courseFilter = '', $msLevelFilter = '', $nameOrder = 'last_name_asc') {
+    $genderFilter = strtoupper(trim((string) $genderFilter));
+    $courseFilter = strtoupper(trim((string) $courseFilter));
+    $msLevelFilter = function_exists('normalizeRotcMsLevel') ? (normalizeRotcMsLevel($msLevelFilter) ?: '') : '';
+    $nameOrder = $nameOrder === 'last_name_desc' ? 'last_name_desc' : 'last_name_asc';
+
+    $students = array_values(array_filter($students, static function ($student) use ($genderFilter, $courseFilter, $msLevelFilter) {
+        if ($genderFilter !== '' && rotcReportGender($student['gender'] ?? '') !== $genderFilter) {
+            return false;
+        }
+        $rawCourse = $student['course'] ?? $student['course_section'] ?? '';
+        $courseAbbreviation = function_exists('academicCourseAbbreviation')
+            ? academicCourseAbbreviation($rawCourse)
+            : strtoupper(trim((string) $rawCourse));
+        if ($courseFilter !== '' && strtoupper($courseAbbreviation) !== $courseFilter) {
+            return false;
+        }
+        return $msLevelFilter === '' || rotcReportMsLevel($student) === $msLevelFilter;
+    }));
+
+    usort($students, static function ($left, $right) use ($nameOrder) {
+        $comparison = strnatcasecmp(rotcReportLastName($left), rotcReportLastName($right));
+        if ($comparison === 0) {
+            $comparison = strnatcasecmp((string) ($left['first_name'] ?? $left['student_name'] ?? ''), (string) ($right['first_name'] ?? $right['student_name'] ?? ''));
+        }
+        return $nameOrder === 'last_name_desc' ? -$comparison : $comparison;
+    });
+    return $students;
+}
+
 function rotcReportAddHeader(Worksheet $sheet, $startRow, $lastColumn, $title, $semesterLabel, $groupLabel, $leftLogoPath, $rightLogoPath) {
     $headerEnd = $startRow + 10;
     $sheet->mergeCells("B{$startRow}:" . chr(ord($lastColumn) - 1) . $startRow);
@@ -106,11 +170,7 @@ function createRotcGradeReportSpreadsheet(array $rows, array $gradeColumns, arra
     }
     foreach ($rows as $row) {
         $student = $row['student'] ?? [];
-        $msLevel = function_exists('normalizeRotcMsLevel') ? normalizeRotcMsLevel($student['rotc_ms_level'] ?? null) : null;
-        if (!$msLevel && function_exists('normalizeRotcMsLevel')) {
-            $msLevel = normalizeRotcMsLevel($student['course_section'] ?? null);
-        }
-        $msLevel = $msLevel ?: 'MS-1';
+        $msLevel = rotcReportMsLevel($student);
         $groupLabel = $msLevel . ' ' . rotcReportGender($student['gender'] ?? '');
         if (!isset($groups[$groupLabel])) {
             $groups[$groupLabel] = [];
@@ -181,7 +241,7 @@ function createRotcGradeReportSpreadsheet(array $rows, array $gradeColumns, arra
             $scores = $row['scores'] ?? [];
             $dataRow = $dataStart + $index;
             $summaryRow = $rogDataStart + $index;
-            $name = strtoupper(trim((string) ($student['student_name'] ?? '')));
+            $name = rotcReportStudentName($student);
             $rawCourse = trim((string) ($student['course'] ?? $student['course_section'] ?? ''));
             $course = function_exists('academicCourseAbbreviation')
                 ? academicCourseAbbreviation($rawCourse)
