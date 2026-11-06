@@ -1,7 +1,7 @@
 <?php
 
-function usesLtsGradeTransmutation($program) {
-    return strtoupper(trim((string) $program)) === 'LTS';
+function usesLinearGradeTransmutation($program) {
+    return in_array(strtoupper(trim((string) $program)), ['CWTS', 'LTS'], true);
 }
 
 function usesRotcGradeTemplate($program) {
@@ -51,7 +51,7 @@ function transmuteGradeForProgram(
         return 5.00;
     }
 
-    if (usesLtsGradeTransmutation($program)) {
+    if (usesLinearGradeTransmutation($program)) {
         return round(5 - (4 * ($percentage / 100)), 2);
     }
 

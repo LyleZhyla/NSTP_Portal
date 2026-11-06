@@ -13,9 +13,12 @@ assertGradeCalculation(transmuteGradeForProgram(100, 'LTS') === 1.0, 'LTS 100% b
 assertGradeCalculation(transmuteGradeForProgram(75, 'LTS') === 2.0, 'LTS 75% becomes 2.00');
 assertGradeCalculation(transmuteGradeForProgram(50, 'LTS') === 3.0, 'LTS 50% becomes 3.00');
 assertGradeCalculation(transmuteGradeForProgram(0, 'LTS') === 5.0, 'LTS 0% becomes 5.00');
-assertGradeCalculation(transmuteGradeForProgram(75, 'CWTS') === 3.0, 'CWTS keeps the configured passing grade');
+assertGradeCalculation(transmuteGradeForProgram(100, 'CWTS') === 1.0, 'CWTS 100% becomes 1.00');
+assertGradeCalculation(transmuteGradeForProgram(75, 'CWTS') === 2.0, 'CWTS 75% becomes 2.00');
+assertGradeCalculation(transmuteGradeForProgram(50, 'CWTS') === 3.0, 'CWTS 50% becomes 3.00');
+assertGradeCalculation(transmuteGradeForProgram(0, 'CWTS') === 5.0, 'CWTS 0% becomes 5.00');
 assertGradeCalculation(transmuteGradeForProgram(75, 'ROTC') === 3.0, 'ROTC keeps the configured passing grade');
-assertGradeCalculation(transmuteGradeForProgram(85, 'CWTS') === 2.2, 'CWTS keeps piecewise transmutation');
+assertGradeCalculation(transmuteGradeForProgram(85, 'CWTS') === 1.6, 'CWTS uses linear transmutation');
 assertGradeCalculation(transmuteGradeForProgram(96, 'ROTC') === 1.0, 'ROTC 96% becomes 1.00');
 assertGradeCalculation(transmuteGradeForProgram(93, 'ROTC') === 1.25, 'ROTC 93% becomes 1.25');
 assertGradeCalculation(transmuteGradeForProgram(85, 'ROTC') === 2.0, 'ROTC 85% becomes 2.00');
