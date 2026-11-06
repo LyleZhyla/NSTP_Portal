@@ -1,11 +1,20 @@
 <?php
 
+function normalizeGradeProgram($program) {
+    $program = strtoupper(trim((string) $program));
+    if (preg_match('/(^|[^A-Z0-9])(CWTS|LTS|ROTC)([^A-Z0-9]|$)/', $program, $matches)) {
+        return $matches[2];
+    }
+
+    return null;
+}
+
 function usesLinearGradeTransmutation($program) {
-    return in_array(strtoupper(trim((string) $program)), ['CWTS', 'LTS'], true);
+    return in_array(normalizeGradeProgram($program), ['CWTS', 'LTS'], true);
 }
 
 function usesRotcGradeTemplate($program) {
-    return strtoupper(trim((string) $program)) === 'ROTC';
+    return normalizeGradeProgram($program) === 'ROTC';
 }
 
 function gradeGroupPercentage($earned, $maximum, $groupCode, $program = null) {
@@ -52,7 +61,8 @@ function transmuteGradeForProgram(
     }
 
     if (usesLinearGradeTransmutation($program)) {
-        return round(5 - (4 * ($percentage / 100)), 2);
+        // Excel equivalent: =5-(4/100*percentage)
+        return round(5 - ((4 / 100) * $percentage), 2);
     }
 
     $passingPercentage = max(0.01, min(99.99, (float) $passingPercentage));

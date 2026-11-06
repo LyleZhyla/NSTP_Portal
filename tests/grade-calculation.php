@@ -17,6 +17,8 @@ assertGradeCalculation(transmuteGradeForProgram(100, 'CWTS') === 1.0, 'CWTS 100%
 assertGradeCalculation(transmuteGradeForProgram(75, 'CWTS') === 2.0, 'CWTS 75% becomes 2.00');
 assertGradeCalculation(transmuteGradeForProgram(50, 'CWTS') === 3.0, 'CWTS 50% becomes 3.00');
 assertGradeCalculation(transmuteGradeForProgram(0, 'CWTS') === 5.0, 'CWTS 0% becomes 5.00');
+assertGradeCalculation(transmuteGradeForProgram(84.77, 'CWTS') === 1.61, 'CWTS 84.77% becomes 1.61');
+assertGradeCalculation(transmuteGradeForProgram(84.77, 'CWTS L') === 1.61, 'CWTS section names use the CWTS formula');
 assertGradeCalculation(transmuteGradeForProgram(75, 'ROTC') === 3.0, 'ROTC keeps the configured passing grade');
 assertGradeCalculation(transmuteGradeForProgram(85, 'CWTS') === 1.6, 'CWTS uses linear transmutation');
 assertGradeCalculation(transmuteGradeForProgram(96, 'ROTC') === 1.0, 'ROTC 96% becomes 1.00');
