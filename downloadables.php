@@ -502,16 +502,16 @@ if ($canDownloadRotcProfiles) {
 }
 $rotcSchoolYearStart = (int) date('n') >= 6 ? (int) date('Y') : (int) date('Y') - 1;
 $defaultRotcSchoolYear = $rotcSchoolYearStart . '-' . ($rotcSchoolYearStart + 1);
-$rotcCourseAbbreviations = [];
+$gradeCourseAbbreviations = [];
 foreach (getCollegeCourseData() as $collegeItem) {
     foreach ($collegeItem['courses'] as $courseItem) {
         $courseAbbreviation = academicCourseAbbreviation($courseItem['name'] ?? '');
         if ($courseAbbreviation !== '') {
-            $rotcCourseAbbreviations[$courseAbbreviation] = $courseAbbreviation;
+            $gradeCourseAbbreviations[$courseAbbreviation] = $courseAbbreviation;
         }
     }
 }
-ksort($rotcCourseAbbreviations, SORT_NATURAL | SORT_FLAG_CASE);
+ksort($gradeCourseAbbreviations, SORT_NATURAL | SORT_FLAG_CASE);
 
 $downloadStats = [
     'students' => 0,
@@ -1596,35 +1596,35 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                         <option value="failed">Failed Only</option>
                                     </select>
                                 </div>
-                                <?php $showRotcGradeCriteria = $role !== 'super_admin' && $program === 'ROTC'; ?>
-                                <div id="rotcStudentGradeCriteria" class="border rounded p-3 mb-3"<?php echo $showRotcGradeCriteria ? '' : ' style="display:none;"'; ?>>
-                                    <h6 class="font-weight-bold mb-3">ROTC Download Criteria</h6>
+                                <?php $showStudentGradeCriteria = $role !== 'super_admin' && in_array($program, ['CWTS', 'LTS', 'ROTC'], true); ?>
+                                <div id="studentGradeCriteria" class="border rounded p-3 mb-3" data-fixed-component="<?php echo htmlspecialchars($showStudentGradeCriteria ? $program : ''); ?>"<?php echo $showStudentGradeCriteria ? '' : ' style="display:none;"'; ?>>
+                                    <h6 class="font-weight-bold mb-3"><span id="studentGradeCriteriaComponent"><?php echo htmlspecialchars($program ?: 'Component'); ?></span> Download Criteria</h6>
                                     <div class="custom-control custom-switch mb-3">
-                                        <input type="checkbox" class="custom-control-input" id="includeRotcGradeCriteria" name="include_rotc_criteria" value="1" checked<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
-                                        <label class="custom-control-label" for="includeRotcGradeCriteria">Include Gender, Course Abbreviation, and MS Level columns</label>
+                                        <input type="checkbox" class="custom-control-input" id="includeStudentGradeCriteria" name="include_student_criteria" value="1" checked<?php echo $showStudentGradeCriteria ? '' : ' disabled'; ?>>
+                                        <label class="custom-control-label" for="includeStudentGradeCriteria">Include <span id="studentGradeCriteriaColumns">Gender and Course Abbreviation</span> columns</label>
                                     </div>
                                     <div class="row">
-                                        <div class="col-md-4 form-group">
+                                        <div class="col-md-6 form-group student-grade-filter-column">
                                             <label for="studentGradeGender">Gender</label>
-                                            <select class="form-control rotc-grade-control" id="studentGradeGender" name="gender_filter"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                            <select class="form-control student-grade-control" id="studentGradeGender" name="gender_filter"<?php echo $showStudentGradeCriteria ? '' : ' disabled'; ?>>
                                                 <option value="">All Genders</option>
                                                 <option value="MALE">Male</option>
                                                 <option value="FEMALE">Female</option>
                                                 <option value="UNSPECIFIED">Unspecified</option>
                                             </select>
                                         </div>
-                                        <div class="col-md-4 form-group">
+                                        <div class="col-md-6 form-group student-grade-filter-column">
                                             <label for="studentGradeCourse">Course</label>
-                                            <select class="form-control rotc-grade-control" id="studentGradeCourse" name="course_filter"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                            <select class="form-control student-grade-control" id="studentGradeCourse" name="course_filter"<?php echo $showStudentGradeCriteria ? '' : ' disabled'; ?>>
                                                 <option value="">All Courses</option>
-                                                <?php foreach ($rotcCourseAbbreviations as $courseAbbreviation): ?>
+                                                <?php foreach ($gradeCourseAbbreviations as $courseAbbreviation): ?>
                                                 <option value="<?php echo htmlspecialchars($courseAbbreviation); ?>"><?php echo htmlspecialchars($courseAbbreviation); ?></option>
                                                 <?php endforeach; ?>
                                             </select>
                                         </div>
-                                        <div class="col-md-4 form-group">
+                                        <div class="col-md-4 form-group" id="studentGradeMsLevelGroup"<?php echo $program === 'ROTC' ? '' : ' style="display:none;"'; ?>>
                                             <label for="studentGradeMsLevel">MS Level</label>
-                                            <select class="form-control rotc-grade-control" id="studentGradeMsLevel" name="ms_level_filter"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                            <select class="form-control student-grade-control" id="studentGradeMsLevel" name="ms_level_filter"<?php echo $showStudentGradeCriteria && $program === 'ROTC' ? '' : ' disabled'; ?>>
                                                 <option value="">All MS Levels</option>
                                                 <option value="MS-1">MS-1</option>
                                                 <option value="MS-31">MS-31</option>
@@ -1634,12 +1634,12 @@ $saturdayWithAttendance = count(array_filter($saturdayChartRows, static fn($row)
                                     </div>
                                     <div class="form-group mb-0">
                                         <label for="studentGradeNameOrder">Name Order</label>
-                                        <select class="form-control rotc-grade-control" id="studentGradeNameOrder" name="name_order"<?php echo $showRotcGradeCriteria ? '' : ' disabled'; ?>>
+                                        <select class="form-control student-grade-control" id="studentGradeNameOrder" name="name_order"<?php echo $showStudentGradeCriteria ? '' : ' disabled'; ?>>
                                             <option value="last_name_asc">Last Name (A-Z)</option>
                                             <option value="last_name_desc">Last Name (Z-A)</option>
                                         </select>
                                     </div>
-                                    <small class="form-text text-muted">The All options include every accessible ROTC student. Names are exported as LAST NAME, FIRST NAME M.</small>
+                                    <small class="form-text text-muted">The All options include every accessible <span id="studentGradeCriteriaNoteComponent"><?php echo htmlspecialchars($program ?: 'component'); ?></span> student. Names are exported as LAST NAME, FIRST NAME M.</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Data to Include</label>
@@ -2252,22 +2252,35 @@ if (downloadSaturdayGraphBtn) {
 }
 
 const gradeComponentSelect = document.getElementById('gradeComponent');
-const rotcStudentGradeCriteria = document.getElementById('rotcStudentGradeCriteria');
-const fixedRotcGradeUser = <?php echo json_encode($role !== 'super_admin' && $program === 'ROTC'); ?>;
-function updateRotcStudentGradeCriteria() {
-    if (!rotcStudentGradeCriteria) {
+const gradeFolderSelect = document.getElementById('gradeFolder');
+const studentGradeCriteria = document.getElementById('studentGradeCriteria');
+function updateStudentGradeCriteria() {
+    if (!studentGradeCriteria) {
         return;
     }
-    const isRotc = gradeComponentSelect ? gradeComponentSelect.value === 'ROTC' : fixedRotcGradeUser;
-    rotcStudentGradeCriteria.style.display = isRotc ? '' : 'none';
-    rotcStudentGradeCriteria.querySelectorAll('input, select').forEach(control => {
-        control.disabled = !isRotc;
+    const component = gradeComponentSelect ? gradeComponentSelect.value : studentGradeCriteria.dataset.fixedComponent;
+    const hasCriteria = ['CWTS', 'LTS', 'ROTC'].includes(component);
+    const isRotc = component === 'ROTC';
+    studentGradeCriteria.style.display = hasCriteria ? '' : 'none';
+    studentGradeCriteria.querySelectorAll('input, select').forEach(control => {
+        control.disabled = !hasCriteria || (control.id === 'studentGradeMsLevel' && !isRotc);
     });
+    document.getElementById('studentGradeMsLevelGroup').style.display = isRotc ? '' : 'none';
+    document.querySelectorAll('.student-grade-filter-column').forEach(column => {
+        column.classList.toggle('col-md-4', isRotc);
+        column.classList.toggle('col-md-6', !isRotc);
+    });
+    document.getElementById('studentGradeCriteriaComponent').textContent = component || 'Component';
+    document.getElementById('studentGradeCriteriaNoteComponent').textContent = component || 'component';
+    document.getElementById('studentGradeCriteriaColumns').textContent = isRotc
+        ? 'Gender, Course Abbreviation, and MS Level'
+        : 'Gender and Course Abbreviation';
 }
 if (gradeComponentSelect) {
-    gradeComponentSelect.addEventListener('change', updateRotcStudentGradeCriteria);
+    gradeComponentSelect.addEventListener('change', updateStudentGradeCriteria);
 }
-updateRotcStudentGradeCriteria();
+filterFoldersByComponent(gradeComponentSelect, gradeFolderSelect);
+updateStudentGradeCriteria();
 
 function buildQrParams() {
     const adminId = document.getElementById('qrAdminId').value;

@@ -33,6 +33,7 @@ $currentProgram = $role === 'super_admin' ? normalizeProgram($_GET['component'] 
 $exportFormat = strtolower(trim((string) ($_GET['format'] ?? 'standard')));
 $isRotcReport = $exportFormat === 'rotc_report';
 $isRotcGradeExport = $currentProgram === 'ROTC';
+$hasStudentGradeCriteria = in_array($currentProgram, ['CWTS', 'LTS', 'ROTC'], true);
 if ($isRotcReport && $currentProgram !== 'ROTC') {
     die('ROTC Report of Grades is only available for ROTC records.');
 }
@@ -310,17 +311,17 @@ if ($selectedFacilitatorId && $selectedFolder !== '' && !($currentProgram === 'R
 }
 
 $registrationFieldSql = [];
-if ($isRotcGradeExport) {
+if ($hasStudentGradeCriteria) {
     foreach (['gender', 'course', 'rotc_ms_level', 'last_name', 'first_name', 'middle_name'] as $registrationField) {
         $registrationFieldSql[] = exportTableColumnExists($conn, 'tbl_public_student_registrations', $registrationField)
             ? "r.`{$registrationField}`"
             : "NULL AS `{$registrationField}`";
     }
 }
-$registrationSelect = $isRotcGradeExport
+$registrationSelect = $hasStudentGradeCriteria
     ? ", registration.gender, registration.course, registration.rotc_ms_level, registration.last_name, registration.first_name, registration.middle_name"
     : '';
-$registrationJoin = $isRotcGradeExport
+$registrationJoin = $hasStudentGradeCriteria
     ? "
     LEFT JOIN (
         SELECT r.student_number, " . implode(', ', $registrationFieldSql) . "
@@ -329,7 +330,7 @@ $registrationJoin = $isRotcGradeExport
             SELECT student_number, MAX(registration_id) AS latest_registration_id
             FROM tbl_public_student_registrations
             WHERE registrant_role = 'student'
-              AND component = 'ROTC'
+              AND component = '{$currentProgram}'
               AND student_number IS NOT NULL
               AND student_number <> ''
             GROUP BY student_number
@@ -347,13 +348,13 @@ $studentSql = "
 $studentStmt = $conn->prepare($studentSql);
 $studentStmt->execute($studentParams);
 $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
-if ($isRotcGradeExport) {
+if ($hasStudentGradeCriteria) {
     $genderFilter = strtoupper(trim((string) ($_GET['gender_filter'] ?? '')));
     if (!in_array($genderFilter, ['', 'MALE', 'FEMALE', 'UNSPECIFIED'], true)) {
         $genderFilter = '';
     }
     $courseFilter = strtoupper(trim((string) ($_GET['course_filter'] ?? '')));
-    $msLevelFilter = normalizeRotcMsLevel($_GET['ms_level_filter'] ?? null) ?: '';
+    $msLevelFilter = $isRotcGradeExport ? (normalizeRotcMsLevel($_GET['ms_level_filter'] ?? null) ?: '') : '';
     $nameOrder = strtolower(trim((string) ($_GET['name_order'] ?? 'last_name_asc')));
     if (!in_array($nameOrder, ['last_name_asc', 'last_name_desc'], true)) {
         $nameOrder = 'last_name_asc';
@@ -428,14 +429,17 @@ $baseColumns = [
     'final_grade' => 'Final Grade',
     'result' => 'Result',
 ];
-if ($isRotcGradeExport && !$isRotcReport) {
+if ($hasStudentGradeCriteria && !$isRotcReport) {
+    $criteriaColumns = [
+        'gender' => 'Gender',
+        'course' => 'Course',
+    ];
+    if ($isRotcGradeExport) {
+        $criteriaColumns['ms_level'] = 'MS Level';
+    }
     $baseColumns = array_merge(
         array_slice($baseColumns, 0, 4, true),
-        [
-            'gender' => 'Gender',
-            'course' => 'Course',
-            'ms_level' => 'MS Level',
-        ],
+        $criteriaColumns,
         array_slice($baseColumns, 4, null, true)
     );
 }
@@ -448,11 +452,15 @@ $selectedBaseColumns = array_values(array_intersect($requestedColumns, array_key
 if (empty($selectedBaseColumns)) {
     $selectedBaseColumns = $defaultColumns;
 }
-if ($isRotcGradeExport && !$isRotcReport && ($_GET['include_rotc_criteria'] ?? '') === '1') {
-    $rotcCriteriaColumns = ['gender', 'course', 'ms_level'];
+if ($hasStudentGradeCriteria && !$isRotcReport
+    && (($_GET['include_student_criteria'] ?? '') === '1' || ($_GET['include_rotc_criteria'] ?? '') === '1')) {
+    $studentCriteriaColumns = ['gender', 'course'];
+    if ($isRotcGradeExport) {
+        $studentCriteriaColumns[] = 'ms_level';
+    }
     $insertAt = array_search('course_section', $selectedBaseColumns, true);
     $insertAt = $insertAt === false ? min(3, count($selectedBaseColumns)) : $insertAt + 1;
-    array_splice($selectedBaseColumns, $insertAt, 0, array_values(array_diff($rotcCriteriaColumns, $selectedBaseColumns)));
+    array_splice($selectedBaseColumns, $insertAt, 0, array_values(array_diff($studentCriteriaColumns, $selectedBaseColumns)));
 }
 $includeGradeColumns = isset($_GET['include_scores']) && $_GET['include_scores'] === '1';
 
@@ -565,10 +573,10 @@ foreach ($rows as $index => $row) {
     $values = [
         'number' => $index + 1,
         'student_number' => $student['student_number'] ?? '',
-        'student_name' => $isRotcGradeExport ? rotcReportStudentName($student) : ($student['student_name'] ?? ''),
+        'student_name' => $hasStudentGradeCriteria ? rotcReportStudentName($student) : ($student['student_name'] ?? ''),
         'course_section' => $student['course_section'] ?? '',
-        'gender' => $isRotcGradeExport ? rotcReportGender($student['gender'] ?? '') : '',
-        'course' => $isRotcGradeExport ? academicCourseAbbreviation($student['course'] ?? $student['course_section'] ?? '') : '',
+        'gender' => $hasStudentGradeCriteria ? rotcReportGender($student['gender'] ?? '') : '',
+        'course' => $hasStudentGradeCriteria ? academicCourseAbbreviation($student['course'] ?? $student['course_section'] ?? '') : '',
         'ms_level' => $isRotcGradeExport ? rotcReportMsLevel($student) : '',
         'facilitator' => $student['facilitator_name'] ?? '',
         'attendance_count' => (int) $row['attendance_count'] . ' / ' . $totalMeetings,
