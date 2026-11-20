@@ -102,8 +102,10 @@ function activateUserSession(PDO $conn, array $user): void {
 
     if (($user['role'] ?? '') === 'student') {
         $requirement = currentStudentCorRequirement($conn);
-        if (!empty($requirement['enabled'])) {
+        if (!empty($requirement['enabled']) && studentHasCurrentCor($conn, (int) $user['user_id'], $requirement)) {
             $_SESSION['cor_verified_semester_key'] = $requirement['semester_key'];
+        } else {
+            unset($_SESSION['cor_verified_semester_key']);
         }
     }
 
@@ -202,13 +204,19 @@ function enforceStudentCorAccess(PDO $conn): void {
         return;
     }
 
-    $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE user_id = ? AND role = 'student' LIMIT 1");
-    $stmt->execute([(int) $_SESSION['user_id']]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($user) {
-        stagePendingCorLogin($user);
-    }
     $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    $allowedWhilePending = [
+        '/cor-upload.php',
+        '/endpoint/upload-student-cor.php',
+        '/endpoint/logout.php',
+        '/endpoint/login-user.php',
+    ];
+    foreach ($allowedWhilePending as $allowedPath) {
+        if (substr($scriptName, -strlen($allowedPath)) === $allowedPath) {
+            return;
+        }
+    }
+
     $uploadLocation = strpos($scriptName, '/endpoint/') !== false ? '../cor-upload.php' : 'cor-upload.php';
     header('Location: ' . $uploadLocation);
     exit();

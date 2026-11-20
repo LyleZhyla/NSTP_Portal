@@ -31,8 +31,14 @@ try {
         throw new RuntimeException('Hindi makita ang student account.');
     }
 
-    saveStudentCorUpload($conn, $userId, $_FILES['cor_file'] ?? []);
-    activateUserSession($conn, $user);
+    $requirement = saveStudentCorUpload($conn, $userId, $_FILES['cor_file'] ?? []);
+    if ($pendingUserId > 0) {
+        // Backward compatibility for a COR gate session created by an older deployment.
+        activateUserSession($conn, $user);
+    } else {
+        $_SESSION['cor_verified_semester_key'] = $requirement['semester_key'];
+        $_SESSION['last_activity'] = time();
+    }
     $_SESSION['student_flash_success'] = 'Na-save na ang COR mo. Maaari mo nang gamitin ang account para sa bagong semester.';
     header('Location: ../student-dashboard.php');
     exit();

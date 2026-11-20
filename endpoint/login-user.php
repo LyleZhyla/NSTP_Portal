@@ -43,13 +43,12 @@ try {
         exit();
     }
     
+    activateUserSession($conn, $user);
+
     if ($user['role'] === 'student' && studentNeedsCurrentCor($conn, (int) $user['user_id'])) {
-        stagePendingCorLogin($user);
         header('Location: ../cor-upload.php');
         exit();
     }
-
-    activateUserSession($conn, $user);
 
     if ($user['role'] === 'student') {
         $redirect = '../student-dashboard.php';
