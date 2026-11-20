@@ -47,24 +47,25 @@ if (empty($_SESSION['cor_upload_csrf'])) {
 <main class="card">
     <div class="brand">
         <img src="include/logo.png" alt="TAU NSTP logo">
-        <h1>Bagong Semester COR</h1>
+        <h1>New Semester COR<br><span style="font-size:18px;font-weight:700">COR para sa Bagong Semester</span></h1>
         <div class="semester"><?php echo htmlspecialchars($requirement['semester_label']); ?></div>
     </div>
     <div class="notice">
         <i class="fa-solid fa-circle-info"></i>
-        Hi <?php echo htmlspecialchars($user['full_name']); ?>. Kailangan munang mag-upload ng kasalukuyang COR bago magamit ang student account.
+        Hi <?php echo htmlspecialchars($user['full_name']); ?>. Please upload your current COR before using the other features of your student account.<br>
+        <strong>Filipino:</strong> I-upload muna ang kasalukuyan mong COR bago magamit ang ibang feature ng iyong student account.
     </div>
     <?php if ($error !== ''): ?><div class="error"><?php echo htmlspecialchars($error); ?></div><?php endif; ?>
     <form action="endpoint/upload-student-cor.php" method="post" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['cor_upload_csrf']); ?>">
         <div class="field">
-            <label for="cor_file">Certificate of Registration (COR)</label>
+            <label for="cor_file">Certificate of Registration (COR) / Katibayan ng Pagpaparehistro</label>
             <input id="cor_file" name="cor_file" type="file" accept="application/pdf,image/jpeg,image/png" required>
-            <div class="hint">PDF, JPG, o PNG; maximum na 10 MB. Ang file ay direktang ise-save sa database.</div>
+            <div class="hint">PDF, JPG, or PNG; maximum of 10 MB. The file will be saved directly to the database.<br>PDF, JPG, o PNG; maximum na 10 MB. Direktang ise-save ang file sa database.</div>
         </div>
-        <button class="btn" type="submit"><i class="fa-solid fa-cloud-arrow-up"></i> Upload COR at Magpatuloy</button>
+        <button class="btn" type="submit"><i class="fa-solid fa-cloud-arrow-up"></i> Upload COR and Continue / Magpatuloy</button>
     </form>
-    <a class="logout" href="endpoint/logout.php">Mag-sign out</a>
+    <a class="logout" href="endpoint/logout.php">Sign Out / Mag-sign out</a>
 </main>
 </body>
 </html>

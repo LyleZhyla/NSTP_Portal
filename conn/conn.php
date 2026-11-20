@@ -26,6 +26,10 @@ try {
     // Enforce the semester COR gate centrally so an already signed-in student
     // cannot bypass it by opening a page or endpoint directly.
     if (session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'student') {
+        if (!headers_sent()) {
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+            header('Pragma: no-cache');
+        }
         require_once __DIR__ . '/../include/student-cor.php';
         enforceStudentCorAccess($conn);
     }

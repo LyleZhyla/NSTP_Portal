@@ -52,7 +52,10 @@ CREATE TABLE `tbl_system_settings` (
 --
 
 INSERT INTO `tbl_system_settings` (`setting_key`, `setting_value`, `updated_at`) VALUES
-('component_selection_enabled', '1', '2026-05-21 11:03:22');
+('component_selection_enabled', '1', '2026-05-21 11:03:22'),
+('current_semester_key', 'semester_2026_2027_current', current_timestamp()),
+('current_semester_label', 'Current Semester AY 2026-2027', current_timestamp()),
+('student_cor_requirement_enabled', '1', current_timestamp());
 
 -- --------------------------------------------------------
 

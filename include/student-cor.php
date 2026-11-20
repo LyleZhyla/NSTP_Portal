@@ -4,6 +4,8 @@ require_once __DIR__ . '/user-permissions.php';
 require_once __DIR__ . '/profile-picture-utils.php';
 
 const STUDENT_COR_MAX_BYTES = 10485760;
+const STUDENT_COR_INITIAL_SEMESTER_KEY = 'semester_2026_2027_current';
+const STUDENT_COR_INITIAL_SEMESTER_LABEL = 'Current Semester AY 2026-2027';
 
 function ensureStudentCorSchema(PDO $conn): void {
     $conn->exec("
@@ -28,14 +30,28 @@ function ensureStudentCorSchema(PDO $conn): void {
 }
 
 function currentStudentCorRequirement(PDO $conn): array {
-    $enabled = getSystemSetting($conn, 'student_cor_requirement_enabled', '0') === '1';
+    $enabledSetting = getSystemSetting($conn, 'student_cor_requirement_enabled', null);
     $semesterKey = trim((string) getSystemSetting($conn, 'current_semester_key', ''));
-    $semesterLabel = trim((string) getSystemSetting($conn, 'current_semester_label', 'Current semester'));
+    $semesterLabel = trim((string) getSystemSetting($conn, 'current_semester_label', ''));
+
+    // This deployment is the first COR-gated semester. Activate it once for
+    // existing installations that do not yet have semester settings. A saved
+    // explicit value of "0" remains respected if the gate is disabled later.
+    if ($enabledSetting === null || $semesterKey === '') {
+        $semesterKey = $semesterKey !== '' ? $semesterKey : STUDENT_COR_INITIAL_SEMESTER_KEY;
+        $semesterLabel = $semesterLabel !== '' ? $semesterLabel : STUDENT_COR_INITIAL_SEMESTER_LABEL;
+        setSystemSetting($conn, 'current_semester_key', $semesterKey);
+        setSystemSetting($conn, 'current_semester_label', $semesterLabel);
+        setSystemSetting($conn, 'student_cor_requirement_enabled', '1');
+        $enabledSetting = '1';
+    }
+
+    $enabled = $enabledSetting === '1';
 
     return [
         'enabled' => $enabled && $semesterKey !== '',
         'semester_key' => $semesterKey,
-        'semester_label' => $semesterLabel !== '' ? $semesterLabel : 'Current semester',
+        'semester_label' => $semesterLabel !== '' ? $semesterLabel : STUDENT_COR_INITIAL_SEMESTER_LABEL,
     ];
 }
 
@@ -115,46 +131,46 @@ function activateUserSession(PDO $conn, array $user): void {
 function saveStudentCorUpload(PDO $conn, int $userId, array $file): array {
     $requirement = currentStudentCorRequirement($conn);
     if (empty($requirement['enabled'])) {
-        throw new RuntimeException('Walang active COR requirement ngayon.');
+        throw new RuntimeException('There is no active COR requirement. / Walang active COR requirement ngayon.');
     }
 
     $uploadError = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
     if ($uploadError !== UPLOAD_ERR_OK) {
         throw new RuntimeException($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE
-            ? 'Lampas sa 10 MB ang COR file.'
-            : 'Pumili ng COR file na ia-upload.');
+            ? 'The COR file exceeds 10 MB. / Lampas sa 10 MB ang COR file.'
+            : 'Please select a COR file to upload. / Pumili ng COR file na ia-upload.');
     }
 
     $temporaryPath = (string) ($file['tmp_name'] ?? '');
     $fileSize = (int) ($file['size'] ?? 0);
     if ($temporaryPath === '' || !is_uploaded_file($temporaryPath)) {
-        throw new RuntimeException('Hindi valid ang uploaded file. Subukan ulit.');
+        throw new RuntimeException('The uploaded file is invalid. Please try again. / Hindi valid ang uploaded file. Subukan ulit.');
     }
     if ($fileSize < 1 || $fileSize > STUDENT_COR_MAX_BYTES) {
-        throw new RuntimeException('Ang COR ay dapat hindi lalampas sa 10 MB.');
+        throw new RuntimeException('The COR must not exceed 10 MB. / Ang COR ay dapat hindi lumampas sa 10 MB.');
     }
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mimeType = (string) $finfo->file($temporaryPath);
     $allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!in_array($mimeType, $allowedTypes, true)) {
-        throw new RuntimeException('PDF, JPG, at PNG file lamang ang puwedeng i-upload.');
+        throw new RuntimeException('Only PDF, JPG, and PNG files are allowed. / PDF, JPG, at PNG file lamang ang puwedeng i-upload.');
     }
     if (strpos($mimeType, 'image/') === 0 && @getimagesize($temporaryPath) === false) {
-        throw new RuntimeException('Hindi valid na image ang napiling file.');
+        throw new RuntimeException('The selected file is not a valid image. / Hindi valid na image ang napiling file.');
     }
     if ($mimeType === 'application/pdf') {
         $handle = fopen($temporaryPath, 'rb');
         $signature = $handle ? fread($handle, 5) : '';
         if ($handle) fclose($handle);
         if ($signature !== '%PDF-') {
-            throw new RuntimeException('Hindi valid na PDF ang napiling file.');
+            throw new RuntimeException('The selected file is not a valid PDF. / Hindi valid na PDF ang napiling file.');
         }
     }
 
     $contents = file_get_contents($temporaryPath);
     if ($contents === false || strlen($contents) !== $fileSize) {
-        throw new RuntimeException('Hindi mabasa nang buo ang uploaded COR.');
+        throw new RuntimeException('The uploaded COR could not be read completely. / Hindi mabasa nang buo ang uploaded COR.');
     }
 
     ensureStudentCorSchema($conn);

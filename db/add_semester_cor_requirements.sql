@@ -15,3 +15,9 @@ CREATE TABLE IF NOT EXISTS tbl_student_cor_submissions (
     KEY idx_cor_semester (semester_key, submitted_at),
     KEY idx_cor_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT IGNORE INTO tbl_system_settings (setting_key, setting_value)
+VALUES
+    ('current_semester_key', 'semester_2026_2027_current'),
+    ('current_semester_label', 'Current Semester AY 2026-2027'),
+    ('student_cor_requirement_enabled', '1');
