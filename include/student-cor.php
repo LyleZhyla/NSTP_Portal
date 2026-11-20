@@ -131,46 +131,46 @@ function activateUserSession(PDO $conn, array $user): void {
 function saveStudentCorUpload(PDO $conn, int $userId, array $file): array {
     $requirement = currentStudentCorRequirement($conn);
     if (empty($requirement['enabled'])) {
-        throw new RuntimeException('There is no active COR requirement. / Walang active COR requirement ngayon.');
+        throw new RuntimeException('There is no active COR requirement.');
     }
 
     $uploadError = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
     if ($uploadError !== UPLOAD_ERR_OK) {
         throw new RuntimeException($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE
-            ? 'The COR file exceeds 10 MB. / Lampas sa 10 MB ang COR file.'
-            : 'Please select a COR file to upload. / Pumili ng COR file na ia-upload.');
+            ? 'The COR file exceeds 10 MB.'
+            : 'Please select a COR file to upload.');
     }
 
     $temporaryPath = (string) ($file['tmp_name'] ?? '');
     $fileSize = (int) ($file['size'] ?? 0);
     if ($temporaryPath === '' || !is_uploaded_file($temporaryPath)) {
-        throw new RuntimeException('The uploaded file is invalid. Please try again. / Hindi valid ang uploaded file. Subukan ulit.');
+        throw new RuntimeException('The uploaded file is invalid. Please try again.');
     }
     if ($fileSize < 1 || $fileSize > STUDENT_COR_MAX_BYTES) {
-        throw new RuntimeException('The COR must not exceed 10 MB. / Ang COR ay dapat hindi lumampas sa 10 MB.');
+        throw new RuntimeException('The COR must not exceed 10 MB.');
     }
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mimeType = (string) $finfo->file($temporaryPath);
     $allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!in_array($mimeType, $allowedTypes, true)) {
-        throw new RuntimeException('Only PDF, JPG, and PNG files are allowed. / PDF, JPG, at PNG file lamang ang puwedeng i-upload.');
+        throw new RuntimeException('Only PDF, JPG, and PNG files are allowed.');
     }
     if (strpos($mimeType, 'image/') === 0 && @getimagesize($temporaryPath) === false) {
-        throw new RuntimeException('The selected file is not a valid image. / Hindi valid na image ang napiling file.');
+        throw new RuntimeException('The selected file is not a valid image.');
     }
     if ($mimeType === 'application/pdf') {
         $handle = fopen($temporaryPath, 'rb');
         $signature = $handle ? fread($handle, 5) : '';
         if ($handle) fclose($handle);
         if ($signature !== '%PDF-') {
-            throw new RuntimeException('The selected file is not a valid PDF. / Hindi valid na PDF ang napiling file.');
+            throw new RuntimeException('The selected file is not a valid PDF.');
         }
     }
 
     $contents = file_get_contents($temporaryPath);
     if ($contents === false || strlen($contents) !== $fileSize) {
-        throw new RuntimeException('The uploaded COR could not be read completely. / Hindi mabasa nang buo ang uploaded COR.');
+        throw new RuntimeException('The uploaded COR could not be read completely.');
     }
 
     ensureStudentCorSchema($conn);
