@@ -14,4 +14,10 @@ function checkAdminRole() {
         exit();
     }
 }
+
+if (($_SESSION['role'] ?? '') === 'student') {
+    require_once __DIR__ . '/conn/conn.php';
+    require_once __DIR__ . '/include/student-cor.php';
+    enforceStudentCorAccess($conn);
+}
 ?>

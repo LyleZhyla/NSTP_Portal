@@ -3,6 +3,7 @@ session_start();
 require_once '../conn/conn.php';
 require_once '../include/user-permissions.php';
 require_once '../include/profile-picture-utils.php';
+require_once '../include/student-cor.php';
 
 // Check if request method is POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -42,41 +43,14 @@ try {
         exit();
     }
     
-    // Set session variables
-    $_SESSION['user_id'] = $user['user_id'];
-    $_SESSION['username'] = $user['username'];
-    $_SESSION['full_name'] = $user['full_name'];
-    $_SESSION['role'] = $user['role'];
-    $_SESSION['program'] = $user['program'] ?? null;
-    $_SESSION['last_activity'] = time();
-
-    // Durable account-open tracking. The audit log remains as a fallback for
-    // databases where the one-time performance migration is still pending.
-    try {
-        $loginActivityStmt = $conn->prepare("
-            UPDATE tbl_users
-            SET first_login_at = COALESCE(first_login_at, NOW()),
-                last_login_at = NOW(),
-                login_count = login_count + 1
-            WHERE user_id = ?
-        ");
-        $loginActivityStmt->execute([(int) $user['user_id']]);
-    } catch (Throwable $ignored) {
-        // Backward compatibility until db/optimize_public_registrations.sql runs.
+    if ($user['role'] === 'student' && studentNeedsCurrentCor($conn, (int) $user['user_id'])) {
+        stagePendingCorLogin($user);
+        header('Location: ../cor-upload.php');
+        exit();
     }
 
-    $profilePicture = trim((string) ($user['profile_picture'] ?? ''));
-    if ($profilePicture === '' || !profilePictureExists($profilePicture, dirname(__DIR__))) {
-        $profilePicture = syncRegistrationProfilePicture($conn, (int) $user['user_id'], dirname(__DIR__));
-    }
-    if ($profilePicture !== '') {
-        $_SESSION['profile_picture'] = $profilePicture;
-    } else {
-        unset($_SESSION['profile_picture']);
-    }
+    activateUserSession($conn, $user);
 
-    logSystemEvent($conn, 'user_login', $user['username'] . ' logged in as ' . $user['role']);
-    
     if ($user['role'] === 'student') {
         $redirect = '../student-dashboard.php';
     } elseif (in_array($user['role'], ['super_admin', 'coordinator'], true)) {

@@ -17,6 +17,9 @@ if (!canAccessStaffTools($user_role)) {
     header("Location: profile.php");
     exit();
 }
+if (empty($_SESSION['semester_rollover_csrf'])) {
+    $_SESSION['semester_rollover_csrf'] = bin2hex(random_bytes(32));
+}
 ?>
 
 <!DOCTYPE html>
@@ -246,6 +249,30 @@ if (!canAccessStaffTools($user_role)) {
                 </div>
 
                 <!-- Archive Actions -->
+                <?php if ($user_role === 'super_admin'): ?>
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card card-danger">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-calendar-plus mr-2"></i> Start New Semester</h3>
+                            </div>
+                            <div class="card-body">
+                                <p>Archives all active attendance and requires every student to upload a new COR. CWTS/LTS section folders and facilitator assignments are retained.</p>
+                                <form id="semesterRolloverForm" class="form-row align-items-end">
+                                    <div class="form-group col-md-9 mb-md-0">
+                                        <label for="semesterLabel">Semester name</label>
+                                        <input class="form-control" id="semesterLabel" maxlength="150" placeholder="e.g. 2nd Semester AY 2026-2027" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <button class="btn btn-danger btn-block" id="semesterRolloverBtn" type="submit"><i class="fas fa-rotate mr-2"></i> Start Semester</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <div class="row">
                     <!-- Archive Section -->
                     <div class="col-md-6">
@@ -512,6 +539,45 @@ function formatDate(dateString) {
     if (!dateString) return 'N/A';
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
     return new Date(dateString).toLocaleDateString(undefined, options);
+}
+
+const semesterRolloverForm = document.getElementById('semesterRolloverForm');
+if (semesterRolloverForm) {
+    semesterRolloverForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const semesterLabel = document.getElementById('semesterLabel').value.trim();
+        if (!semesterLabel) return;
+        const confirmation = await Swal.fire({
+            title: 'Start a new semester?',
+            html: `All active attendance will be archived and student accounts will require a new COR for <strong>${$('<div>').text(semesterLabel).html()}</strong>.<br><br>CWTS/LTS sections and facilitator assignments will stay unchanged.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Yes, start new semester'
+        });
+        if (!confirmation.isConfirmed) return;
+
+        const button = document.getElementById('semesterRolloverBtn');
+        button.disabled = true;
+        try {
+            const response = await fetch('endpoint/start-new-semester.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    semester_label: semesterLabel,
+                    csrf_token: <?php echo json_encode($_SESSION['semester_rollover_csrf']); ?>
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.message || 'Semester rollover failed.');
+            await Swal.fire('New semester started', data.message, 'success');
+            loadArchiveSummary();
+        } catch (error) {
+            Swal.fire('Hindi natuloy', error.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    });
 }
 
 // Handle archive form submission

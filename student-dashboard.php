@@ -6,6 +6,7 @@ require_once 'include/user-permissions.php';
 require_once 'include/attendance-settings.php';
 require_once 'include/profile-picture-utils.php';
 require_once 'include/student-account-automation.php';
+require_once 'include/student-cor.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
@@ -17,7 +18,11 @@ if (($_SESSION['role'] ?? '') !== 'student') {
     exit();
 }
 
+enforceStudentCorAccess($conn);
+
 $userId = $_SESSION['user_id'];
+$studentFlashSuccess = (string) ($_SESSION['student_flash_success'] ?? '');
+unset($_SESSION['student_flash_success']);
 
 $stmt = $conn->prepare("SELECT * FROM tbl_users WHERE user_id = ?");
 $stmt->execute([$userId]);
@@ -408,6 +413,12 @@ if ($student) {
 
         <section class="content">
             <div class="container-fluid">
+                <?php if ($studentFlashSuccess !== ''): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-check-circle mr-2"></i><?php echo htmlspecialchars($studentFlashSuccess); ?>
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                </div>
+                <?php endif; ?>
                 <div class="row">
                     <div class="col-lg-4 col-12">
                         <div class="small-box bg-success">

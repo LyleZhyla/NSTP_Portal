@@ -194,6 +194,30 @@ CREATE TABLE `tbl_student` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `tbl_student_cor_submissions`
+--
+
+CREATE TABLE `tbl_student_cor_submissions` (
+  `cor_submission_id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `semester_key` varchar(64) NOT NULL,
+  `semester_label` varchar(150) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `mime_type` varchar(100) NOT NULL,
+  `file_size` int(10) UNSIGNED NOT NULL,
+  `file_hash` char(64) NOT NULL,
+  `file_content` mediumblob NOT NULL,
+  `submitted_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`cor_submission_id`),
+  UNIQUE KEY `uq_cor_user_semester` (`user_id`,`semester_key`),
+  KEY `idx_cor_semester` (`semester_key`,`submitted_at`),
+  KEY `idx_cor_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `tbl_public_student_registrations`
 --
 

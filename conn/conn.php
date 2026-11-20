@@ -22,6 +22,13 @@ try {
     $conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
     date_default_timezone_set('Asia/Manila');
+
+    // Enforce the semester COR gate centrally so an already signed-in student
+    // cannot bypass it by opening a page or endpoint directly.
+    if (session_status() === PHP_SESSION_ACTIVE && ($_SESSION['role'] ?? '') === 'student') {
+        require_once __DIR__ . '/../include/student-cor.php';
+        enforceStudentCorAccess($conn);
+    }
 } catch (PDOException $e) {
     if (stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false) {
         http_response_code(503);

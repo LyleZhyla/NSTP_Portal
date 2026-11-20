@@ -7,6 +7,7 @@ require_once 'include/profile-picture-utils.php';
 require_once 'include/data-edit-requests.php';
 require_once 'include/student-account-automation.php';
 require_once 'include/student-component-counts.php';
+require_once 'include/student-cor.php';
 
 
 // Check if user is logged in
@@ -14,6 +15,8 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: landing_page.php');
     exit();
 }
+
+enforceStudentCorAccess($conn);
 
 $user_id = $_SESSION['user_id'];
 $message = '';
