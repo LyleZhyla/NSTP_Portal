@@ -14,6 +14,13 @@ if (!isset($_SESSION['user_id'])) {
 include('../conn/conn.php');
 require_once '../include/attendance-settings.php';
 
+$currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Only facilitators, coordinators, and administrators can archive attendance records.']);
+    exit();
+}
+
 $response = ['success' => false, 'message' => ''];
 
 function archiveAttendanceRecord(PDO $conn, array $record, $archiveHasStatus, $archiveHasTimeOut) {
@@ -51,8 +58,8 @@ try {
         throw new Exception('Archive date is required');
     }
     
-    $user_id = $_SESSION['user_id'];
-    $role = $_SESSION['role'] ?? 'facilitator';
+    $user_id = (int) $currentUser['user_id'];
+    $role = $currentUser['role'];
     
     ensureAttendanceTimeOutSchema($conn);
     $archiveHasTimeOut = attendanceTableHasTimeOutColumn($conn, 'tbl_attendance_archive');

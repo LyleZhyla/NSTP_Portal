@@ -24,6 +24,13 @@ try {
     $admin_id = $_SESSION['user_id'];
     $admin_role = $_SESSION['role'] ?? 'facilitator';
     $currentUser = getCurrentUserRecord($conn);
+    if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Only facilitators, coordinators, and administrators can delete attendance records.']);
+        exit();
+    }
+    $admin_id = (int) $currentUser['user_id'];
+    $admin_role = $currentUser['role'];
     ensureRotcAttendanceSchema($conn);
     $isRotcFacilitator = $admin_role === 'facilitator'
         && normalizeProgram($currentUser['program'] ?? ($_SESSION['program'] ?? null)) === 'ROTC';

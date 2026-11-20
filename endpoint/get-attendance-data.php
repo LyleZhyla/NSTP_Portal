@@ -14,6 +14,12 @@ require_once '../include/attendance-settings.php';
 $admin_id = $_SESSION['user_id'];
 $admin_role = $_SESSION['role'] ?? 'facilitator';
 $currentUser = getCurrentUserRecord($conn);
+if (!$currentUser || !canAccessStaffTools($currentUser['role'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Only facilitators, coordinators, and administrators can view attendance records.']);
+    exit();
+}
+$admin_role = $currentUser['role'];
 ensureRotcAttendanceSchema($conn);
 ensureAttendancePerformanceIndexes($conn);
 $timeOutEnabled = ensureAttendanceTimeOutSchema($conn);
