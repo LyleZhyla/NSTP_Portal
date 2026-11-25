@@ -1138,13 +1138,17 @@ foreach ($publicForms as $formRow) {
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     $(function () {
-        const registrationsTable = $('#registrationsTable').DataTable({
-            responsive: true,
-            paging: false,
-            searching: false,
-            ordering: false,
-            info: false
-        });
+        // Email actions must remain available even when the optional
+        // DataTables CDN script is blocked or fails to load.
+        if ($.fn && typeof $.fn.DataTable === 'function') {
+            $('#registrationsTable').DataTable({
+                responsive: true,
+                paging: false,
+                searching: false,
+                ordering: false,
+                info: false
+            });
+        }
 
         function escapeRegex(value) {
             return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
