@@ -3,3 +3,6 @@ backups/
 student-masterlist-*.xlsx
 reconcile-report*.json
 
+# Server-specific mail credentials must never be committed.
+config/mail.local.php
+
