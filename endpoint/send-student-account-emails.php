@@ -20,59 +20,43 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     ensureStudentNumberColumn($conn);
 
-    $batchLimit = isset($_POST['limit']) ? (int) $_POST['limit'] : 5;
-    $batchLimit = max(1, min(5, $batchLimit));
+    $registrationIds = $_POST['registration_ids'] ?? [];
+    if (!is_array($registrationIds)) {
+        $registrationIds = [];
+    }
+    $registrationIds = array_values(array_unique(array_filter(
+        array_map('intval', $registrationIds),
+        static fn($registrationId) => $registrationId > 0
+    )));
 
-    $component = null;
-    if (($currentUser['role'] ?? '') === 'coordinator') {
-        $component = normalizeProgram($currentUser['program'] ?? null);
-    } else {
-        $component = normalizeProgram($_POST['component'] ?? null);
+    if (empty($registrationIds)) {
+        throw new InvalidArgumentException('Select at least one student before sending emails.');
+    }
+    if (count($registrationIds) > 5) {
+        throw new InvalidArgumentException('A maximum of 5 selected students can be processed per batch.');
     }
 
     $where = [
+        "r.registration_id IN (" . implode(',', array_fill(0, count($registrationIds), '?')) . ")",
         "r.registrant_role = 'student'",
-        "r.student_number REGEXP '^[0-9]{10}$'",
-        "r.email IS NOT NULL",
-        "r.email <> ''",
-        "r.email NOT LIKE '%@no-email.tau-nstp.local'",
-        "(r.email_sent IS NULL OR r.email_sent = 0)",
         "COALESCE(r.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')",
-        "r.registration_id = (
-            SELECT MIN(earliest.registration_id)
-            FROM tbl_public_student_registrations earliest
-            WHERE earliest.student_number = r.student_number
-              AND (earliest.component <=> r.component)
-              AND earliest.registrant_role = 'student'
-              AND earliest.student_number REGEXP '^[0-9]{10}$'
-              AND earliest.email IS NOT NULL
-              AND earliest.email <> ''
-              AND earliest.email NOT LIKE '%@no-email.tau-nstp.local'
-              AND (earliest.email_sent IS NULL OR earliest.email_sent = 0)
-              AND COALESCE(earliest.status, 'submitted') NOT IN ('attendance_only', 'account_deleted')
-        )",
     ];
-    $params = [];
+    $params = $registrationIds;
 
-    if ($component) {
-        $where[] = "r.component = ?";
+    if (($currentUser['role'] ?? '') === 'coordinator') {
+        $component = normalizeProgram($currentUser['program'] ?? null);
+        if (!$component) {
+            throw new RuntimeException('Your coordinator account has no assigned NSTP program.');
+        }
+        $where[] = 'r.component = ?';
         $params[] = $component;
     }
 
-    $countStmt = $conn->prepare("
-        SELECT COUNT(*)
-        FROM tbl_public_student_registrations r
-        WHERE " . implode(' AND ', $where)
-    );
-    $countStmt->execute($params);
-    $totalPendingBefore = (int) $countStmt->fetchColumn();
-
     $stmt = $conn->prepare("
-        SELECT r.student_number, r.email
+        SELECT r.registration_id, r.student_number, r.email
         FROM tbl_public_student_registrations r
         WHERE " . implode(' AND ', $where) . "
-        ORDER BY r.created_at ASC, r.registration_id ASC
-        LIMIT {$batchLimit}
+        ORDER BY r.registration_id ASC
     ");
     $stmt->execute($params);
     $registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -85,6 +69,7 @@ try {
     $failed = 0;
     $failureReasons = [];
 
+    $processedStudentNumbers = [];
     foreach ($registrations as $registration) {
         $studentNumber = preg_replace('/\D/', '', (string) ($registration['student_number'] ?? ''));
         $email = trim((string) ($registration['email'] ?? ''));
@@ -93,6 +78,10 @@ try {
             $invalidEmail++;
             continue;
         }
+        if (isset($processedStudentNumbers[$studentNumber])) {
+            continue;
+        }
+        $processedStudentNumbers[$studentNumber] = true;
 
         try {
             $result = autoCreateStudentAccountFromPublicRegistrations($conn, $studentNumber);
@@ -104,7 +93,7 @@ try {
                 $reason = getAppMailLastError() ?: 'email_failed';
                 $failureReasons[$reason] = ($failureReasons[$reason] ?? 0) + 1;
             } elseif (($result['reason'] ?? '') === 'already_exists') {
-                $resendResult = resetStudentAccountPasswordAndEmail($conn, $studentNumber);
+                $resendResult = resetStudentAccountPasswordAndEmail($conn, $studentNumber, true);
                 if (!empty($resendResult['sent'])) {
                     $resent++;
                 } elseif (($resendResult['reason'] ?? '') === 'temporary_password_still_active') {
@@ -126,10 +115,13 @@ try {
         }
     }
 
-    $countStmt->execute($params);
-    $totalPendingAfter = (int) $countStmt->fetchColumn();
+    $notAccessible = count($registrationIds) - count($registrations);
+    if ($notAccessible > 0) {
+        $failed += $notAccessible;
+        $failureReasons['Selected registration is unavailable or outside your assigned program'] = $notAccessible;
+    }
 
-    $message = "Account email batch finished. Sent: {$sent}.";
+    $message = "Selected student email batch finished. Sent: {$sent}.";
     if ($resent > 0) {
         $message .= " Existing accounts resent: {$resent}.";
     }
@@ -144,9 +136,6 @@ try {
     }
     if ($failed > 0) {
         $message .= " Failed: {$failed}.";
-    }
-    if ($totalPendingAfter > 0) {
-        $message .= " Remaining pending: {$totalPendingAfter}.";
     }
     if (!empty($failureReasons)) {
         $message .= " Reason: " . implode('; ', array_map(
@@ -166,11 +155,11 @@ try {
         'invalid_email' => $invalidEmail,
         'failed' => $failed,
         'failure_reasons' => $failureReasons,
-        'processed' => count($registrations),
-        'batch_limit' => $batchLimit,
-        'pending_before' => $totalPendingBefore,
-        'pending_after' => $totalPendingAfter,
-        'has_more' => $totalPendingAfter > 0,
+        'processed' => count($registrationIds),
+        'batch_limit' => 5,
+        'pending_before' => count($registrationIds),
+        'pending_after' => 0,
+        'has_more' => false,
     ]);
 } catch (Throwable $error) {
     error_log('Bulk student account email error: ' . $error->getMessage());

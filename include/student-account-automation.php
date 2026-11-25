@@ -310,7 +310,7 @@ function studentRegistrationCredentialsWereSent(array $registration) {
     return (int) ($registration['email_sent'] ?? 0) === 1;
 }
 
-function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
+function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber, $forceNewTemporaryPassword = false) {
     $studentNumber = preg_replace('/\D/', '', (string) $studentNumber);
     if (!preg_match('/^\d{10}$/', $studentNumber)) {
         return ['sent' => false, 'reason' => 'missing_student_number'];
@@ -336,7 +336,7 @@ function resetStudentAccountPasswordAndEmail(PDO $conn, $studentNumber) {
 
     ensureStudentQrRecordForAccount($conn, $studentNumber, $userId, $registration);
 
-    if (empty($user['last_password_change']) && studentRegistrationCredentialsWereSent($registration)) {
+    if (!$forceNewTemporaryPassword && empty($user['last_password_change']) && studentRegistrationCredentialsWereSent($registration)) {
         return ['sent' => false, 'reason' => 'temporary_password_still_active'];
     }
 

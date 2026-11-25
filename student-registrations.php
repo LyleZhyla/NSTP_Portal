@@ -733,7 +733,7 @@ $registrationPageUrl = static function ($page) {
                                         </button>
                                         <?php endif; ?>
                                         <button type="button" class="btn btn-primary" id="sendAccountEmailsBtn">
-                                            <i class="fas fa-user-graduate mr-1"></i> Send Student Emails
+                                            <i class="fas fa-user-graduate mr-1"></i> Send Selected Student Emails
                                         </button>
                                     </div>
                                 </div>
@@ -743,6 +743,9 @@ $registrationPageUrl = static function ($page) {
                             <table class="table table-hover" id="registrationsTable">
                                 <thead>
                                     <tr>
+                                        <th class="text-center">
+                                            <input type="checkbox" id="selectAllStudentEmails" aria-label="Select all eligible students on this page">
+                                        </th>
                                         <th>Photo</th>
                                         <th>Form</th>
                                         <th>Type</th>
@@ -802,6 +805,18 @@ $registrationPageUrl = static function ($page) {
                                             $accountStatus = $hasOpenedAccount ? 'Opened' : ($hasAccount ? 'Not opened' : 'No account');
                                         ?>
                                         <tr>
+                                            <td class="text-center align-middle">
+                                                <?php if ($registrantRole === 'student' && preg_match('/^\d{10}$/', $studentNumberForEmail) && $hasValidCredentialEmail): ?>
+                                                    <input
+                                                        type="checkbox"
+                                                        class="student-email-checkbox"
+                                                        value="<?php echo $registrationId; ?>"
+                                                        data-name="<?php echo htmlspecialchars($fullName); ?>"
+                                                        aria-label="Select <?php echo htmlspecialchars($fullName); ?> for email">
+                                                <?php else: ?>
+                                                    <span class="text-muted" title="A valid student number and email are required">&mdash;</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><img class="registration-photo" src="<?php echo htmlspecialchars($photoPath); ?>" alt="Formal picture"></td>
                                             <td><?php echo htmlspecialchars($row['form_title'] ?: 'Unlinked QR Form'); ?></td>
                                             <td>
@@ -1211,16 +1226,49 @@ foreach ($publicForms as $formRow) {
             });
         });
 
+        function selectedStudentEmailIds() {
+            return $('.student-email-checkbox:checked').map(function() {
+                return String($(this).val());
+            }).get();
+        }
+
+        function updateStudentEmailSelection() {
+            const eligibleCount = $('.student-email-checkbox').length;
+            const selectedCount = selectedStudentEmailIds().length;
+            const selectAll = $('#selectAllStudentEmails').get(0);
+
+            $('#sendAccountEmailsBtn')
+                .prop('disabled', selectedCount === 0)
+                .html('<i class="fas fa-user-graduate mr-1"></i> Send Selected Student Emails' + (selectedCount ? ' (' + selectedCount + ')' : ''));
+
+            if (selectAll) {
+                selectAll.checked = eligibleCount > 0 && selectedCount === eligibleCount;
+                selectAll.indeterminate = selectedCount > 0 && selectedCount < eligibleCount;
+                selectAll.disabled = eligibleCount === 0;
+            }
+        }
+
+        $('#selectAllStudentEmails').on('change', function() {
+            $('.student-email-checkbox').prop('checked', this.checked);
+            updateStudentEmailSelection();
+        });
+
+        $('#registrationsTable').on('change', '.student-email-checkbox', updateStudentEmailSelection);
+        updateStudentEmailSelection();
+
         $('#sendAccountEmailsBtn').on('click', function() {
             const button = $(this);
-            const selectedComponent = $('#componentFilter').val();
-            const scopeLabel = selectedComponent ? selectedComponent : 'all components';
+            const registrationIds = selectedStudentEmailIds();
             const batchLimit = 5;
-            const batchDelayMs = 30000;
+
+            if (registrationIds.length === 0) {
+                Swal.fire('No Students Selected', 'Select at least one student using the checkbox beside the student record.', 'warning');
+                return;
+            }
 
             Swal.fire({
                 title: 'Send Student Emails?',
-                text: 'This will create missing student accounts and email credentials for uploaded registrations under ' + scopeLabel + '. Emails will be sent in batches.',
+                text: 'Login credentials will be emailed only to the ' + registrationIds.length + ' selected student' + (registrationIds.length === 1 ? '' : 's') + '.',
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonText: 'Send Student Emails',
@@ -1243,7 +1291,6 @@ foreach ($publicForms as $formRow) {
                 };
                 let remaining = 0;
                 let lastMessage = '';
-                let stoppedWithoutDelivery = false;
 
                 Swal.fire({
                     title: 'Sending student emails',
@@ -1256,15 +1303,14 @@ foreach ($publicForms as $formRow) {
                 });
 
                 try {
-                    let keepSending = true;
-                    while (keepSending) {
+                    for (let offset = 0; offset < registrationIds.length; offset += batchLimit) {
+                        const batchIds = registrationIds.slice(offset, offset + batchLimit);
                         const response = await $.ajax({
                             url: 'endpoint/send-student-account-emails.php',
                             method: 'POST',
                             dataType: 'json',
                             data: {
-                                component: selectedComponent || '',
-                                limit: batchLimit
+                                registration_ids: batchIds
                             }
                         });
 
@@ -1278,7 +1324,7 @@ foreach ($publicForms as $formRow) {
                         totals.invalidEmail += Number(response.invalid_email || 0);
                         totals.failed += Number(response.failed || 0);
                         totals.processed += Number(response.processed || 0);
-                        remaining = Number(response.pending_after || 0);
+                        remaining = Math.max(0, registrationIds.length - totals.processed);
                         lastMessage = response.message || '';
 
                         Swal.update({
@@ -1291,15 +1337,6 @@ foreach ($publicForms as $formRow) {
                             `
                         });
 
-                        const deliveredThisBatch = Number(response.sent || 0) + Number(response.resent || 0);
-                        stoppedWithoutDelivery = Boolean(response.has_more) && deliveredThisBatch === 0;
-                        keepSending = Boolean(response.has_more) && deliveredThisBatch > 0;
-
-                        if (keepSending) {
-                            await new Promise(function(resolve) {
-                                setTimeout(resolve, batchDelayMs);
-                            });
-                        }
                     }
 
                     let summary = 'Student email process finished. Sent: ' + totals.sent + '.';
@@ -1318,11 +1355,8 @@ foreach ($publicForms as $formRow) {
                     if (remaining > 0) {
                         summary += ' Remaining pending: ' + remaining + '.';
                     }
-                    if (stoppedWithoutDelivery && lastMessage) {
-                        summary += ' Last batch details: ' + lastMessage;
-                    }
-
-                    Swal.fire('Done', summary, remaining > 0 ? 'warning' : 'success').then(function() {
+                    const completedWithErrors = totals.failed > 0 || totals.createdNoEmail > 0 || totals.invalidEmail > 0 || remaining > 0;
+                    Swal.fire(completedWithErrors ? 'Completed with Issues' : 'Done', summary, completedWithErrors ? 'warning' : 'success').then(function() {
                         window.location.reload();
                     });
                 } catch (error) {
