@@ -1238,7 +1238,6 @@ foreach ($publicForms as $formRow) {
             const selectAll = $('#selectAllStudentEmails').get(0);
 
             $('#sendAccountEmailsBtn')
-                .prop('disabled', selectedCount === 0)
                 .html('<i class="fas fa-user-graduate mr-1"></i> Send Selected Student Emails' + (selectedCount ? ' (' + selectedCount + ')' : ''));
 
             if (selectAll) {
